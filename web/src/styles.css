@@ -1,0 +1,78 @@
+/*
+ * Prediction Ledger — dashboard styles (no framework; system fonts; light/dark aware).
+ * Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
+ * Licensed under the Apache License 2.0 — see LICENSE and NOTICE in the repository root.
+ */
+:root {
+  color-scheme: light dark;
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --text: #1a1d21;
+  --muted: #5c6470;
+  --border: #d9dde3;
+  --accent: #2456c7;
+  --accent-text: #ffffff;
+  --ok: #1a7f4b;
+  --error: #b42318;
+  --chip-cloud: #eef2ff;
+  --chip-local: #ecfdf3;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1216;
+    --surface: #171b21;
+    --text: #e8eaed;
+    --muted: #9aa3ae;
+    --border: #2b323b;
+    --accent: #6f9cff;
+    --accent-text: #0b0f14;
+    --ok: #4ade80;
+    --error: #f87171;
+    --chip-cloud: #1d2540;
+    --chip-local: #16301f;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em; }
+.shell { min-height: 100vh; display: flex; flex-direction: column; }
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 24px; border-bottom: 1px solid var(--border); background: var(--surface); flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; }
+.brand-mark { color: var(--accent); font-size: 20px; }
+.version { color: var(--muted); font-weight: 400; font-size: 13px; }
+nav { display: flex; gap: 4px; flex-wrap: wrap; }
+.tab { background: none; border: 1px solid transparent; color: var(--muted); padding: 6px 12px; border-radius: 6px; cursor: pointer; font: inherit; }
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--text); border-color: var(--border); background: var(--bg); }
+.content { flex: 1; padding: 24px; max-width: 1100px; width: 100%; margin: 0 auto; }
+.footer { padding: 12px 24px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+h1 { font-size: 24px; margin: 0 0 8px; }
+h2 { font-size: 17px; margin: 28px 0 10px; }
+.muted { color: var(--muted); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin: 0 0 12px; }
+legend { padding: 0 6px; font-weight: 600; }
+.field { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; }
+.field > span { font-size: 13px; color: var(--muted); }
+.field small { color: var(--muted); font-size: 12px; }
+input[type="text"], input[type="url"], input[type="password"], input[type="number"], input:not([type]), select {
+  font: inherit; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); max-width: 520px;
+}
+input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button { font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
+button:disabled { opacity: 0.6; cursor: default; }
+button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+button.link { background: none; border: none; color: var(--accent); padding: 0; text-align: left; font-size: 13px; }
+.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.result { font-size: 14px; }
+.result.ok { color: var(--ok); }
+.result.error { color: var(--error); }
+.banner { padding: 10px 14px; border-radius: 6px; margin: 12px 0; border: 1px solid var(--border); background: var(--surface); }
+.banner.ok { border-color: var(--ok); }
+.banner.error { border-color: var(--error); color: var(--error); }
+.chip { font-size: 11px; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.04em; }
+.chip.cloud { background: var(--chip-cloud); }
+.chip.local { background: var(--chip-local); }
+.grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.actions { margin: 28px 0; }
+.empty-state { background: var(--surface); border: 1px dashed var(--border); border-radius: 8px; padding: 32px; text-align: center; max-width: 640px; }

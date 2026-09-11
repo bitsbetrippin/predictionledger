@@ -1,0 +1,14 @@
+Prediction Ledger
+Copyright 2026 Michael D. Carter (BitsBeTrippin) and Prediction Ledger contributors
+
+Original concept and product design: Michael D. Carter, BitsBeTrippin
+(https://bitsbetrippin.io).
+
+Engineering support: Claude AI (Anthropic), acting as development lead and
+solution-architecture reviewer during design and implementation.
+
+This product is licensed under the Apache License, Version 2.0.
+See the LICENSE file for the full text.
+
+Third-party components are used under their own licenses; see
+THIRD_PARTY_NOTICES.md for the complete list and attributions.

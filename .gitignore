@@ -1,0 +1,34 @@
+# Prediction Ledger — never commit user data, secrets, or build output.
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Local application data (if PL_DATA_DIR is pointed inside the repo)
+data/
+*.db
+*.db-wal
+*.db-shm
+secret.key
+
+# Local configuration (config.example.json is the only config that belongs in git)
+config.json
+.env
+.env.*
+
+# Downloaded runtime tools and models
+.tools/
+.models/
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log

@@ -104,6 +104,14 @@ Tip: LM Studio's *Just-in-time model loading* setting lets the server load a mod
 
 ---
 
+## 4.5 Using Release 0.2
+
+1. **Library → Import a transcript.** Drop an `.srt`, `.vtt`, `.txt`, or `.json` file (or paste text). Set **Published / recorded on** if you know it — relative deadlines like "within two years" are resolved from that date and are left *unknown* otherwise. Try `fixtures/transcripts/data-center-approvals.srt` with `2025-11-03`.
+2. **Extract predictions.** Uses the provider chosen for *extraction* in Setup. Progress shows per transcript window. Re-running keeps anything you have edited, accepted, dismissed, or planned.
+3. **Predictions tab.** Review each row: accept, dismiss, edit (creates a revision), split a component into its own prediction, or tick several and merge. The original quotation and timestamps never change.
+4. **Generate validation plan.** Writes the evaluation criteria and search queries *before* any research. Edit it to create a new version; every version is kept. Research itself arrives in 0.3.
+5. **Setup → Prompt templates** lets you override the system instructions for extraction and planning; the transcript/prediction blocks and fixed dates are not overridable.
+
 ## 5. Data directory
 
 | OS | Path |
@@ -145,5 +153,9 @@ Other environment variables: `PL_PORT` (default 7317), `PL_NO_OPEN=1` (don't ope
 | Dashboard shows old UI after upgrading | Run `npm run build` again; hard-refresh the browser. |
 | LM Studio test hangs | Very large model still loading; wait for LM Studio to show *Loaded*, then retry. |
 | `ExperimentalWarning: SQLite is an experimental feature` in the console | Harmless on Node 22; gone on Node 24+. |
+| Extraction fails with `Stage "extraction" is routed to … disabled` | Enable that provider in Setup or route the stage elsewhere under *Which model does what*. |
+| Extraction fails with `did not match the extraction_output schema` | The model returned unusable JSON twice. Try a stronger model, or for LM Studio a model that supports JSON output; the raw problem is in the Jobs tab. |
+| Plan/extraction fails with `Internet access is disabled` | Privacy switch is off but the stage is routed to a cloud provider. Route it to LM Studio or enable internet. |
+| Imported transcript has "synthetic" timestamps | Plain text without time stamps. Predictions still work; add `[hh:mm:ss]` prefixes for real positions. |
 
 Logs: the terminal running `npm start`. Set `PL_LOG_LEVEL=debug` for more detail. API keys are redacted from logs.

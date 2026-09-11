@@ -10,7 +10,8 @@
  */
 import { useEffect, useState } from "react";
 import type { AnalysisStage, AppSettings, LlmProviderId, ModelInfo, ProviderTestResult } from "@prediction-ledger/shared";
-import { api, toPayload, type SecretUpdates } from "../api";
+import { api, content, toPayload, type SecretUpdates } from "../api";
+import type { PromptTemplateInfo } from "@prediction-ledger/shared";
 
 const PROVIDER_LABELS: Record<LlmProviderId, string> = {
   anthropic: "Anthropic Claude",
@@ -266,7 +267,47 @@ export function SetupPage() {
           {saving ? "Saving…" : "Save settings"}
         </button>
       </div>
+
+      <h2>Prompt templates</h2>
+      <p className="muted">
+        The built-in instructions for extraction and validation-plan generation. You can override the system instructions; the part that carries the
+        transcript, prediction, and fixed dates is not overridable so content boundaries stay intact. Overrides are saved immediately and recorded with each result.
+      </p>
+      <TemplateEditor />
     </section>
+  );
+}
+
+function TemplateEditor() {
+  const [templates, setTemplates] = useState<PromptTemplateInfo[] | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [status, setStatus] = useState<string | null>(null);
+
+  const load = () =>
+    content.templates().then((t) => {
+      setTemplates(t);
+      setDrafts(Object.fromEntries(t.map((x) => [x.name, x.override?.body ?? x.builtInBody])));
+    });
+  useEffect(() => void load(), []);
+  if (!templates) return null;
+
+  return (
+    <div>
+      {templates.map((t) => (
+        <details key={t.name} className="card">
+          <summary>
+            <strong>{t.name}</strong> — built-in {t.builtInVersion}
+            {t.override ? <span className="chip cloud">override active (from {t.override.baseVersion})</span> : <span className="chip local">built-in</span>}
+          </summary>
+          <textarea rows={14} value={drafts[t.name] ?? ""} onChange={(e) => setDrafts((d) => ({ ...d, [t.name]: e.target.value }))} />
+          <div className="row">
+            <button type="button" className="primary" onClick={async () => { await content.setTemplate(t.name, drafts[t.name]); setStatus(`${t.name} override saved.`); await load(); }}>Save override</button>
+            <button type="button" onClick={async () => { await content.setTemplate(t.name, null); setStatus(`${t.name} reset to built-in.`); await load(); }} disabled={!t.override}>Reset to built-in</button>
+          </div>
+        </details>
+      ))}
+      {status && <div className="banner ok" role="status">{status}</div>}
+    </div>
   );
 }
 

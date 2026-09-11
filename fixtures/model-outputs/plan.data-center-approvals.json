@@ -1,0 +1,38 @@
+{
+  "_comment": "SYNTHETIC canned reply of the plan-generation model for the worked-example prediction. Used by pipeline.test.ts and as the reference shape for plan.v1. Not a real model output.",
+  "proposition": "Within two years of 2025-11-03 (i.e. by 2027-11-03), approvals for new data centers will be restricted to government-owned land, with local permit cancellations as the claimed cause.",
+  "components": [
+    { "statement": "New data center approvals become restricted to government-owned land by 2027-11-03.", "kind": "future_claim", "conditions": [] },
+    { "statement": "Local jurisdictions are cancelling data center permits (present-state premise).", "kind": "premise", "conditions": [] },
+    { "statement": "The cancellations are the cause of the shift to government land.", "kind": "causal_link", "conditions": [] }
+  ],
+  "dates": { "predictionMade": "2025-11-03", "deadline": "2027-11-03", "researchCutoff": "2026-09-11", "notes": "Statement date taken from the recording's publication date." },
+  "definitions": [
+    { "term": "narrowed down to government lands", "workingDefinition": "Counts as fulfilled if, by the deadline, a clear majority (say >50% by capacity or count) of newly approved data center projects in the relevant geography are sited on federal, state, or municipally owned land, or if a rule/statute formally restricts approvals to such land." },
+    { "term": "local markets", "workingDefinition": "County and municipal permitting authorities." },
+    { "term": "geography", "workingDefinition": "Unstated. Evaluate the United States as the most plausible scope given the Midwest examples, and record that assumption." }
+  ],
+  "ambiguities": ["Geography unstated", "Threshold for 'narrowed down' undefined", "Approval vs. siting vs. construction start"],
+  "supportingEvidence": [
+    "Federal or state policy formally steering or restricting data center siting to public land, enacted before the deadline.",
+    "Industry siting data showing a majority of newly approved capacity on government-owned land by the deadline.",
+    "Documented pattern of local permit cancellations continuing through the window."
+  ],
+  "contradictingEvidence": [
+    "Continued approvals of large private-land data center projects by local authorities through the window.",
+    "Siting statistics showing government land remains a minority of approvals.",
+    "Evidence that any shift to public land is driven by power availability or incentives rather than cancellations."
+  ],
+  "partialFulfillmentCriteria": [
+    "Premise supported (cancellations documented) but future claim unsupported (approvals not restricted) → partially supported at most.",
+    "Policy announced but not enacted or implemented by the deadline → announced, not fulfilled."
+  ],
+  "queries": {
+    "neutral": ["data center siting government land 2026", "where were new data centers approved 2026 2027", "data center permit approvals by jurisdiction 2026"],
+    "supporting": ["federal land data center program approvals 2026", "DOE sites selected for data centers 2026", "state law restricts data centers to public land"],
+    "disconfirming": ["county approves data center private land 2026", "data center approvals private land record 2026", "local incentives attract data center 2026"]
+  },
+  "preferredSourceTypes": ["federal and state agency records", "county board minutes and permit dockets", "industry siting datasets", "reliable trade and regional reporting"],
+  "outputSchemaNotes": "Return evidence items with source, date, component addressed, stance, and action stage; then a two-field verdict.",
+  "researchPrompt": "You are researching whether the following prediction came true. Use ONLY sources you actually retrieve through the provided search and fetch tools; never cite from memory. Proposition: within two years of 2025-11-03 (deadline 2027-11-03), approvals for new data centers became restricted to government-owned land, with local permit cancellations as the cause. Run the neutral, supporting, and disconfirming queries. For every relevant item record: URL, title, publisher, publication date, event date, a short excerpt, which component it addresses (future_claim / premise / causal_link), whether it supports, contradicts, or contextualises, and whether the action described is proposed, announced, enacted, approved, or completed. Separate events dated on or before 2027-11-03 from later developments. If searches fail or sources are inaccessible, record that as a coverage limitation — it is not evidence either way. Do not produce a verdict; return the evidence set in the required schema."
+}

@@ -28,6 +28,11 @@ const providers: Record<LlmProviderId, LanguageModelProvider> = {
   }),
 };
 
+/** Test seam: replace a provider implementation (used by pipeline tests with a fake model). */
+export function setLlmProviderForTests(id: LlmProviderId, provider: LanguageModelProvider): void {
+  providers[id] = provider;
+}
+
 export function getLlmProvider(id: LlmProviderId): LanguageModelProvider {
   const p = providers[id];
   if (!p) throw new Error(`Unknown language model provider: ${id}`);

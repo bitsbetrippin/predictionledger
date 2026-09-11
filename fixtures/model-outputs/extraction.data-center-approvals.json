@@ -1,0 +1,49 @@
+{
+  "_comment": "SYNTHETIC canned reply of the extraction model for fixtures/transcripts/data-center-approvals.srt window w1. Used by pipeline.test.ts. Not a real model output.",
+  "predictions": [
+    {
+      "quote": "within two years, data center approvals will be narrowed down to government lands because local markets keep cancelling the permits",
+      "speaker": "Host",
+      "normalized_statement": "Within two years of the statement, new data center approvals will be restricted to government-owned land, because local jurisdictions keep cancelling permits.",
+      "modality": "will",
+      "entities": ["data centers", "local governments", "government land"],
+      "topic": "data center permitting",
+      "geography": null,
+      "scope": "data center approvals generally",
+      "conditions": [],
+      "thresholds": [],
+      "time_expression": "within two years",
+      "proposed_deadline": "2027-11-03",
+      "ambiguities": [
+        "Geography is not stated (US? Midwest? global?)",
+        "\"Narrowed down to\" is undefined — exclusively government land, or predominantly?"
+      ],
+      "confidence": 0.9,
+      "components": [
+        { "kind": "future_claim", "statement": "Data center approvals will be restricted to government-owned land within two years.", "deadline": "2027-11-03", "notes": null },
+        { "kind": "premise", "statement": "Local markets (jurisdictions) keep cancelling data center permits.", "deadline": null, "notes": "Present-state claim the speaker relies on." },
+        { "kind": "causal_link", "statement": "Local permit cancellations cause approvals to shift to government land.", "deadline": null, "notes": null }
+      ]
+    },
+    {
+      "quote": "hashprice might recover next year if the halving supply shock plays out like 2020",
+      "speaker": "Host",
+      "normalized_statement": "Hashprice might recover next year, conditional on the halving supply shock playing out as it did in 2020.",
+      "modality": "might",
+      "entities": ["hashprice", "Bitcoin halving"],
+      "topic": "bitcoin mining economics",
+      "geography": null,
+      "scope": "bitcoin mining",
+      "conditions": ["halving supply shock plays out like 2020"],
+      "thresholds": [],
+      "time_expression": "next year",
+      "proposed_deadline": null,
+      "ambiguities": ["\"Recover\" has no stated threshold."],
+      "confidence": 0.75,
+      "components": [
+        { "kind": "future_claim", "statement": "Hashprice might recover next year.", "deadline": null, "notes": null }
+      ]
+    }
+  ],
+  "notes": "Segments 7–9 are a question, a wish, and a historical fact; excluded."
+}

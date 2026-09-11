@@ -58,3 +58,13 @@ One entry per decision that would be expensive to reverse. Newest at the bottom.
 **Context.** Implementation context specifies analysis-first milestones; media processing carries the most platform risk.
 **Decision.** 0.2 analysis core on imported transcripts → 0.3 research/verdicts → 0.4 local video → 0.5 YouTube → 1.0 evals/hardening.
 **Consequences.** Value is demonstrable after 0.2 without ffmpeg or Whisper; transcript import is also the permanent fallback for YouTube failures.
+
+## ADR-012 — Release 0.2 stays dependency-free; Drizzle and the AI SDK wait for a verified build
+**Context.** Neither the build sandbox nor the linked machine could reach the npm registry during the 0.2 session, so spikes S-1 (Drizzle) and S-2 (AI SDK structured output) could not be executed. The 0.2 scope (transcript import → extraction → plans) needed a repository layer and structured model output now.
+**Decision.** Implement 0.2 on the existing `node:sqlite` wrapper (with SAVEPOINT-based nested transactions) and the existing `fetch` adapters, using hand-written JSON Schemas for provider-side hints and Zod for app-side validation with a one-shot repair loop. Zero new runtime dependencies. Spikes S-1/S-2 move to the start of 0.3 and remain optional: adopt only if they reduce code.
+**Consequences.** Two schema representations to keep in sync (Zod + JSON Schema, both in `analysis/schemas.ts`). Provider-side JSON enforcement differs by vendor (Anthropic forced tool-use, OpenAI/LM Studio `response_format`), so the app-side validator is the contract that matters.
+
+## ADR-013 — Re-extraction preserves user-touched predictions
+**Context.** Users will re-run extraction (better model, corrected transcript). Blindly replacing rows would destroy edits, plans, and review decisions.
+**Decision.** A new extraction run deletes only *pending* predictions with no revisions and no plans, then skips candidates that closely match any surviving prediction (quote or normalized-statement similarity ≥ 0.8). Accepted, dismissed, edited, merged, or planned predictions are never touched by automation.
+**Consequences.** A genuinely different re-phrasing may be treated as "already present"; the user can still split/merge by hand.

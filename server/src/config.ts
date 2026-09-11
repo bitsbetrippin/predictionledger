@@ -79,6 +79,8 @@ export interface DataPaths {
   models: string;
   /** Rolling log files. */
   logs: string;
+  /** Pre-migration database copies. */
+  backups: string;
 }
 
 export function resolveDataPaths(): DataPaths {
@@ -92,12 +94,13 @@ export function resolveDataPaths(): DataPaths {
     tools: path.join(root, "tools"),
     models: path.join(root, "models"),
     logs: path.join(root, "logs"),
+    backups: path.join(root, "backups"),
   };
 }
 
 /** Create the data directory tree if missing. Idempotent. */
 export function ensureDataDirs(paths: DataPaths): void {
-  for (const dir of [paths.root, paths.media, paths.artifacts, paths.tools, paths.models, paths.logs]) {
+  for (const dir of [paths.root, paths.media, paths.artifacts, paths.tools, paths.models, paths.logs, paths.backups]) {
     fs.mkdirSync(dir, { recursive: true });
   }
 }

@@ -45,16 +45,25 @@ export class Database {
     return this.db.prepare(sql).all(...(params as never[])) as T[];
   }
 
-  /** Run `fn` inside a transaction; rolls back on throw. */
+  private txDepth = 0;
+
+  /**
+   * Run `fn` inside a transaction; rolls back on throw. Nested calls become SAVEPOINTs so
+   * services can call each other (e.g. a job wrapping PredictionService.create) safely.
+   */
   transaction<T>(fn: () => T): T {
-    this.db.exec("BEGIN");
+    const depth = this.txDepth++;
+    const sp = `sp_${depth}`;
+    this.db.exec(depth === 0 ? "BEGIN" : `SAVEPOINT ${sp}`);
     try {
       const result = fn();
-      this.db.exec("COMMIT");
+      this.db.exec(depth === 0 ? "COMMIT" : `RELEASE SAVEPOINT ${sp}`);
       return result;
     } catch (err) {
-      this.db.exec("ROLLBACK");
+      this.db.exec(depth === 0 ? "ROLLBACK" : `ROLLBACK TO SAVEPOINT ${sp}; RELEASE SAVEPOINT ${sp}`);
       throw err;
+    } finally {
+      this.txDepth--;
     }
   }
 
@@ -66,6 +75,6 @@ export class Database {
 /** Open the database and bring the schema up to date. */
 export function openDatabase(paths: DataPaths): { db: Database; schemaVersion: number } {
   const db = new Database(paths.database);
-  const schemaVersion = runMigrations(db);
+  const schemaVersion = runMigrations(db, { databasePath: paths.database, backupDir: paths.backups });
   return { db, schemaVersion };
 }

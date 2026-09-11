@@ -80,3 +80,79 @@ export function toPayload(s: AppSettings): SettingsPayload {
     privacy: s.privacy,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Release 0.2 — videos, predictions, plans, templates
+// ---------------------------------------------------------------------------
+
+import type {
+  Prediction,
+  PredictionEdit,
+  PredictionFilters,
+  PromptTemplateInfo,
+  TranscriptImportRequest,
+  TranscriptSegment,
+  ValidationPlan,
+  ValidationPlanBody,
+  VideoDetail,
+  VideoSummary,
+} from "@prediction-ledger/shared";
+
+export type TimeStatus = "pending" | "reached" | "unknown";
+export type PredictionRow = Prediction & { timeStatus: TimeStatus };
+export type PredictionFull = PredictionRow & {
+  plans: ValidationPlan[];
+  revisions: { version: number; reason: string | null; createdAt: string; snapshot: unknown }[];
+};
+
+function qs(obj: Record<string, string | boolean | undefined>): string {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(obj)) if (v !== undefined && v !== "" && v !== false) p.set(k, v === true ? "1" : v);
+  const s = p.toString();
+  return s ? `?${s}` : "";
+}
+
+export const content = {
+  listVideos: () => request<VideoSummary[]>("GET", "/api/videos"),
+  importTranscript: (body: TranscriptImportRequest) => request<{ video: VideoDetail; warnings: string[] }>("POST", "/api/videos/import-transcript", body),
+  getVideo: (id: string) => request<VideoDetail>("GET", `/api/videos/${id}`),
+  updateVideo: (id: string, patch: { title?: string; publishedAt?: string | null; language?: string | null }) => request<VideoDetail>("PATCH", `/api/videos/${id}`, patch),
+  correctSegment: (videoId: string, segmentId: string, textCorrected: string | null) =>
+    request<TranscriptSegment>("PATCH", `/api/videos/${videoId}/segments/${segmentId}`, { textCorrected }),
+  deleteVideo: (id: string) => request<{ ok: true }>("DELETE", `/api/videos/${id}`),
+  extract: (videoId: string) => request<{ jobId: string }>("POST", `/api/videos/${videoId}/extract`),
+
+  listPredictions: (f: PredictionFilters = {}) =>
+    request<PredictionRow[]>("GET", `/api/predictions${qs({ videoId: f.videoId, topic: f.topic, userStatus: f.userStatus, deadlineBefore: f.deadlineBefore, deadlineAfter: f.deadlineAfter, includeDismissed: f.includeDismissed })}`),
+  topics: () => request<string[]>("GET", "/api/predictions/topics"),
+  getPrediction: (id: string) => request<PredictionFull>("GET", `/api/predictions/${id}`),
+  editPrediction: (id: string, patch: PredictionEdit) => request<Prediction>("PATCH", `/api/predictions/${id}`, patch),
+  accept: (id: string) => request<Prediction>("POST", `/api/predictions/${id}/accept`),
+  dismiss: (id: string) => request<Prediction>("POST", `/api/predictions/${id}/dismiss`),
+  restore: (id: string) => request<Prediction>("POST", `/api/predictions/${id}/restore`),
+  merge: (targetId: string, sourceIds: string[]) => request<Prediction>("POST", `/api/predictions/${targetId}/merge`, { sourceIds }),
+  split: (id: string, componentId: string) => request<{ parent: Prediction; child: Prediction }>("POST", `/api/predictions/${id}/split`, { componentId }),
+  generatePlan: (id: string) => request<{ jobId: string }>("POST", `/api/predictions/${id}/plan`),
+  savePlanEdit: (id: string, plan: Partial<ValidationPlanBody>, researchPrompt: string) => request<ValidationPlan>("POST", `/api/predictions/${id}/plans`, { plan, researchPrompt }),
+
+  templates: () => request<PromptTemplateInfo[]>("GET", "/api/templates"),
+  setTemplate: (name: "extraction" | "plan", body: string | null) => request<PromptTemplateInfo>("PUT", `/api/templates/${name}`, { body }),
+  job: (id: string) => request<import("@prediction-ledger/shared").JobSummary>("GET", `/api/jobs/${id}`),
+  cancelJob: (id: string) => request<import("@prediction-ledger/shared").JobSummary>("POST", `/api/jobs/${id}/cancel`),
+};
+
+/** Poll a job until it reaches a terminal state; calls onTick with each snapshot. */
+export async function pollJob(id: string, onTick?: (j: import("@prediction-ledger/shared").JobSummary) => void, intervalMs = 800) {
+  for (;;) {
+    const j = await content.job(id);
+    onTick?.(j);
+    if (j.status === "completed" || j.status === "failed" || j.status === "cancelled") return j;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+}
+
+export const fmtClock = (s?: number) => {
+  if (s === undefined || Number.isNaN(s)) return "—";
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60);
+  return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+};

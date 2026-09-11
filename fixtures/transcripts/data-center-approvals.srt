@@ -1,0 +1,35 @@
+1
+00:00:01,000 --> 00:00:05,200
+Host: Welcome back to the channel. Today we're talking about power, permits, and where the next wave of data centers actually gets built.
+
+2
+00:00:05,400 --> 00:00:11,900
+Host: Last year we saw at least a dozen county boards in the Midwest pull permits after residents pushed back on noise and water use.
+
+3
+00:00:12,100 --> 00:00:19,800
+Host: Honestly, within two years, data center approvals will be narrowed down to government lands because local markets keep cancelling the permits.
+
+4
+00:00:20,000 --> 00:00:25,300
+Host: That's just where this is heading. Federal sites, closed bases, DOE land — that's where the megawatts will be.
+
+5
+00:00:25,500 --> 00:00:31,000
+Guest: I'm not sure I'd go that far. Some counties are actually courting these projects with tax abatements.
+
+6
+00:00:31,200 --> 00:00:36,400
+Host: Fair. And on the mining side, hashprice might recover next year if the halving supply shock plays out like 2020.
+
+7
+00:00:36,600 --> 00:00:41,000
+Host: Do you think Bitcoin ETFs will keep absorbing supply? That's the question everyone's asking.
+
+8
+00:00:41,200 --> 00:00:47,500
+Guest: I'd love to see more transparent power reporting from the big miners, but that's a wish, not a forecast.
+
+9
+00:00:47,700 --> 00:00:53,000
+Host: Our channel's own numbers: we crossed 200,000 subscribers back in March, which was a milestone for us.

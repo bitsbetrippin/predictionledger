@@ -173,3 +173,171 @@ export interface HealthResponse {
 /** Header the browser must send on every mutating request (CSRF guard). */
 export const CSRF_HEADER = "x-prediction-ledger";
 export const CSRF_VALUE = "1";
+
+// ---------------------------------------------------------------------------
+// Release 0.2 — videos, transcripts, predictions, validation plans
+// ---------------------------------------------------------------------------
+
+export type SourceKind = "local" | "youtube" | "transcript";
+export type VideoStatus = "importing" | "transcribing" | "ready" | "extracting" | "failed";
+
+export interface VideoSummary {
+  id: string;
+  title: string;
+  sourceKind: SourceKind;
+  sourceRef?: string;
+  durationS?: number;
+  publishedAt?: string;
+  language?: string;
+  importedAt: string;
+  status: VideoStatus;
+  segmentCount: number;
+  predictionCount: number;
+  pendingPredictionCount: number;
+}
+
+export interface TranscriptSegment {
+  id: string;
+  seq: number;
+  startS: number;
+  endS: number;
+  textOriginal: string;
+  textCorrected?: string;
+  speaker?: string;
+  engine: string;
+}
+
+export interface VideoDetail extends VideoSummary {
+  segments: TranscriptSegment[];
+  notes?: string;
+}
+
+/** Body for POST /api/videos/import-transcript */
+export interface TranscriptImportRequest {
+  title: string;
+  /** Raw file contents. */
+  content: string;
+  /** "srt" | "vtt" | "txt" | "json" | "auto" */
+  format: "srt" | "vtt" | "txt" | "json" | "auto";
+  /** Original filename, kept as source_ref. */
+  filename?: string;
+  /** ISO date (YYYY-MM-DD) when the recording was published/made, if known. Never inferred. */
+  publishedAt?: string;
+  language?: string;
+}
+
+export type PredictionUserStatus = "pending" | "accepted" | "dismissed" | "merged";
+export type ComponentKind = "future_claim" | "premise" | "causal_link";
+export type MadeOnBasis = "statement" | "publication" | "user" | "unknown";
+
+export interface PredictionComponent {
+  id: string;
+  seq: number;
+  kind: ComponentKind;
+  statement: string;
+  deadlineDate?: string;
+  notes?: string;
+}
+
+export interface PredictionOccurrence {
+  startS?: number;
+  endS?: number;
+  windowId: string;
+}
+
+export interface Prediction {
+  id: string;
+  videoId: string;
+  videoTitle?: string;
+  quoteExact: string;
+  contextBefore?: string;
+  contextAfter?: string;
+  startS?: number;
+  endS?: number;
+  speaker?: string;
+  normalizedStatement: string;
+  entities: string[];
+  topic?: string;
+  geography?: string;
+  scope?: string;
+  conditions: string[];
+  thresholds: string[];
+  modality?: string;
+  madeOnDate?: string;
+  madeOnBasis: MadeOnBasis;
+  timeExpression?: string;
+  deadlineDate?: string;
+  deadlineBasis?: string;
+  ambiguities: string[];
+  extractionConfidence?: number;
+  userStatus: PredictionUserStatus;
+  mergedIntoId?: string;
+  duplicateOfId?: string;
+  occurrences: PredictionOccurrence[];
+  extractionProvider?: string;
+  extractionModel?: string;
+  extractionTemplate?: string;
+  components: PredictionComponent[];
+  /** Latest plan version number, if any. */
+  latestPlanVersion?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Fields a user may edit (everything else is immutable or derived). */
+export interface PredictionEdit {
+  normalizedStatement?: string;
+  topic?: string;
+  geography?: string;
+  scope?: string;
+  speaker?: string;
+  madeOnDate?: string;
+  deadlineDate?: string;
+  conditions?: string[];
+  ambiguities?: string[];
+  components?: { kind: ComponentKind; statement: string; deadlineDate?: string; notes?: string }[];
+}
+
+/** Structured validation plan (template plan.v1). Stored as plan_json. */
+export interface ValidationPlanBody {
+  proposition: string;
+  components: { statement: string; kind: ComponentKind; conditions: string[] }[];
+  dates: { predictionMade?: string; deadline?: string; researchCutoff: string; notes?: string };
+  definitions: { term: string; workingDefinition: string }[];
+  ambiguities: string[];
+  supportingEvidence: string[];
+  contradictingEvidence: string[];
+  partialFulfillmentCriteria: string[];
+  queries: { neutral: string[]; supporting: string[]; disconfirming: string[] };
+  preferredSourceTypes: string[];
+  outputSchemaNotes: string;
+}
+
+export interface ValidationPlan {
+  id: string;
+  predictionId: string;
+  version: number;
+  plan: ValidationPlanBody;
+  researchPrompt: string;
+  provider: string;
+  model?: string;
+  templateVersion: string;
+  editedByUser: boolean;
+  createdAt: string;
+}
+
+export interface PredictionFilters {
+  videoId?: string;
+  topic?: string;
+  userStatus?: PredictionUserStatus;
+  deadlineBefore?: string;
+  deadlineAfter?: string;
+  includeDismissed?: boolean;
+}
+
+export interface PromptTemplateInfo {
+  name: "extraction" | "plan";
+  builtInVersion: string;
+  builtInBody: string;
+  override?: { body: string; baseVersion: string; updatedAt: string };
+}

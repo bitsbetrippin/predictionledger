@@ -6,7 +6,7 @@ Prediction Ledger is an open-source, localhost-only application. It takes a loca
 
 Everything lives on your computer in a SQLite database. Cloud AI providers and web research are opt-in and clearly labelled; a fully local workflow (LM Studio + local Whisper + transcript import) is supported.
 
-> **Status:** Release 0.1 — Foundation. The local server, Setup tab, encrypted credential storage, provider connection tests, and durable job system are in place. Prediction extraction lands in 0.2. See [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md).
+> **Status:** Release 0.2 — Milestone 1. Import a transcript (SRT/VTT/TXT/JSON), extract predictions with Anthropic, OpenAI, or a local LM Studio model, review/edit/merge/split them, and generate versioned validation plans. Web research and verdicts land in 0.3; local video and YouTube in 0.4/0.5. See [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md).
 
 ---
 
@@ -50,7 +50,7 @@ A useful mental model: it is a **courtroom, not a pundit**. Extraction is the cl
 
 ## Quick start
 
-**Prerequisites:** [Node.js 24 LTS](https://nodejs.org) (22.13+ works) and Git or [GitHub Desktop](https://desktop.github.com). Nothing else for Release 0.1. No admin rights, no Docker, no Python.
+**Prerequisites:** [Node.js 24 LTS](https://nodejs.org) (22.13+ works) and Git or [GitHub Desktop](https://desktop.github.com). Nothing else for Releases 0.1–0.2 (ffmpeg arrives with local video in 0.4). No admin rights, no Docker, no Python.
 
 ```bash
 # 1. Clone (or use GitHub Desktop → File → Clone repository)
@@ -87,6 +87,7 @@ Platform-specific commands, LM Studio setup, external tools, and troubleshooting
    - **LM Studio** (local): start its server in the *Developer* tab, load a model, then test. Step-by-step in [docs/SETUP.md §4.3](docs/SETUP.md#43-lm-studio-local-model--manual-steps-required).
 4. Under **Which model does what**, choose a provider for extraction, validation-plan generation, and assessment (they can differ).
 5. **Save settings.** Keys are encrypted at rest and never shown again — only a masked hint like `sk-ant-…4f2a`.
+6. **Try it:** Library → import `fixtures/transcripts/data-center-approvals.srt` with published date `2025-11-03` → **Extract predictions** → open a prediction → **Generate validation plan**.
 
 Where your data is: shown in the Setup tab and the page footer (`%LOCALAPPDATA%\PredictionLedger` on Windows, `~/Library/Application Support/PredictionLedger` on macOS). Override with `PL_DATA_DIR`.
 
@@ -144,7 +145,7 @@ flowchart TB
 | Runtime | Node.js 24 LTS, TypeScript | One runtime on Windows/macOS; `node:sqlite` built in — no native compile step. |
 | Server | Fastify 5 on `127.0.0.1` | Loopback only, schema-validated routes, redacted logs. Occupied port → walks to the next one, never kills anything. |
 | Frontend | React 18 + Vite | Built once to static files served by the same process; no separate web server in normal use. |
-| Database | SQLite (WAL) + forward-only migrations | Single file, crash-safe, trivially backed up. Drizzle ORM from Milestone 1. |
+| Database | SQLite (WAL) + forward-only migrations | Single file, crash-safe, backed up before every migration. Drizzle ORM evaluated in 0.3 (ADR-012). |
 | Jobs | Rows in a `jobs` table + in-process worker | Transcription and research survive restarts; bounded retries; cancellation; dedupe. |
 | Secrets | AES-256-GCM, key file with owner-only permissions | Never in the browser, logs, exports, or git. |
 | Local transcription | Whisper (ONNX) inside Node via Transformers.js | Pure npm — no Python, no compiled binary. Models download once. |
@@ -176,12 +177,18 @@ prediction-ledger/
 │       ├── security/       SecretStore (AES-GCM), CSRF guard
 │       ├── jobs/           durable JobQueue
 │       ├── providers/llm/  LanguageModelProvider + Anthropic / OpenAI-compatible adapters
-│       ├── routes/         /api/health, /api/settings, /api/providers/test, /api/jobs
-│       └── core.test.ts    node:test suite for migrations, secrets, jobs
+│       ├── transcripts/    SRT / VTT / TXT / JSON parsers
+│       ├── analysis/       windowing, quote locator, date resolver, dedupe, prompts, schemas, structured completion
+│       ├── services/       videos, predictions, plans, templates (repositories)
+│       ├── jobs/handlers/  prediction.extract, plan.generate
+│       ├── routes/         /api/* (see docs/API.md)
+│       └── *.test.ts       node:test suites (core, analysis, end-to-end pipeline with a fake model)
+├── fixtures/               human-reviewed transcripts, expected outcomes, canned model outputs
 ├── web/                    @prediction-ledger/web — React + Vite dashboard
-│   └── src/pages/SetupPage.tsx
+│   └── src/pages/          Library · Video · Predictions (+ detail panel) · Jobs · Setup
 ├── docs/
 │   ├── ARCHITECTURE.md     architecture overview v1 (components, data flow, schema, security, deps)
+│   ├── API.md              HTTP API contracts and job kinds
 │   ├── BUILD_PLAN.md       requirements register, releases 0.1 → 1.0, acceptance criteria
 │   ├── SETUP.md            providers, LM Studio, external tools, data directory, troubleshooting
 │   ├── WIREFRAMES.md       screen mockups
@@ -201,6 +208,7 @@ prediction-ledger/
 | [docs/SETUP.md](docs/SETUP.md) | you are installing, configuring providers or LM Studio, or something won't start. |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | you want to understand or change how the system is built. |
 | [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) | you want to know what ships in which release and how it is accepted. |
+| [docs/API.md](docs/API.md) | you are calling or extending the local HTTP API. |
 | [docs/WIREFRAMES.md](docs/WIREFRAMES.md) | you are working on the dashboard. |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | you are about to reverse a design decision. |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | you want to submit a change. |
@@ -228,7 +236,7 @@ Turning **Privacy → Allow internet access** off restricts the app to explicitl
 | Release | Delivers |
 |---|---|
 | **0.1** ✓ | Localhost server, Setup tab, encrypted credentials, provider tests, durable jobs, docs. |
-| **0.2** | Transcript import → prediction extraction (edit/merge/split/dismiss) → versioned validation plans. |
+| **0.2** ✓ | Transcript import → prediction extraction (edit/merge/split/dismiss) → versioned validation plans. |
 | **0.3** | Web research, stored evidence, two-field verdicts with citations, recheck history, JSON/CSV export. |
 | **0.4** | Local MP4/MPEG import, ffmpeg audio extraction, chunked local Whisper / OpenAI transcription. |
 | **0.5** | YouTube: captions → audio → transcript-import fallback; clear recovery paths. |

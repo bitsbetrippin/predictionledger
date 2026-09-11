@@ -24,14 +24,36 @@ function tempPaths() {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-test("migrations apply and create the release-0.1 tables", () => {
+test("migrations apply in order and create the expected tables", () => {
   const paths = tempPaths();
   const { db, schemaVersion } = openDatabase(paths as never);
-  assert.equal(schemaVersion, 1);
+  assert.equal(schemaVersion, 2);
   const tables = db
     .all<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     .map((r) => r.name);
-  assert.deepEqual(tables, ["jobs", "schema_migrations", "secrets", "settings"]);
+  assert.deepEqual(tables, [
+    "jobs", "prediction_components", "prediction_revisions", "predictions", "prompt_templates",
+    "schema_migrations", "secrets", "settings", "transcript_segments", "validation_plans", "videos",
+  ]);
+  assert.deepEqual(db.all<{ version: number }>("SELECT version FROM schema_migrations ORDER BY version").map((r) => r.version), [1, 2]);
+  db.close();
+});
+
+test("nested transactions use savepoints; inner rollback does not abort the outer one", () => {
+  const paths = tempPaths();
+  const { db } = openDatabase(paths as never);
+  db.transaction(() => {
+    db.run("INSERT INTO settings (key, value_json) VALUES ('outer', '{}')");
+    assert.throws(() =>
+      db.transaction(() => {
+        db.run("INSERT INTO settings (key, value_json) VALUES ('inner', '{}')");
+        throw new Error("inner failure");
+      }),
+    );
+    db.transaction(() => db.run("INSERT INTO settings (key, value_json) VALUES ('inner2', '{}')"));
+  });
+  const keys = db.all<{ key: string }>("SELECT key FROM settings ORDER BY key").map((r) => r.key);
+  assert.deepEqual(keys, ["inner2", "outer"]);
   db.close();
 });
 

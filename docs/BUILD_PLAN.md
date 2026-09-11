@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Baseline** | Architecture ov1 (`docs/ARCHITECTURE.md`) |
-| **Current release** | 0.1 — Foundation (this repository state) |
+| **Current release** | 0.2 — Milestone 1: transcript → predictions → validation plans (this repository state) |
 | **MVP target** | 1.0 — end-to-end: video → predictions → plan → research → verdict, on Windows and macOS |
 | **Original concept** | Michael D. Carter (BitsBeTrippin) · Engineering support: Claude AI |
 
@@ -21,7 +21,7 @@ gantt
   section Foundation
   0.1 Localhost server + Setup tab            :done, r01, 0, 1
   section Milestone 1
-  0.2 Transcript import → predictions → plans :r02, after r01, 2
+  0.2 Transcript import → predictions → plans :done, r02, after r01, 2
   section Milestone 2
   0.3 Research → evidence → assessments       :r03, after r02, 2
   section Milestone 3
@@ -188,43 +188,46 @@ IDs are stable; wording may be refined. "Rel." is the release that first satisfi
 
 ---
 
-## 4. Release 0.2 — Milestone 1: transcript → predictions → validation plans
+## 4. Release 0.2 — Milestone 1: transcript → predictions → validation plans (delivered)
 
 **Objective.** The analysis core works end-to-end on an imported transcript, with no media processing in the loop.
 
-| Item | Req. | Agent | Depends on |
+| Item | Req. | Agent | Done |
 |---|---|---|---|
-| Spike S-1: Drizzle + `node:sqlite`; adopt or keep plain SQL | PS-01 | AG-11 | — |
-| Migration 002: `videos`, `transcript_segments`, `predictions`, `prediction_components`, `prediction_revisions`, `validation_plans`; pre-migration backup | RT-04, PS-01 | AG-11 | S-1 |
-| Transcript import: SRT/VTT/TXT/JSON parsers → segments; video record with `source_kind = transcript` | IN-01, IN-05, IN-06 | AG-05 | 002 |
-| Spike S-2: structured output via AI SDK vs. prompt-and-parse on Anthropic, OpenAI, and two LM Studio models | SP-04, PX-08 | AG-13 | — |
-| `prediction.extract` job: windowed transcript (≈12 min with 2-min overlap) → extraction prompt → Zod-validated predictions; dedupe across windows keeping occurrences | PX-01..06, PX-08 | AG-05 | S-2, 002 |
-| Prompt templates (`extraction v1`, `plan v1`) as versioned files with user override in Setup | SP-10 | AG-13 | — |
-| `plan.generate` job: prediction + context → structured plan + executable research prompt; versioned; user edit creates v+1 | VP-01..03 | AG-05 | 002 |
-| Library page (import transcript, list videos, delete with cascade), video page with transcript | UX-01, UX-02 | AG-10 | 002 |
-| Predictions table (grouped by video; Result/Time-status columns show "not researched") + detail panel with quotation, components, plan viewer/editor, accept/dismiss/merge/split | UX-03, UX-04, PX-07 | AG-10 | above |
-| Fixtures: 3 human-reviewed transcripts (`fixtures/transcripts/*.json`) with labeled expected predictions incl. the worked example ("data center approvals…") | — | AG-14 | — |
-| Tests: parsers; dedupe; date resolution ("within two years" from statement date; unknown date stays unknown); compound split; malformed output retry | — | AG-14 | above |
+| Spike S-1 (Drizzle) / S-2 (AI SDK) | PS-01, PX-08 | AG-11 / AG-13 | **Deferred to 0.3** — registry access unavailable; see ADR-012. 0.2 ships with zero new runtime dependencies. |
+| Migration 002: `videos`, `transcript_segments`, `predictions`, `prediction_components`, `prediction_revisions`, `validation_plans`, `prompt_templates`; pre-migration backup to `backups/`; SAVEPOINT nested transactions | RT-04, PS-01 | AG-11 | ✓ |
+| Transcript import: SRT / WebVTT (collapses YouTube repeat cues) / plain text (optional stamps + speaker) / JSON (ours + Whisper shape); format auto-detect; warnings surfaced | IN-01, IN-05, IN-06 | AG-05 | ✓ |
+| Segment corrections stored separately from immutable original text | IN-06 | AG-05 | ✓ |
+| Windowing (12 min / 2 min overlap, never splits a segment), quote locator (fuzzy, maps model quotes back to timestamps + context), rule-based deadline resolver (relative from statement date, absolute without, model fallback recorded, never invented), cross-window dedupe keeping all occurrences | PX-02, PX-03, PX-06 | AG-05 | ✓ |
+| Prompt templates `extraction.v1`, `plan.v1` (untrusted content in delimited user blocks; app owns dates and vocabulary); user override of system instructions via Setup | SP-10, SC-04 | AG-13 | ✓ |
+| Zod + JSON-Schema output contracts; structured completion with one repair attempt then visible failure; privacy switch enforced; shared per-minute rate limiter | PX-08, SP-08, PS-04 | AG-13 | ✓ |
+| `prediction.extract` job (progress per window; re-runs preserve user-touched predictions — ADR-013) and `plan.generate` job (immutable versions with provider/model/template/time) | PX-01..07, VP-01..03 | AG-05 | ✓ |
+| Prediction service: edit (revisions), accept/dismiss/restore, merge (occurrences preserved), split (component → own prediction) | PX-07 | AG-05 | ✓ |
+| API routes for videos, predictions, plans, templates (`docs/API.md`) | — | AG-13 | ✓ |
+| Dashboard: hash router; Library (drag-drop/paste transcript import, extraction with live progress); Video page (metadata edit, transcript with corrections and prediction highlighting); Predictions table grouped by video with filters (video/topic/status/deadline) + detail panel (quote, facts, components, ambiguities, plan viewer/editor with versions, history, accept/dismiss/edit/split/merge); Jobs tab; template editor in Setup | UX-01..04, UX-06 | AG-10 | ✓ |
+| Fixtures: worked-example transcript + expected outcomes + canned model outputs (`fixtures/`) | — | AG-14 | ✓ |
+| Tests: parsers, windowing, quote locator, dates, dedupe (9); core DB/secrets/jobs incl. savepoints (4); end-to-end pipeline with a fake model incl. malformed output and offline switch (2) | — | AG-14 | ✓ 15/15 |
 
-**Acceptance criteria for 0.2**
+**Acceptance criteria for 0.2 — status**
 
-| # | Criterion |
-|---|---|
-| B1 | Importing the 30-minute fixture transcript creates one video and N segments with monotonically increasing timestamps; a prediction whose sentence spans two extraction windows is extracted exactly once with both occurrences recorded. |
-| B2 | Importing a transcript with no predictive statements results in an empty predictions list and a visible "No predictions found" state — not an error. |
-| B3 | For the worked example, extraction yields a parent prediction with three components (future approval restriction; cancellation premise; causal link), geography flagged ambiguous, deadline = statement date + 2 years with basis recorded; when the transcript carries no date, deadline is *unknown* and no date is invented. |
-| B4 | "might" in the source is never rendered as "will" in the normalized statement (fixture check). |
-| B5 | A validation plan is generated and stored with provider, model, template version, and time; editing it produces version 2 while version 1 remains readable. |
-| B6 | Extraction with a local LM Studio model completes with internet disabled. |
-| B7 | A deliberately malformed model response (fixture provider) is retried once, then surfaced as a failed job with the validation error visible and a Retry button. |
-| B8 | Killing the server mid-extraction and restarting re-queues the job and it completes without duplicate predictions. |
+| # | Criterion | Status |
+|---|---|---|
+| B1 | 30-minute fixture: monotonic timestamps; boundary-spanning prediction extracted once with both occurrences. | Windowing/dedupe unit-tested with a 200-segment synthetic transcript and overlapping candidates; a real 30-minute labeled transcript is still to be added to `fixtures/` (open item for 0.3). |
+| B2 | Transcript with no predictions → empty list + "No predictions found" state. | Implemented (job stage text + Video page empty state); covered by fake-model path returning `[]` — add explicit fixture in 0.3. |
+| B3 | Worked example: parent with future_claim / premise / causal_link; geography flagged; deadline = statement date + 2 years with basis; unknown date → unknown deadline, nothing invented. | **Verified** by `pipeline.test.ts` and `analysis.test.ts` (fake model supplies the extraction; the app derives dates, locations, ambiguities). |
+| B4 | "might" never becomes "will". | Enforced by prompt rule 2 and checked on the fixture; real-model behaviour to be measured by Promptfoo in 1.0. |
+| B5 | Plan stored with provider/model/template/time; editing creates v2, v1 intact. | **Verified** by `pipeline.test.ts`. |
+| B6 | Extraction with a local model completes with internet disabled. | **Verified** (fake local provider, `allowInternet=false`). Cloud provider correctly refused. |
+| B7 | Malformed output retried once, then surfaced as a failed job with Retry. | **Verified** (repair prompt sent; job fails with schema message; existing predictions untouched). |
+| B8 | Kill mid-extraction, restart → job re-queued, completes without duplicates. | Queue recovery verified in `core.test.ts`; duplicate-safety on re-run verified in `pipeline.test.ts`; a literal kill-and-restart run awaits the first real machine. |
 
----
+**Verification status (2026-09-11).** Executed in the cloud sandbox on Node 22.22: 15/15 tests. The pipeline test ran against a minimal zod-compatible shim because the registry was unreachable; real `zod` must be confirmed on first `npm test`. Not executed anywhere yet: `npm install` / `npm run build` / `npm start`, the React build, and any browser interaction. Windows and macOS remain unverified. **First-run steps:** `npm run setup` → `npm test` → `npm start` → import `fixtures/transcripts/data-center-approvals.srt` with published date 2025-11-03 → Extract → Generate plan.
 
 ## 5. Release 0.3 — Milestone 2: research → evidence → assessments → dashboard
 
 | Item | Req. | Agent | Depends on |
 |---|---|---|---|
+| Spikes S-1 (Drizzle) and S-2 (AI SDK) — moved from 0.2 (ADR-012); adopt only if they reduce code | — | AG-11, AG-13 | verified build |
 | Migration 003: `research_runs`, `sources`, `evidence_items`, `assessments`, `component_assessments` | PS-01 | AG-11 | 0.2 |
 | `SearchProvider`: Brave (first), SearXNG, Tavily; provider-native adapters for Anthropic and OpenAI web search | SP-06, RS-01 | AG-13 | — |
 | `SourceFetcher`: SSRF guard, redirects, limits, Readability extraction, snapshot to `artifacts/`, canonical URL + syndication detection | RS-07, RS-03 | AG-13 + AG-15 review | — |

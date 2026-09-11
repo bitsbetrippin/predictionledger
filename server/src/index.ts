@@ -22,6 +22,7 @@ import { BIND_HOST, PORT_SEARCH_RANGE, APP_VERSION, isDevMode, resolvePort } fro
 import { createContext } from "./context.js";
 import { registerCsrfGuard } from "./security/csrf.js";
 import { registerRoutes } from "./routes/index.js";
+import { registerContentRoutes } from "./routes/content.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const webDist = path.resolve(here, "..", "..", "web", "dist");
@@ -31,7 +32,7 @@ async function main(): Promise<void> {
 
   const app = Fastify({
     logger: { level: process.env.PL_LOG_LEVEL ?? "info", redact: ["req.headers.authorization", "req.headers['x-api-key']"] },
-    bodyLimit: 1024 * 1024, // 1 MiB for JSON. Media uploads (Release 0.2) use a separate multipart route with its own limit.
+    bodyLimit: 25 * 1024 * 1024, // 25 MiB: transcript imports arrive as JSON text. Media uploads (Release 0.4) use multipart with its own limit.
   });
 
   // Hardening headers for the dashboard.
@@ -53,6 +54,7 @@ async function main(): Promise<void> {
     ...(isDevMode() ? ["http://localhost:5173", "http://127.0.0.1:5173"] : []),
   ]);
   registerRoutes(app, ctx);
+  registerContentRoutes(app, ctx);
 
   if (fs.existsSync(webDist)) {
     await app.register(fastifyStatic, { root: webDist, prefix: "/", wildcard: false });

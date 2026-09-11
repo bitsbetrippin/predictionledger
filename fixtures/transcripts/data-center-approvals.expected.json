@@ -1,0 +1,29 @@
+{
+  "_comment": "Human-reviewed expectations for fixtures/transcripts/data-center-approvals.srt. Used by the pipeline test with a fake model and by Promptfoo evals (Release 1.0) with real models. publishedAt for this fixture is 2025-11-03.",
+  "publishedAt": "2025-11-03",
+  "mustExtract": [
+    {
+      "quoteContains": "within two years, data center approvals will be narrowed down to government lands",
+      "startS": 12.1,
+      "endS": 19.8,
+      "timeExpression": "within two years",
+      "deadlineDate": "2027-11-03",
+      "deadlineBasis": "rule:relative",
+      "geographyStated": false,
+      "components": ["future_claim", "premise", "causal_link"],
+      "ambiguityKeywords": ["geograph", "narrowed"]
+    },
+    {
+      "quoteContains": "hashprice might recover next year",
+      "modalityPreserved": "might",
+      "deadlineDate": "2026-11-03",
+      "components": ["future_claim"]
+    }
+  ],
+  "mustNotExtract": [
+    { "reason": "historical fact", "quoteContains": "we crossed 200,000 subscribers" },
+    { "reason": "question", "quoteContains": "Do you think Bitcoin ETFs will keep absorbing supply" },
+    { "reason": "wish, not forecast", "quoteContains": "I'd love to see more transparent power reporting" },
+    { "reason": "premise about the past, not a prediction", "quoteContains": "Last year we saw at least a dozen county boards" }
+  ]
+}

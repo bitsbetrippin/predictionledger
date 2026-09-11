@@ -10,6 +10,8 @@ import { openDatabase, type Database } from "./db/index.js";
 import { JobQueue } from "./jobs/queue.js";
 import { makeExtractHandler } from "./jobs/handlers/extract.js";
 import { makePlanHandler } from "./jobs/handlers/plan.js";
+import { makeResearchHandler } from "./jobs/handlers/research.js";
+import { makeAssessHandler } from "./jobs/handlers/assess.js";
 import { SecretStore } from "./security/secrets.js";
 import { SettingsService } from "./settings.js";
 import { RateLimiter } from "./analysis/structured.js";
@@ -17,6 +19,8 @@ import { VideoService } from "./services/videos.js";
 import { PredictionService } from "./services/predictions.js";
 import { PlanService } from "./services/plans.js";
 import { TemplateService } from "./services/templates.js";
+import { ResearchService } from "./services/research.js";
+import { GuardedFetcher, type SourceFetcher } from "./research/fetcher.js";
 
 export interface AppContext {
   paths: DataPaths;
@@ -30,9 +34,11 @@ export interface AppContext {
   predictions: PredictionService;
   plans: PlanService;
   templates: TemplateService;
+  research: ResearchService;
+  fetcher: SourceFetcher;
 }
 
-export function createContext(): AppContext {
+export function createContext(overrides: Partial<Pick<AppContext, "fetcher">> = {}): AppContext {
   const paths = resolveDataPaths();
   ensureDataDirs(paths);
   const { db, schemaVersion } = openDatabase(paths);
@@ -53,10 +59,18 @@ export function createContext(): AppContext {
     predictions: new PredictionService(db),
     plans: new PlanService(db),
     templates: new TemplateService(db),
+    research: new ResearchService(db, paths.artifacts),
+    fetcher: overrides.fetcher ?? new GuardedFetcher(),
   };
 
   // Job handlers (Release 0.2). Later releases register audio/transcript/research/assessment kinds.
   jobs.register("prediction.extract", makeExtractHandler(ctx));
   jobs.register("plan.generate", makePlanHandler(ctx));
+  jobs.register("research.run", makeResearchHandler(ctx));
+  jobs.register("assessment.run", makeAssessHandler(ctx));
+
+  // Research runs interrupted by a crash: the job queue re-runs the job, which creates a new run.
+  const orphaned = ctx.research.failOrphanedRuns();
+  if (orphaned) console.log(`[research] marked ${orphaned} interrupted run(s) as failed`);
   return ctx;
 }

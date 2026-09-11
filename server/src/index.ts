@@ -23,6 +23,7 @@ import { createContext } from "./context.js";
 import { registerCsrfGuard } from "./security/csrf.js";
 import { registerRoutes } from "./routes/index.js";
 import { registerContentRoutes } from "./routes/content.js";
+import { registerResearchRoutes } from "./routes/research.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const webDist = path.resolve(here, "..", "..", "web", "dist");
@@ -55,6 +56,7 @@ async function main(): Promise<void> {
   ]);
   registerRoutes(app, ctx);
   registerContentRoutes(app, ctx);
+  registerResearchRoutes(app, ctx);
 
   if (fs.existsSync(webDist)) {
     await app.register(fastifyStatic, { root: webDist, prefix: "/", wildcard: false });

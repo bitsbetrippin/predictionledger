@@ -1,0 +1,29 @@
+{
+  "_comment": "SYNTHETIC canned evidence-extraction replies keyed by source URL. Component ids are placeholders (FC/PR/CL) that the test substitutes with real ids. One excerpt is deliberately invented (not in the page) to prove the app discards it.",
+  "https://county-news.example/2026/02/permit-cancelled": {
+    "items": [
+      { "component_id": "PR", "stance": "supports", "excerpt": "The Madison County board voted 5–2 on Tuesday, February 10, 2026, to cancel the special-use permit for the proposed 300 megawatt data center campus", "fact": "A county cancelled a data center permit in Feb 2026.", "event_date": "2026-02-10", "action_stage": "completed", "quality_notes": "Single local example; local news report." },
+      { "component_id": "FC", "stance": "supports", "excerpt": "The governor signed an order restricting all new data center approvals to state-owned land.", "fact": "INVENTED — should be discarded", "event_date": "2026-02-10", "action_stage": "enacted", "quality_notes": null }
+    ],
+    "page_relevance": "medium"
+  },
+  "https://regional-wire.example/story/permit-cancelled-madison": {
+    "items": [
+      { "component_id": "PR", "stance": "supports", "excerpt": "It is the third permit cancellation in the region in six months, according to county records.", "fact": "Three cancellations in six months in one region.", "event_date": "2026-02-10", "action_stage": "completed", "quality_notes": "Wire copy of the county-news story." }
+    ],
+    "page_relevance": "medium"
+  },
+  "https://state-energy.example/reports/siting-h1-2026": {
+    "items": [
+      { "component_id": "FC", "stance": "contradicts", "excerpt": "Of the 42 data center projects that received local approval in the state between January 1 and June 30, 2026, 39 were sited on privately owned land and 3 on state- or municipally-owned parcels.", "fact": "Private land dominated approvals in H1 2026 in one state.", "event_date": "2026-06-30", "action_stage": "completed", "quality_notes": "Primary data but one state only; deadline still pending." },
+      { "component_id": "PR", "stance": "supports", "excerpt": "Seven previously approved projects had their permits revoked or withdrawn during the same period, most often over water and grid-capacity concerns.", "fact": "Permit revocations continue.", "event_date": "2026-06-30", "action_stage": "completed", "quality_notes": null }
+    ],
+    "page_relevance": "high"
+  },
+  "https://federal-energy.example/news/data-center-sites-2026": {
+    "items": [
+      { "component_id": "FC", "stance": "supports", "excerpt": "the department announced that it intends to issue a request for proposals later this year for AI data centers on four federally owned sites", "fact": "Federal solicitation announced, not awarded.", "event_date": "2026-05-01", "action_stage": "announced", "quality_notes": "Press release; announcement only." }
+    ],
+    "page_relevance": "high"
+  }
+}

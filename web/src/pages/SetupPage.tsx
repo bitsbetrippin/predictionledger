@@ -254,6 +254,18 @@ export function SetupPage() {
         )}
       </fieldset>
 
+      <h2>Research</h2>
+      <fieldset className="card">
+        <label className="row">
+          <input type="checkbox" checked={settings.research.reviewPlanBeforeResearch} onChange={(e) => update((s) => ((s.research.reviewPlanBeforeResearch = e.target.checked), s))} />
+          <span>Review the validation plan before research (when off, “Research” generates a plan and continues automatically).</span>
+        </label>
+        <div className="grid-3">
+          <NumberField label="Suggest recheck after (days)" value={settings.research.recheckAfterDays} min={1} max={365} onChange={(v) => update((s) => ((s.research.recheckAfterDays = v), s))} />
+          <NumberField label="Max characters per source sent to the model" value={settings.research.maxSourceChars} min={1000} max={60000} onChange={(v) => update((s) => ((s.research.maxSourceChars = v), s))} />
+        </div>
+      </fieldset>
+
       <h2>Limits and budgets</h2>
       <fieldset className="card grid-4">
         <NumberField label="Concurrent jobs" value={settings.limits.concurrency} min={1} max={8} onChange={(v) => update((s) => ((s.limits.concurrency = v), s))} />

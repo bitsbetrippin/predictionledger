@@ -35,7 +35,10 @@ export function LibraryPage() {
 
   return (
     <section className="page">
-      <h1>Video Library</h1>
+      <div className="row space-between">
+        <h1>Video Library</h1>
+        <span className="row small">Export: <a href="/api/export/json" download>JSON</a> · <a href="/api/export/csv" download>CSV</a> <span className="muted">(never includes API keys)</span></span>
+      </div>
       {error && <div className="banner error" role="alert">{error}</div>}
 
       <div className="import-grid">

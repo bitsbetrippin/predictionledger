@@ -53,12 +53,29 @@ Base URL `http://127.0.0.1:7317`. JSON in/out. Every `POST`/`PUT`/`PATCH`/`DELET
 | GET | `/api/templates` | Built-in version + body, and any override, for `extraction` and `plan`. |
 | PUT | `/api/templates/:name` | `{ body: string\|null }` — override the system instructions; `null` resets. |
 
+## Release 0.3
+
+### Research and assessments
+| Method | Path | Body / notes |
+|---|---|---|
+| POST | `/api/predictions/:id/research` | `{ planId?, autoPlan? }` → `202 { jobId, stage: "plan"\|"research" }`. Uses the latest plan (or generates one first when `autoPlan` and review mode is off). `409` with a reason when no search provider, internet off, or review mode requires a plan — nothing is enqueued. Recheck = call again. |
+| GET | `/api/predictions/:id/runs` | Research runs, newest first (status, queries with per-query result counts/errors, coverage notes, budgets used). |
+| GET | `/api/runs/:id` | Run + its `evidence[]` (each with `source`). |
+| GET | `/api/predictions/:id/assessments` | Assessment versions, newest first, each with component assessments, citations, guard notes. |
+| GET | `/api/sources/:id` | Source record + extracted text (≤ 200k chars). |
+| GET | `/api/export/json` | `ExportBundle` (videos, predictions, plans, runs, sources, evidence, assessments). Never settings or secrets. |
+| GET | `/api/export/csv` | One row per prediction with latest assessment; UTF-8 BOM. |
+
+`GET /api/predictions` now includes `result` (latest `ResultSummary`) and `processingStatus` (`not_researched\|running\|completed\|failed`), and accepts `result=<evidence assessment>` or `result=not_researched` as a filter. `GET /api/predictions/:id` adds `runs[]` and `assessments[]`.
+
 ## Job kinds and payloads
 
 | Kind | Payload | Subject | Result |
 |---|---|---|---|
 | `prediction.extract` | `{ videoId }` | `video` | `{ windows, candidates, created, matchedExisting, notes[] }` |
-| `plan.generate` | `{ predictionId }` | `prediction` | `{ planId, version, attempts }` |
+| `plan.generate` | `{ predictionId, thenResearch? }` | `prediction` | `{ planId, version, attempts }` — with `thenResearch` it enqueues `research.run` |
+| `research.run` | `{ predictionId, planId }` | `prediction` | `{ runId, searches, sources, evidence, rejected, coverage[] }` — enqueues `assessment.run` on completion |
+| `assessment.run` | `{ predictionId, runId }` | `prediction` | `{ assessmentId, version, guardNotes[] }` or `{ …, deterministic: true }` for zero-evidence runs |
 
 Failure messages users will see: `Stage "extraction" is routed to … which is disabled in Setup`, `… has no API key saved`, `Internet access is disabled in Setup → Privacy …`, `Model returned output that did not match the … schema after a repair attempt.`, plus the provider's own HTTP error text.
 

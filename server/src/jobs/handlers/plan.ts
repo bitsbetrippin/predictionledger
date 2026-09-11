@@ -82,7 +82,13 @@ export function makePlanHandler(ctx: AppContext) {
       templateVersion: template.effectiveVersion,
       jobId: job.id,
     });
-    job.progress(100, `Plan v${plan.version} saved`);
+    // Auto-continue (VP-04): when research was requested and no plan existed, chain into research.run.
+    if (job.payload.thenResearch === true) {
+      ctx.jobs.enqueue({ kind: "research.run", subjectType: "prediction", subjectId: predictionId, payload: { predictionId, planId: plan.id }, dedupeKey: `research.run:${predictionId}`, maxAttempts: 1 });
+      job.progress(100, `Plan v${plan.version} saved; researching…`);
+    } else {
+      job.progress(100, `Plan v${plan.version} saved`);
+    }
     return { planId: plan.id, version: plan.version, attempts: result.attempts };
   };
 }

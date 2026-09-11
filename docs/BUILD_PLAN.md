@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Baseline** | Architecture ov1 (`docs/ARCHITECTURE.md`) |
-| **Current release** | 0.2 — Milestone 1: transcript → predictions → validation plans (this repository state) |
+| **Current release** | 0.3 — Milestone 2: research → evidence → assessments → dashboard (this repository state) |
 | **MVP target** | 1.0 — end-to-end: video → predictions → plan → research → verdict, on Windows and macOS |
 | **Original concept** | Michael D. Carter (BitsBeTrippin) · Engineering support: Claude AI |
 
@@ -23,7 +23,7 @@ gantt
   section Milestone 1
   0.2 Transcript import → predictions → plans :done, r02, after r01, 2
   section Milestone 2
-  0.3 Research → evidence → assessments       :r03, after r02, 2
+  0.3 Research → evidence → assessments       :done, r03, after r02, 2
   section Milestone 3
   0.4 Local video → timestamped transcription :r04, after r03, 2
   section Milestone 4
@@ -223,37 +223,40 @@ IDs are stable; wording may be refined. "Rel." is the release that first satisfi
 
 **Verification status (2026-09-11).** Executed in the cloud sandbox on Node 22.22: 15/15 tests. The pipeline test ran against a minimal zod-compatible shim because the registry was unreachable; real `zod` must be confirmed on first `npm test`. Not executed anywhere yet: `npm install` / `npm run build` / `npm start`, the React build, and any browser interaction. Windows and macOS remain unverified. **First-run steps:** `npm run setup` → `npm test` → `npm start` → import `fixtures/transcripts/data-center-approvals.srt` with published date 2025-11-03 → Extract → Generate plan.
 
-## 5. Release 0.3 — Milestone 2: research → evidence → assessments → dashboard
+## 5. Release 0.3 — Milestone 2: research → evidence → assessments → dashboard (delivered)
 
-| Item | Req. | Agent | Depends on |
+| Item | Req. | Agent | Done |
 |---|---|---|---|
-| Spikes S-1 (Drizzle) and S-2 (AI SDK) — moved from 0.2 (ADR-012); adopt only if they reduce code | — | AG-11, AG-13 | verified build |
-| Migration 003: `research_runs`, `sources`, `evidence_items`, `assessments`, `component_assessments` | PS-01 | AG-11 | 0.2 |
-| `SearchProvider`: Brave (first), SearXNG, Tavily; provider-native adapters for Anthropic and OpenAI web search | SP-06, RS-01 | AG-13 | — |
-| `SourceFetcher`: SSRF guard, redirects, limits, Readability extraction, snapshot to `artifacts/`, canonical URL + syndication detection | RS-07, RS-03 | AG-13 + AG-15 review | — |
-| `research.run` job: execute plan queries (neutral/supporting/disconfirming) within budgets; fetch top sources; store evidence with stance, component, action stage, dates; record cutoff and coverage notes | RS-02..06 | AG-05 | above |
-| `assessment.run` job: assessment prompt over *stored* evidence only → two-field verdict, component assessments, explanation, citations, uncertainty, confidence rubric, recheck date | VD-01..03 | AG-05 | above |
-| Recheck = new run + new assessment version; history view | VD-04 | AG-05 | — |
-| Rate limiter + response cache per provider; per-run budget enforcement | PS-04, SP-07 | AG-13 | — |
-| Dashboard: full predictions table, filters, evidence panel with source links, assessment history, Research/Retry/Recheck controls; "review plan before research" toggle | UX-03..06, VP-04 | AG-10 | — |
-| JSON/CSV export (no credentials) | PS-02 | AG-11 | — |
-| Fixtures: labeled evidence sets (synthetic, clearly marked) for supported / contradicted / mixed / insufficient / not-assessable | — | AG-14 | — |
+| Spikes S-1/S-2 (Drizzle, AI SDK) | — | AG-11/AG-13 | **Still deferred** — registry unavailable again; moved to 1.0 hardening (ADR-012). Zero new runtime dependencies in 0.3. |
+| Migration 003: `research_runs`, `sources`, `run_results`, `evidence_items`, `assessments`, `component_assessments`, `search_cache` | PS-01 | AG-11 | ✓ |
+| `SearchProvider` + adapters: Brave, Tavily, SearXNG (local), Anthropic native web search, OpenAI native web search; 24 h result cache; per-run search budget | SP-06, RS-01, RS-02, PS-04 | AG-13 | ✓ (adapters statically reviewed; live calls need a machine with network) |
+| `SourceFetcher`: http/https only, credentials stripped, DNS-resolved private/loopback/link-local/CGNAT/metadata ranges refused, redirects re-checked, 5 MB / 20 s caps, content-type allow-list, snapshots to `artifacts/sources/` | RS-07 | AG-13 + AG-15 | ✓ unit-tested with an injected resolver/HTTP client |
+| Built-in HTML extractor (title, canonical, published date, publisher, article text); canonical URL + tracking-param stripping; syndication detection by content hash (earliest published = original) | RS-03 | AG-05 | ✓ (ADR-014) |
+| `research.run` job: plan queries round-robin across neutral/supporting/disconfirming within budget; fetch top distinct sources within budget; per-page evidence extraction (template `evidence.v1`); **excerpts verified against page text or discarded**; component/stance/date/action-stage/in-window recorded; coverage notes; chains into assessment | RS-01..06, SC-04 | AG-05 | ✓ |
+| `assessment.run` job: two-field verdict; time status computed by app; zero evidence → deterministic *insufficient* (no model call); model verdict constrained by **verdict guard G1–G7** with notes; citations validated against the run's evidence set; later developments separated; recheck date suggested | VD-01..04 | AG-05 | ✓ (ADR-015) |
+| Assessment versions per prediction; recheck = new run + new version; history preserved | VD-04 | AG-11 | ✓ |
+| Auto-continue (plan → research → assessment) and "review plan before research" mode | VP-04 | AG-05 | ✓ |
+| API: research/recheck, runs, assessments, sources, JSON + CSV export (no settings/secrets) | PS-02 | AG-13 | ✓ (`docs/API.md`) |
+| Dashboard: Result / Time status / Brief explanation / Sources / Last checked columns; Result filter; verdict card with guard notes; Evidence tab grouped by component with stance/stage/date/syndication chips and source links; assessment + run history; Research / Recheck buttons following the job chain; Research settings in Setup; export links | UX-03..06 | AG-10 | ✓ (statically checked) |
+| Fixtures: four synthetic pages, canned search results (incl. a failing query and a private-address result), evidence outputs (incl. an invented excerpt), an over-claiming assessment output | — | AG-14 | ✓ |
+| Tests: URL safety (3), HTML extraction + excerpt verification (2), fetcher guard (1), verdict guard (2), research pipeline end to end (1) | — | AG-14 | ✓ 24/24 total |
+| `docs/WORKED_EXAMPLE.md` — the spec's worked example, backed by the fixtures and the pipeline test | — | AG-16 | ✓ |
 
-**Acceptance criteria for 0.3**
+**Acceptance criteria for 0.3 — status**
 
-| # | Criterion |
-|---|---|
-| C1 | With search provider = none (or internet off), Research leaves the prediction at *not researched / deadline pending|unknown* with an explanatory banner — never *contradicted*. |
-| C2 | A search provider outage mid-run yields *insufficient evidence* with coverage notes naming the failed queries; the job is *failed* with Retry available and no assessment row is created. |
-| C3 | Mixed-evidence fixture yields *partially supported* with both supporting and contradicting items cited per component; the explanation is 2–4 sentences. |
-| C4 | Pending-deadline fixture: time status *deadline pending*; evidence assessment may be *insufficient evidence*; the row never shows a failure. |
-| C5 | Worked example: local permit-cancellation evidence alone yields *supported* for the premise component and *insufficient evidence* for the "approvals narrowed to government land" component; overall is *insufficient evidence* or *partially supported* with the reason stated — never *supported*. |
-| C6 | Every citation in an assessment resolves to a stored `sources` row retrieved by the app; a model-invented URL is rejected by validation. |
-| C7 | A local LM Studio model can produce an assessment from stored evidence with internet disabled after research has run. |
-| C8 | Recheck creates assessment version 2; version 1 remains visible in history with its research date. |
-| C9 | Exported JSON contains no `secrets` fields; CSV opens in Excel with one row per prediction. |
+| # | Criterion | Status |
+|---|---|---|
+| C1 | Search provider = none or internet off → research not started; row stays *not researched* with an explanatory message. | **Implemented**: `POST /research` returns 409 with the reason and enqueues nothing. |
+| C2 | Provider outage mid-run → *failed* run with coverage notes, Retry available, no assessment row. | **Verified** in `research-pipeline.test.ts` (every search fails → run failed, zero assessments). |
+| C3 | Mixed evidence → *partially supported* with supporting and contradicting items cited per component; 2–4 sentence explanation. | Fixture path verified: premise supported, future claim capped, state data contradicting; explanation length is a prompt rule (Promptfoo in 1.0). |
+| C4 | Pending deadline → time status *pending*; verdict may be insufficient; never shown as failure. | **Verified** (deadline 2027-11-03 → pending; recheck suggested). |
+| C5 | Worked example: cancellation evidence alone → premise supported, future claim not supported, overall never *supported*. | **Verified** (guard G2/G4 downgrade; notes recorded). |
+| C6 | Every citation resolves to a stored source retrieved by the app; invented ids rejected. | **Verified** (G1 drops the ghost id; invented excerpt discarded before assessment). |
+| C7 | Local LM Studio model can assess stored evidence with internet off after research ran. | Assessment job never touches the network; the offline switch only gates cloud providers. Verified with the local fake provider; note: research itself requires internet. |
+| C8 | Recheck creates assessment v2; v1 and its evidence set remain. | **Verified**. |
+| C9 | JSON export has no secrets; CSV has one row per prediction. | **Verified** for CSV (BOM, header, row count, secret string absent); JSON route statically reviewed. |
 
----
+**Verification status (2026-09-11).** Executed in the cloud sandbox on Node 22.22: 24/24 tests (pipeline tests against the minimal zod shim). Not executed: any live search provider or real web fetch, `npm install`/`build`/`start`, the React build, browser interaction, Windows/macOS. The linked machine still has no `node_modules`.
 
 ## 6. Release 0.4 — Milestone 3: local video → timestamped transcription
 

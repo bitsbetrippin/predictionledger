@@ -136,3 +136,26 @@ h4 { font-size: 13px; margin: 12px 0 4px; color: var(--muted); text-transform: u
 .plan .prompt { white-space: pre-wrap; background: var(--bg); padding: 10px; border-radius: 6px; font-size: 12px; max-height: 320px; overflow: auto; }
 .history li { font-size: 13px; }
 details summary { cursor: pointer; }
+
+/* ---- Release 0.3 additions ---------------------------------------------- */
+.verdict { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1px solid var(--border); }
+.v-supported { background: var(--chip-local); color: var(--ok); }
+.v-partially_supported { background: #fff4e5; color: #7a3e00; }
+.v-contradicted { background: #fdecec; color: var(--error); }
+.v-insufficient, .v-not_assessable { background: var(--bg); color: var(--muted); }
+@media (prefers-color-scheme: dark) { .v-partially_supported { background: #3a2a10; color: #f5c27b; } .v-contradicted { background: #3a1616; } }
+.verdict-card { border: 1px solid var(--border); border-left-width: 4px; border-radius: 8px; padding: 10px 12px; margin: 10px 0; background: var(--bg); }
+.verdict-card.v-supported { border-left-color: var(--ok); background: var(--bg); color: inherit; }
+.verdict-card.v-contradicted { border-left-color: var(--error); background: var(--bg); color: inherit; }
+.verdict-card.v-partially_supported { border-left-color: #d97706; background: var(--bg); color: inherit; }
+.verdict-card p { margin: 6px 0; }
+.explain { max-width: 360px; font-size: 13px; }
+.evidence-group { margin: 10px 0 14px; }
+.evidence-card { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; margin: 6px 0; background: var(--surface); }
+.evidence-card.cited { border-color: var(--accent); }
+.evidence-card blockquote { margin: 6px 0; padding-left: 10px; border-left: 3px solid var(--border); font-size: 13px; }
+.chip.stance-supports { background: var(--chip-local); }
+.chip.stance-contradicts { background: #fdecec; color: var(--error); }
+.chip.stance-context { background: var(--bg); }
+.chip.late { background: #fff4e5; color: #7a3e00; }
+@media (prefers-color-scheme: dark) { .chip.stance-contradicts { background: #3a1616; } .chip.late { background: #3a2a10; color: #f5c27b; } }

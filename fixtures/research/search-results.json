@@ -1,0 +1,15 @@
+{
+  "_comment": "SYNTHETIC canned search results keyed by query string, used by research-pipeline.test.ts. Queries mirror fixtures/model-outputs/plan.data-center-approvals.json. One query fails on purpose; one result points at a private address on purpose.",
+  "data center siting government land 2026": [
+    { "url": "https://state-energy.example/reports/siting-h1-2026?utm_source=test", "title": "Mid-year data center siting report, H1 2026", "snippet": "Of the 42 projects approved…", "pageAge": "2026-07-15" },
+    { "url": "https://county-news.example/2026/02/permit-cancelled", "title": "County board cancels permit", "snippet": "voted 5–2…" }
+  ],
+  "federal land data center program approvals 2026": [
+    { "url": "https://federal-energy.example/news/data-center-sites-2026", "title": "Department announces intent…", "snippet": "intends to issue a request for proposals" }
+  ],
+  "county approves data center private land 2026": [
+    { "url": "https://regional-wire.example/story/permit-cancelled-madison", "title": "County board cancels permit (wire)" },
+    { "url": "http://192.168.1.5/internal-dashboard", "title": "SHOULD BE FILTERED — private address" }
+  ],
+  "__fail__": "where were new data centers approved 2026 2027"
+}

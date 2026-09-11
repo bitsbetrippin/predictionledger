@@ -426,9 +426,9 @@ Each dependency is adopted only after this table has a row (project rule). "Adop
 | @huggingface/transformers | Local Whisper (ONNX) | Apache-2.0 | npm; downloads `onnx-community/whisper-*` models (Apache-2.0/MIT) on first use | CPU-bound; WebGPU in Node is experimental; long files must be chunked (30 s windows with 5 s overlap) | **Adopt M3** (spike S-3) |
 | ffmpeg-static *or* system ffmpeg | Audio extraction | GPL-2+/LGPL (binary) | npm downloads platform binary, or user installs | GPL notice required if bundled; system install preferred on macOS via Homebrew | **Adopt M3** — default to system ffmpeg with `ffmpeg-static` as opt-in fallback |
 | yt-dlp | YouTube captions/audio | Unlicense | standalone binary downloaded to `tools/` after consent | Needs a JS runtime (Node qualifies); YouTube changes break it periodically → self-update path required; some videos need cookies/PO tokens and remain unavailable | **Adopt M4** (spike S-4) |
-| @mozilla/readability + linkedom | Evidence page extraction | Apache-2.0 / MIT | npm | paywalls and JS-rendered pages yield thin text → recorded as access limitation | **Adopt M2** |
-| Brave Search API | Search adapter #1 | commercial API | key in Setup | metered billing; attribution required for monthly credit | **Adopt M2** |
-| SearXNG | Self-hosted search adapter | AGPL-3.0 (server, not linked) | user runs it (Docker or pip) | quality varies by engines configured | **Adopt M2** (optional) |
+| @mozilla/readability + linkedom | Evidence page extraction | Apache-2.0 / MIT | npm | paywalls and JS-rendered pages yield thin text → recorded as access limitation | **Deferred to 1.0** — 0.3 ships a built-in extractor (ADR-014) |
+| Brave Search API | Search adapter #1 | commercial API | key in Setup | metered billing; attribution required for monthly credit | **Adopted 0.3** (plain fetch adapter) |
+| SearXNG | Self-hosted search adapter | AGPL-3.0 (server, not linked) | user runs it (Docker or pip) | quality varies by engines configured | **Adopted 0.3** (optional, local) |
 | promptfoo | Prompt regression evals | MIT | npm dev-dependency | dev-time only | **Adopt M5** |
 | whisper.cpp | Faster native transcription | MIT | compiled binary per platform | packaging burden | **Deferred** (post-MVP engine) |
 | GPT Researcher | Reference only | Apache-2.0 | — | Python; used as a design reference for the search→read→cite loop, not a dependency | **Reference** |

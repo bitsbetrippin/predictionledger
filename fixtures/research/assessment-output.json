@@ -1,0 +1,22 @@
+{
+  "_comment": "SYNTHETIC canned assessment reply. Deliberately over-claims 'supported' on the future claim (citing only an announcement) and cites one non-existent evidence id, so the test shows the app-side verdict guard downgrading and cleaning it. Evidence ids E_* are substituted by the test.",
+  "component_assessments": [
+    { "component_id": "FC", "assessment": "supported", "explanation": "A federal department announced it will solicit data center proposals on federal sites, indicating approvals are moving to government land.", "evidence_ids": ["E_FED"] },
+    { "component_id": "PR", "assessment": "supported", "explanation": "Multiple sources document local permit cancellations and revocations during 2026.", "evidence_ids": ["E_COUNTY", "E_STATE_PR"] },
+    { "component_id": "CL", "assessment": "insufficient", "explanation": "No source connects the cancellations to the federal announcement.", "evidence_ids": [] }
+  ],
+  "overall": {
+    "evidence_assessment": "supported",
+    "explanation": "Local permit cancellations are well documented and a federal solicitation for data centers on government sites was announced in May 2026. Together these suggest the prediction is coming true. State siting data still shows most approvals on private land as of mid-2026.",
+    "citations": [
+      { "claim": "Local permits keep being cancelled", "evidence_ids": ["E_COUNTY", "E_STATE_PR"] },
+      { "claim": "Approvals are shifting to federal land", "evidence_ids": ["E_FED", "E_GHOST"] }
+    ],
+    "supporting_ids": ["E_COUNTY", "E_STATE_PR", "E_FED"],
+    "contradicting_ids": ["E_STATE_FC"],
+    "later_developments": null,
+    "uncertainty": "Geography is unstated; the deadline (2027-11-03) has not been reached.",
+    "confidence": "high",
+    "confidence_rationale": "Official sources."
+  }
+}

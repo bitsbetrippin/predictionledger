@@ -68,3 +68,13 @@ One entry per decision that would be expensive to reverse. Newest at the bottom.
 **Context.** Users will re-run extraction (better model, corrected transcript). Blindly replacing rows would destroy edits, plans, and review decisions.
 **Decision.** A new extraction run deletes only *pending* predictions with no revisions and no plans, then skips candidates that closely match any surviving prediction (quote or normalized-statement similarity ≥ 0.8). Accepted, dismissed, edited, merged, or planned predictions are never touched by automation.
 **Consequences.** A genuinely different re-phrasing may be treated as "already present"; the user can still split/merge by hand.
+
+## ADR-014 — Built-in HTML extractor and fetch adapters for 0.3; Readability deferred
+**Context.** Registry access was still unavailable, and 0.3 needs page text for evidence. Mozilla Readability + linkedom remain the intended upgrade.
+**Decision.** Ship a dependency-free regex extractor (`research/htmlExtract.ts`: article/main preference, block-tag paragraphing, metadata for title/canonical/date/publisher) behind the `SourceFetcher` interface, with excerpt verification against the stored text. Search adapters (Brave, Tavily, SearXNG, Anthropic/OpenAI native) are plain `fetch`. Adopt Readability in 1.0 hardening if it measurably improves extraction on the fixture set.
+**Consequences.** JS-rendered and paywalled pages yield thin text (recorded as coverage limitations). PDFs are recorded as unsupported sources in 0.3.
+
+## ADR-015 — The verdict guard is code, not prompt
+**Context.** Verdict rules (no results ≠ false, pending ≠ failed, announced ≠ implemented, anecdotes ≠ trend, one source ≠ corroboration) must hold regardless of model behaviour or user prompt overrides.
+**Decision.** `research/verdictGuard.ts` applies rules G1–G7 deterministically after the model answers; it can only make a verdict more cautious, and every adjustment is stored in `guard_notes` and shown in the UI. Zero-evidence runs are assessed by rule without a model call. Excerpts must be found in the retrieved page text or they are discarded before assessment.
+**Consequences.** A model that over-claims is visibly corrected rather than trusted; a model that under-claims is left alone. Users can override prompts without weakening the rules.

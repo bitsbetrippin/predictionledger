@@ -27,15 +27,16 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 test("migrations apply in order and create the expected tables", () => {
   const paths = tempPaths();
   const { db, schemaVersion } = openDatabase(paths as never);
-  assert.equal(schemaVersion, 2);
+  assert.equal(schemaVersion, 3);
   const tables = db
     .all<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     .map((r) => r.name);
   assert.deepEqual(tables, [
-    "jobs", "prediction_components", "prediction_revisions", "predictions", "prompt_templates",
-    "schema_migrations", "secrets", "settings", "transcript_segments", "validation_plans", "videos",
+    "assessments", "component_assessments", "evidence_items", "jobs", "prediction_components", "prediction_revisions", "predictions",
+    "prompt_templates", "research_runs", "run_results", "schema_migrations", "search_cache", "secrets", "settings", "sources",
+    "transcript_segments", "validation_plans", "videos",
   ]);
-  assert.deepEqual(db.all<{ version: number }>("SELECT version FROM schema_migrations ORDER BY version").map((r) => r.version), [1, 2]);
+  assert.deepEqual(db.all<{ version: number }>("SELECT version FROM schema_migrations ORDER BY version").map((r) => r.version), [1, 2, 3]);
   db.close();
 });
 

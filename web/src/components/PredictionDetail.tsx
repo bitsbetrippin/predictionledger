@@ -5,23 +5,27 @@
  * Licensed under the Apache License 2.0 — see LICENSE and NOTICE in the repository root.
  */
 import { useEffect, useState } from "react";
-import type { ComponentKind, JobSummary, PredictionEdit, ValidationPlan } from "@prediction-ledger/shared";
-import { content, fmtClock, type PredictionFull } from "../api";
+import { EVIDENCE_ASSESSMENT_LABEL, TIME_STATUS_LABEL, type Assessment, type ComponentKind, type EvidenceItem, type JobSummary, type PredictionEdit, type ValidationPlan } from "@prediction-ledger/shared";
+import { content, fmtClock, type PredictionFull, type RunDetail } from "../api";
 
 const KIND_LABEL: Record<ComponentKind, string> = { future_claim: "future claim", premise: "premise", causal_link: "causal link" };
 
 export function PredictionDetail(props: {
   prediction: PredictionFull;
   planJob?: JobSummary;
+  researchJob?: JobSummary;
   onGeneratePlan: () => void;
+  onResearch: () => void;
   onChanged: () => Promise<void> | void;
   onClose: () => void;
 }) {
   const p = props.prediction;
-  const [tab, setTab] = useState<"plan" | "evidence" | "history">("plan");
+  const [tab, setTab] = useState<"plan" | "evidence" | "history">(p.assessments?.length ? "evidence" : "plan");
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const planRunning = props.planJob && (props.planJob.status === "queued" || props.planJob.status === "running");
+  const researchRunning = props.researchJob && (props.researchJob.status === "queued" || props.researchJob.status === "running");
+  const latest = p.assessments?.[0];
 
   const act = async (label: string, fn: () => Promise<unknown>) => {
     setBusy(label);
@@ -92,14 +96,31 @@ export function PredictionDetail(props: {
         <button type="button" className="primary" onClick={props.onGeneratePlan} disabled={!!planRunning}>
           {planRunning ? props.planJob?.stage ?? "Generating…" : p.plans.length ? "Regenerate plan" : "Generate validation plan"}
         </button>
-        <button type="button" disabled title="Research arrives in Release 0.3">Research</button>
+        <button type="button" className="primary" onClick={props.onResearch} disabled={!!researchRunning || !!planRunning} title={p.plans.length ? "Run web research against the latest plan version" : "Generates a plan first, then researches"}>
+          {researchRunning ? props.researchJob?.stage ?? "Researching…" : latest ? "Recheck" : "Research"}
+        </button>
       </div>
       {props.planJob?.status === "failed" && <div className="banner error">{props.planJob.error}</div>}
+      {props.researchJob?.status === "failed" && <div className="banner error">{props.researchJob.error}</div>}
+
+      {latest && (
+        <div className={`verdict-card v-${latest.evidenceAssessment}`}>
+          <div className="row space-between">
+            <strong>{EVIDENCE_ASSESSMENT_LABEL[latest.evidenceAssessment]}</strong>
+            <span className="small">{TIME_STATUS_LABEL[latest.timeStatus]} · confidence {latest.confidence} · v{latest.version} · researched {latest.researchedAt}</span>
+          </div>
+          <p>{latest.explanation}</p>
+          {latest.uncertainty && <p className="small"><strong>Remaining uncertainty:</strong> {latest.uncertainty}</p>}
+          {latest.laterDevelopments && <p className="small"><strong>Later developments (after the deadline):</strong> {latest.laterDevelopments}</p>}
+          {latest.guardNotes.length > 0 && <details className="small"><summary>Rules applied by the app ({latest.guardNotes.length})</summary><ul className="plain">{latest.guardNotes.map((n, i) => <li key={i}>{n}</li>)}</ul></details>}
+          {latest.recheckAfter && <p className="small muted">Suggested recheck: {latest.recheckAfter}</p>}
+        </div>
+      )}
 
       <div className="tabs">
         <button type="button" className={tab === "plan" ? "tab active" : "tab"} onClick={() => setTab("plan")}>Validation plan {p.plans.length ? `(v${p.plans[0].version})` : ""}</button>
-        <button type="button" className={tab === "evidence" ? "tab active" : "tab"} onClick={() => setTab("evidence")}>Evidence</button>
-        <button type="button" className={tab === "history" ? "tab active" : "tab"} onClick={() => setTab("history")}>History ({p.revisions.length + p.plans.length})</button>
+        <button type="button" className={tab === "evidence" ? "tab active" : "tab"} onClick={() => setTab("evidence")}>Evidence {latest ? `(${latest.supportingIds.length + latest.contradictingIds.length} cited)` : ""}</button>
+        <button type="button" className={tab === "history" ? "tab active" : "tab"} onClick={() => setTab("history")}>History ({p.revisions.length + p.plans.length + (p.assessments?.length ?? 0)})</button>
       </div>
 
       {tab === "plan" && (p.plans.length === 0 ? (
@@ -107,9 +128,13 @@ export function PredictionDetail(props: {
       ) : (
         <PlanView plans={p.plans} predictionId={p.id} onChanged={props.onChanged} />
       ))}
-      {tab === "evidence" && <div className="empty-state"><p className="muted">Research and evidence collection arrive in Release 0.3. The plan above is what that research will follow.</p></div>}
+      {tab === "evidence" && (latest ? <EvidenceView prediction={p} assessment={latest} /> : (
+        <div className="empty-state"><p className="muted">No research yet. Research runs the plan's queries through your configured search provider, fetches the pages, and stores every excerpt it cites.</p></div>
+      ))}
       {tab === "history" && (
         <ul className="plain history">
+          {(p.assessments ?? []).map((a) => <li key={a.id}>{a.createdAt.slice(0, 16).replace("T", " ")} — assessment v{a.version}: <strong>{EVIDENCE_ASSESSMENT_LABEL[a.evidenceAssessment]}</strong> ({a.confidence}) · plan v{a.planVersion} · {a.provider}{a.model ? ` (${a.model})` : ""}</li>)}
+          {(p.runs ?? []).map((r) => <li key={r.id}>{r.startedAt.slice(0, 16).replace("T", " ")} — research run ({r.status}): {r.searchesUsed} searches, {r.sourcesFetched} sources, {r.evidenceCount} evidence items via {r.searchProvider}{r.error ? ` — ${r.error}` : ""}</li>)}
           {p.plans.map((pl) => <li key={pl.id}>{pl.createdAt.slice(0, 16).replace("T", " ")} — plan v{pl.version} by {pl.provider}{pl.model ? ` (${pl.model})` : ""} · {pl.templateVersion}</li>)}
           {p.revisions.map((r) => <li key={r.version}>{r.createdAt.slice(0, 16).replace("T", " ")} — revision {r.version}: {r.reason}</li>)}
           <li className="muted">{p.createdAt.slice(0, 16).replace("T", " ")} — extracted by {p.extractionProvider} ({p.extractionModel})</li>
@@ -214,6 +239,53 @@ function EditForm({ prediction: p, onCancel, onSaved }: { prediction: Prediction
       <button type="button" className="link" onClick={() => set("components", [...(form.components ?? []), { kind: "future_claim", statement: "" }])}>+ add component</button>
       <div className="row"><button type="button" className="primary" onClick={save}>Save (creates a revision)</button><button type="button" onClick={onCancel}>Cancel</button></div>
       <p className="muted small">The original quotation and timestamps are immutable; every save is recorded as a revision.</p>
+    </div>
+  );
+}
+
+
+function EvidenceView({ prediction: p, assessment: a }: { prediction: PredictionFull; assessment: Assessment }) {
+  const [run, setRun] = useState<RunDetail | null>(null);
+  useEffect(() => { content.run(a.runId).then(setRun).catch(() => setRun(null)); }, [a.runId]);
+  if (!run) return <p className="muted">Loading evidence…</p>;
+  const byComponent = (cid?: string) => run.evidence.filter((e) => (e.componentId ?? undefined) === cid);
+  const cited = new Set([...a.supportingIds, ...a.contradictingIds, ...a.citations.flatMap((c) => c.evidenceIds), ...a.components.flatMap((c) => c.evidenceIds)]);
+  const groups = [...p.components.map((c) => ({ key: c.id, label: `${KIND_LABEL[c.kind]}: ${c.statement}`, items: byComponent(c.id), ca: a.components.find((x) => x.componentId === c.id) })), { key: "none", label: "Not tied to a component", items: byComponent(undefined), ca: undefined }].filter((g) => g.items.length > 0 || g.ca);
+  return (
+    <div className="evidence">
+      <p className="muted small">Run {run.startedAt.slice(0, 10)} · {run.searchProvider} · {run.searchesUsed} searches · {run.sourcesFetched} sources read{run.sourcesFailed ? ` · ${run.sourcesFailed} unreadable` : ""} · cutoff {run.cutoffDate}</p>
+      {run.coverageNotes.length > 0 && <details className="small"><summary>Coverage limitations ({run.coverageNotes.length})</summary><ul className="plain">{run.coverageNotes.map((n, i) => <li key={i}>{n}</li>)}</ul></details>}
+      {groups.map((g) => (
+        <div key={g.key} className="evidence-group">
+          <h4>{g.label}</h4>
+          {g.ca && <p className="small"><span className={`verdict v-${g.ca.assessment}`}>{EVIDENCE_ASSESSMENT_LABEL[g.ca.assessment]}</span> {g.ca.explanation}</p>}
+          {g.items.length === 0 ? <p className="muted small">No evidence items.</p> : g.items.map((e) => <EvidenceCard key={e.id} e={e} cited={cited.has(e.id)} />)}
+        </div>
+      ))}
+      {a.citations.length > 0 && (
+        <>
+          <h4>Claims → evidence</h4>
+          <ul className="plain small">{a.citations.map((c, i) => <li key={i}>{c.claim} <span className="muted">[{c.evidenceIds.map((id) => run.evidence.find((e) => e.id === id)?.source?.publisher ?? "?").join(", ")}]</span></li>)}</ul>
+        </>
+      )}
+      <details className="small"><summary>Queries run ({run.queries.length})</summary><ul className="plain">{run.queries.map((q, i) => <li key={i}><span className="chip">{q.group}</span> <code>{q.query}</code> → {q.error ? <span className="result error">{q.error}</span> : `${q.resultCount} results${q.cached ? " (cached)" : ""}`}</li>)}</ul></details>
+    </div>
+  );
+}
+
+function EvidenceCard({ e, cited }: { e: EvidenceItem; cited: boolean }) {
+  const s = e.source;
+  return (
+    <div className={`evidence-card stance-${e.stance}${cited ? " cited" : ""}`}>
+      <div className="row space-between small">
+        <span><span className={`chip stance-${e.stance}`}>{e.stance}</span> {e.actionStage && e.actionStage !== "other" ? <span className="chip">{e.actionStage}</span> : null} {e.inWindow === false && <span className="chip late">after deadline</span>} {!e.independent && <span className="chip" title="Same text as another source">syndicated</span>}</span>
+        <span className="muted">{e.eventDate ?? "undated"}</span>
+      </div>
+      <blockquote>“{e.excerpt}”</blockquote>
+      {e.fact && <div className="small">{e.fact}</div>}
+      <div className="small muted">
+        {s ? <a href={s.url} target="_blank" rel="noreferrer noopener">{s.title ?? s.url}</a> : null}{s?.publisher ? ` · ${s.publisher}` : ""}{s?.publishedAt ? ` · published ${s.publishedAt}` : ""}{e.qualityNotes ? ` · ${e.qualityNotes}` : ""}
+      </div>
     </div>
   );
 }

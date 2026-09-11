@@ -6,7 +6,7 @@ Prediction Ledger is an open-source, localhost-only application. It takes a loca
 
 Everything lives on your computer in a SQLite database. Cloud AI providers and web research are opt-in and clearly labelled; a fully local workflow (LM Studio + local Whisper + transcript import) is supported.
 
-> **Status:** Release 0.2 — Milestone 1. Import a transcript (SRT/VTT/TXT/JSON), extract predictions with Anthropic, OpenAI, or a local LM Studio model, review/edit/merge/split them, and generate versioned validation plans. Web research and verdicts land in 0.3; local video and YouTube in 0.4/0.5. See [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md).
+> **Status:** Release 0.3 — Milestone 2. The full analysis loop works on an imported transcript: extract predictions → versioned validation plan → real web research (Brave, Tavily, SearXNG, or Anthropic/OpenAI native search) → verified evidence → two-field verdict with citations, app-enforced verdict rules, recheck history, and JSON/CSV export. Local video (0.4) and YouTube (0.5) are next. See [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) and the [worked example](docs/WORKED_EXAMPLE.md).
 
 ---
 
@@ -87,7 +87,8 @@ Platform-specific commands, LM Studio setup, external tools, and troubleshooting
    - **LM Studio** (local): start its server in the *Developer* tab, load a model, then test. Step-by-step in [docs/SETUP.md §4.3](docs/SETUP.md#43-lm-studio-local-model--manual-steps-required).
 4. Under **Which model does what**, choose a provider for extraction, validation-plan generation, and assessment (they can differ).
 5. **Save settings.** Keys are encrypted at rest and never shown again — only a masked hint like `sk-ant-…4f2a`.
-6. **Try it:** Library → import `fixtures/transcripts/data-center-approvals.srt` with published date `2025-11-03` → **Extract predictions** → open a prediction → **Generate validation plan**.
+6. Pick a **Web search** provider (Brave/Tavily key, a local SearXNG URL, or Anthropic/OpenAI native search).
+7. **Try it:** Library → import `fixtures/transcripts/data-center-approvals.srt` with published date `2025-11-03` → **Extract predictions** → open a prediction → **Research** (generates the plan first, then searches, reads sources, and assesses).
 
 Where your data is: shown in the Setup tab and the page footer (`%LOCALAPPDATA%\PredictionLedger` on Windows, `~/Library/Application Support/PredictionLedger` on macOS). Override with `PL_DATA_DIR`.
 
@@ -179,8 +180,9 @@ prediction-ledger/
 │       ├── providers/llm/  LanguageModelProvider + Anthropic / OpenAI-compatible adapters
 │       ├── transcripts/    SRT / VTT / TXT / JSON parsers
 │       ├── analysis/       windowing, quote locator, date resolver, dedupe, prompts, schemas, structured completion
-│       ├── services/       videos, predictions, plans, templates (repositories)
-│       ├── jobs/handlers/  prediction.extract, plan.generate
+│       ├── research/       SearchProvider adapters, guarded SourceFetcher, HTML extractor, verdict guard
+│       ├── services/       videos, predictions, plans, templates, research, export (repositories)
+│       ├── jobs/handlers/  prediction.extract, plan.generate, research.run, assessment.run
 │       ├── routes/         /api/* (see docs/API.md)
 │       └── *.test.ts       node:test suites (core, analysis, end-to-end pipeline with a fake model)
 ├── fixtures/               human-reviewed transcripts, expected outcomes, canned model outputs
@@ -189,6 +191,7 @@ prediction-ledger/
 ├── docs/
 │   ├── ARCHITECTURE.md     architecture overview v1 (components, data flow, schema, security, deps)
 │   ├── API.md              HTTP API contracts and job kinds
+│   ├── WORKED_EXAMPLE.md   the spec's worked example, end to end, on synthetic fixtures
 │   ├── BUILD_PLAN.md       requirements register, releases 0.1 → 1.0, acceptance criteria
 │   ├── SETUP.md            providers, LM Studio, external tools, data directory, troubleshooting
 │   ├── WIREFRAMES.md       screen mockups
@@ -209,6 +212,7 @@ prediction-ledger/
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | you want to understand or change how the system is built. |
 | [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) | you want to know what ships in which release and how it is accepted. |
 | [docs/API.md](docs/API.md) | you are calling or extending the local HTTP API. |
+| [docs/WORKED_EXAMPLE.md](docs/WORKED_EXAMPLE.md) | you want to see exactly how a prediction becomes a verdict, and why cancellations alone prove nothing. |
 | [docs/WIREFRAMES.md](docs/WIREFRAMES.md) | you are working on the dashboard. |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | you are about to reverse a design decision. |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | you want to submit a change. |
@@ -237,7 +241,7 @@ Turning **Privacy → Allow internet access** off restricts the app to explicitl
 |---|---|
 | **0.1** ✓ | Localhost server, Setup tab, encrypted credentials, provider tests, durable jobs, docs. |
 | **0.2** ✓ | Transcript import → prediction extraction (edit/merge/split/dismiss) → versioned validation plans. |
-| **0.3** | Web research, stored evidence, two-field verdicts with citations, recheck history, JSON/CSV export. |
+| **0.3** ✓ | Web research, stored evidence, two-field verdicts with citations, app-enforced verdict rules, recheck history, JSON/CSV export. |
 | **0.4** | Local MP4/MPEG import, ffmpeg audio extraction, chunked local Whisper / OpenAI transcription. |
 | **0.5** | YouTube: captions → audio → transcript-import fallback; clear recovery paths. |
 | **1.0** | Cross-provider prompt evaluations (Promptfoo), hardening, Windows + macOS verification, MVP. |

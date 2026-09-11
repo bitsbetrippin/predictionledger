@@ -96,7 +96,7 @@ Errors: *Nothing is listening at http://127.0.0.1:1234/v1/models* → the server
 
 Tip: LM Studio's *Just-in-time model loading* setting lets the server load a model on first request; the connection test still needs at least one model listed.
 
-### 4.4 Web search providers *(active in Release 0.3)*
+### 4.4 Web search providers
 - **Brave Search API** — api-dashboard.search.brave.com. Metered ($5 per 1,000 requests with a monthly credit; attribution required for the credit). Paste the key under *Web search*.
 - **Tavily** — tavily.com; key-based. Check current free-tier limits on their site.
 - **SearXNG** — self-hosted metasearch (Docker or pip). Enter its URL. Fully local; quality depends on which engines you enable.
@@ -110,7 +110,18 @@ Tip: LM Studio's *Just-in-time model loading* setting lets the server load a mod
 2. **Extract predictions.** Uses the provider chosen for *extraction* in Setup. Progress shows per transcript window. Re-running keeps anything you have edited, accepted, dismissed, or planned.
 3. **Predictions tab.** Review each row: accept, dismiss, edit (creates a revision), split a component into its own prediction, or tick several and merge. The original quotation and timestamps never change.
 4. **Generate validation plan.** Writes the evaluation criteria and search queries *before* any research. Edit it to create a new version; every version is kept. Research itself arrives in 0.3.
-5. **Setup → Prompt templates** lets you override the system instructions for extraction and planning; the transcript/prediction blocks and fixed dates are not overridable.
+5. **Setup → Prompt templates** lets you override the system instructions for extraction, planning, evidence extraction, and assessment; the content blocks, fixed dates, and verdict rules are not overridable.
+
+## 4.6 Research and verdicts (Release 0.3)
+
+1. Choose a **Web search** provider in Setup and save. With *none*, the Research button explains what is missing and nothing runs.
+2. In Predictions, open a row and click **Research**. If no plan exists the app generates one first (unless *Review the validation plan before research* is on in Setup → Research, in which case generate and read the plan first). Progress runs through: searching → fetching sources → reading sources → assessing.
+3. The **verdict card** shows the evidence assessment (Supported / Partially supported / Contradicted / Insufficient evidence / Not assessable), the time status (Deadline pending / reached / unknown), confidence, explanation, remaining uncertainty, later developments, and — under *Rules applied by the app* — any adjustments the app made to the model's verdict (for example capping "supported" when the only support is an announcement).
+4. The **Evidence** tab lists every stored item grouped by component, with stance, action stage, event date, syndication marker, the verbatim excerpt, and a link to the source. Only excerpts found in the retrieved page are kept; items the model invented are discarded and counted in *Coverage limitations*.
+5. **Recheck** runs research again against the latest plan version and creates a new assessment version; older versions stay in History.
+6. **Export** (Library, top right): JSON bundle or CSV. Neither contains settings or API keys.
+
+Costs: each research run uses up to *Searches per research run* searches and *Sources fetched per run* page fetches (Setup → Limits), plus one model call per readable source and one for the assessment. Brave and provider-native search are metered; SearXNG is free but self-hosted.
 
 ## 5. Data directory
 
@@ -157,5 +168,8 @@ Other environment variables: `PL_PORT` (default 7317), `PL_NO_OPEN=1` (don't ope
 | Extraction fails with `did not match the extraction_output schema` | The model returned unusable JSON twice. Try a stronger model, or for LM Studio a model that supports JSON output; the raw problem is in the Jobs tab. |
 | Plan/extraction fails with `Internet access is disabled` | Privacy switch is off but the stage is routed to a cloud provider. Route it to LM Studio or enable internet. |
 | Imported transcript has "synthetic" timestamps | Plain text without time stamps. Predictions still work; add `[hh:mm:ss]` prefixes for real positions. |
+| Research fails with `Every search failed` | The search provider rejected the key or is unreachable — check Setup → Web search and the provider's dashboard; nothing was concluded about the prediction. |
+| Verdict is "Insufficient evidence" with few sources | Coverage was thin (see the Evidence tab → Coverage limitations). Raise the search/source budgets, add a better provider, or recheck later. |
+| A source shows "blocked … non-public address" | The URL resolved to a private/local address; the app refuses to fetch it by design. |
 
 Logs: the terminal running `npm start`. Set `PL_LOG_LEVEL=debug` for more detail. API keys are redacted from logs.

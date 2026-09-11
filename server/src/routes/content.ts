@@ -128,7 +128,11 @@ export function registerContentRoutes(app: FastifyInstance, ctx: AppContext): vo
       includeDismissed: q.includeDismissed === "1",
     };
     const today = new Date().toISOString().slice(0, 10);
-    return ctx.predictions.list(filters).map((p) => ({ ...p, timeStatus: timeStatus(p.deadlineDate, today) }));
+    const resultFilter = q.result || undefined; // evidence assessment value, or "not_researched"
+    return ctx.predictions
+      .list(filters)
+      .map((p) => ({ ...p, timeStatus: timeStatus(p.deadlineDate, today), result: ctx.research.latestSummary(p.id), processingStatus: ctx.research.processingStatus(p.id) }))
+      .filter((p) => !resultFilter || (resultFilter === "not_researched" ? !p.result : p.result?.evidenceAssessment === resultFilter));
   });
 
   app.get("/api/predictions/topics", async () => ctx.predictions.topics());
@@ -136,7 +140,16 @@ export function registerContentRoutes(app: FastifyInstance, ctx: AppContext): vo
   app.get<{ Params: { id: string } }>("/api/predictions/:id", async (req, reply) => {
     const p = ctx.predictions.get(req.params.id);
     if (!p) return reply.code(404).send({ error: "not_found" });
-    return { ...p, timeStatus: timeStatus(p.deadlineDate), plans: ctx.plans.listForPrediction(p.id), revisions: ctx.predictions.revisions(p.id) };
+    return {
+      ...p,
+      timeStatus: timeStatus(p.deadlineDate),
+      result: ctx.research.latestSummary(p.id),
+      processingStatus: ctx.research.processingStatus(p.id),
+      plans: ctx.plans.listForPrediction(p.id),
+      revisions: ctx.predictions.revisions(p.id),
+      runs: ctx.research.runsForPrediction(p.id),
+      assessments: ctx.research.assessmentsForPrediction(p.id),
+    };
   });
 
   app.patch<{ Params: { id: string } }>("/api/predictions/:id", async (req, reply) => {
@@ -219,12 +232,12 @@ export function registerContentRoutes(app: FastifyInstance, ctx: AppContext): vo
   });
 
   // ---- Prompt templates -----------------------------------------------------------
-  app.get("/api/templates", async () => [ctx.templates.info("extraction"), ctx.templates.info("plan")]);
+  app.get("/api/templates", async () => (["extraction", "plan", "evidence", "assessment"] as const).map((n) => ctx.templates.info(n)));
 
   app.put<{ Params: { name: string } }>("/api/templates/:name", async (req, reply) => {
-    if (req.params.name !== "extraction" && req.params.name !== "plan") return reply.code(404).send({ error: "not_found" });
+    if (!["extraction", "plan", "evidence", "assessment"].includes(req.params.name)) return reply.code(404).send({ error: "not_found" });
     const parsed = templateSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", issues: parsed.error.issues });
-    return ctx.templates.setOverride(req.params.name, parsed.data.body);
+    return ctx.templates.setOverride(req.params.name as "extraction" | "plan" | "evidence" | "assessment", parsed.data.body);
   });
 }

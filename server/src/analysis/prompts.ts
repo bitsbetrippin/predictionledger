@@ -12,7 +12,7 @@
  */
 
 export interface PromptTemplate {
-  name: "extraction" | "plan";
+  name: "extraction" | "plan" | "evidence" | "assessment";
   version: string;
   system: string;
   user: string;
@@ -93,9 +93,82 @@ Dates (fixed by the application — copy them, do not alter):
 Produce the evaluation plan JSON now.`,
 };
 
+export const EVIDENCE_V1: PromptTemplate = {
+  name: "evidence",
+  version: "evidence.v1",
+  system: `You extract EVIDENCE from a retrieved web page for checking a prediction. You are reading one page at a time.
+
+Rules:
+1. Only use what is in the page text provided. Do not add facts from memory. If the page says nothing relevant, return an empty list.
+2. Every item must contain a verbatim "excerpt" copied from the page text (one to three sentences). The application verifies excerpts against the page and discards anything that is not found.
+3. For each item say which prediction component it addresses (by component id), whether it SUPPORTS, CONTRADICTS, or gives CONTEXT for that component, the date of the event described if stated (YYYY-MM-DD or null), and the stage of any action described: proposed, announced, enacted, approved, completed, or other.
+4. Distinguish an announcement or proposal from an implemented outcome. Distinguish one example from a broad trend — say so in quality_notes.
+5. Note access or quality limits (opinion piece, press release, undated, paywalled snippet, secondary report of another outlet).
+6. Do not state whether the prediction is true. That is a separate step.
+
+Return ONLY a JSON object matching the schema.`,
+  user: `Prediction under evaluation:
+<prediction>
+{{proposition}}
+Deadline: {{deadline}}
+Components:
+{{components}}
+</prediction>
+
+Retrieved page ({{sourceUrl}} · published {{publishedAt}} · retrieved {{retrievedAt}}):
+<page>
+{{pageText}}
+</page>
+
+Extract the evidence items from this page.`,
+};
+
+export const ASSESSMENT_V1: PromptTemplate = {
+  name: "assessment",
+  version: "assessment.v1",
+  system: `You are the judge in a prediction-verification process. You receive the validation plan (written before research), the prediction's components, and the EVIDENCE SET that the application retrieved. You must judge using only that evidence set.
+
+Definitions (the application enforces these; do not invent other labels):
+- supported: the evidence set shows the proposition came true as stated, within the deadline window, with independent corroboration where the claim is broad.
+- partially_supported: some material components are supported and others are contradicted or unsupported; or the outcome happened in a weaker form than stated.
+- contradicted: the evidence set shows the proposition did not come true within the window, or the opposite happened.
+- insufficient: the evidence set does not allow a determination (few or no relevant items, only announcements/proposals, only single anecdotes for a broad trend, deadline not yet reached with no decisive evidence).
+- not_assessable: the proposition cannot be evaluated as stated even in principle (undefined terms with no workable definition, no falsifiable claim).
+
+Never equate: no results with false; a pending deadline with failure; a few examples with a broad trend; correlation with the claimed causal mechanism; an announced or proposed policy with an implemented outcome. Events after the deadline are LATER DEVELOPMENTS — describe them separately, they do not make the prediction on time.
+
+Cite evidence by evidence id only. Every claim in your explanation must be tied to evidence ids from the set. Do not cite anything not in the set. The explanation must be 2–4 sentences, plain language. Confidence rubric: high = multiple independent primary/official sources agree; medium = reliable reporting but limited corroboration or minor ambiguity; low = thin, secondary, or conflicting evidence.
+
+Return ONLY a JSON object matching the schema.`,
+  user: `Validation plan (v{{planVersion}}):
+<plan>
+Proposition: {{proposition}}
+Working definitions: {{definitions}}
+Would support: {{supporting}}
+Would contradict: {{contradicting}}
+Partial fulfilment: {{partial}}
+</plan>
+
+Dates: made {{madeOn}} · deadline {{deadline}} · research cutoff {{cutoff}} · time status {{timeStatus}}
+
+Components (use these ids):
+{{components}}
+
+Evidence set ({{evidenceCount}} items; cite by id):
+<evidence>
+{{evidence}}
+</evidence>
+
+Coverage limitations recorded by the application: {{coverage}}
+
+Produce the assessment JSON.`,
+};
+
 export const BUILT_IN_TEMPLATES: Record<PromptTemplate["name"], PromptTemplate> = {
   extraction: EXTRACTION_V1,
   plan: PLAN_V1,
+  evidence: EVIDENCE_V1,
+  assessment: ASSESSMENT_V1,
 };
 
 /** Replace {{key}} placeholders. Missing keys render as "unknown" so a typo never leaks a template tag. */

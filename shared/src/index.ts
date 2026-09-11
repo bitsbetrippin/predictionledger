@@ -51,7 +51,17 @@ export interface StageAssignment {
   model?: string;
 }
 
+export interface ResearchSettings {
+  /** When true, the Research button requires the user to have looked at (and optionally edited) the plan first (VP-04). */
+  reviewPlanBeforeResearch: boolean;
+  /** Suggested recheck interval for pending-deadline predictions, in days. */
+  recheckAfterDays: number;
+  /** Max characters of a source sent to the model for evidence extraction. */
+  maxSourceChars: number;
+}
+
 export interface AppSettings {
+  research: ResearchSettings;
   providers: Record<LlmProviderId, LlmProviderSettings>;
   stages: Record<AnalysisStage, StageAssignment>;
   transcription: {
@@ -336,8 +346,159 @@ export interface PredictionFilters {
 }
 
 export interface PromptTemplateInfo {
-  name: "extraction" | "plan";
+  name: "extraction" | "plan" | "evidence" | "assessment";
   builtInVersion: string;
   builtInBody: string;
   override?: { body: string; baseVersion: string; updatedAt: string };
+}
+
+// ---------------------------------------------------------------------------
+// Release 0.3 — research runs, sources, evidence, assessments, export
+// ---------------------------------------------------------------------------
+
+export type EvidenceAssessment = "supported" | "partially_supported" | "contradicted" | "insufficient" | "not_assessable";
+export type TimeStatusValue = "pending" | "reached" | "unknown";
+export type Stance = "supports" | "contradicts" | "context";
+export type ActionStage = "proposed" | "announced" | "enacted" | "approved" | "completed" | "other";
+export type RunStatus = "running" | "completed" | "failed" | "cancelled";
+export type QueryGroup = "neutral" | "supporting" | "disconfirming";
+
+export const EVIDENCE_ASSESSMENT_LABEL: Record<EvidenceAssessment, string> = {
+  supported: "Supported",
+  partially_supported: "Partially supported",
+  contradicted: "Contradicted",
+  insufficient: "Insufficient evidence",
+  not_assessable: "Not assessable as stated",
+};
+
+export const TIME_STATUS_LABEL: Record<TimeStatusValue, string> = {
+  pending: "Deadline pending",
+  reached: "Deadline reached",
+  unknown: "Deadline unknown",
+};
+
+export interface SourceRecord {
+  id: string;
+  url: string;
+  canonicalUrl: string;
+  title?: string;
+  publisher?: string;
+  publishedAt?: string;
+  retrievedAt: string;
+  fetchStatus: "ok" | "blocked" | "error" | "too_large" | "timeout" | "unsupported";
+  httpStatus?: number;
+  contentChars?: number;
+  syndicatedOf?: string;
+  accessNotes?: string;
+}
+
+export interface EvidenceItem {
+  id: string;
+  runId: string;
+  sourceId: string;
+  source?: SourceRecord;
+  componentId?: string;
+  stance: Stance;
+  excerpt: string;
+  fact?: string;
+  eventDate?: string;
+  actionStage?: ActionStage;
+  /** true = inside the deadline window; false = later development; undefined = undated */
+  inWindow?: boolean;
+  qualityNotes?: string;
+  independent: boolean;
+}
+
+export interface ResearchRun {
+  id: string;
+  predictionId: string;
+  validationPlanId: string;
+  planVersion?: number;
+  status: RunStatus;
+  searchProvider: string;
+  cutoffDate: string;
+  queries: { group: QueryGroup; query: string; resultCount: number; error?: string; cached?: boolean }[];
+  coverageNotes: string[];
+  searchesUsed: number;
+  sourcesFetched: number;
+  sourcesFailed: number;
+  evidenceProvider?: string;
+  evidenceModel?: string;
+  error?: string;
+  startedAt: string;
+  finishedAt?: string;
+  evidenceCount?: number;
+}
+
+export interface ComponentAssessment {
+  id: string;
+  componentId?: string;
+  componentKind: ComponentKind;
+  statement: string;
+  assessment: EvidenceAssessment;
+  explanation: string;
+  evidenceIds: string[];
+}
+
+export interface Assessment {
+  id: string;
+  predictionId: string;
+  runId: string;
+  validationPlanId: string;
+  planVersion?: number;
+  version: number;
+  evidenceAssessment: EvidenceAssessment;
+  timeStatus: TimeStatusValue;
+  explanation: string;
+  uncertainty?: string;
+  confidence: "high" | "medium" | "low";
+  confidenceRationale?: string;
+  supportingIds: string[];
+  contradictingIds: string[];
+  citations: { claim: string; evidenceIds: string[] }[];
+  laterDevelopments?: string;
+  guardNotes: string[];
+  components: ComponentAssessment[];
+  provider: string;
+  model?: string;
+  templateVersion: string;
+  researchedAt: string;
+  recheckAfter?: string;
+  createdAt: string;
+}
+
+/** Summary attached to prediction rows for the table (latest assessment, if any). */
+export interface ResultSummary {
+  assessmentId: string;
+  version: number;
+  evidenceAssessment: EvidenceAssessment;
+  timeStatus: TimeStatusValue;
+  explanation: string;
+  confidence: "high" | "medium" | "low";
+  sourceCount: number;
+  researchedAt: string;
+  recheckAfter?: string;
+}
+
+/** Processing status for the table (VD-01): separate from evidence assessment and time status. */
+export type ProcessingStatus = "not_researched" | "running" | "completed" | "failed";
+
+export interface SearchResult {
+  url: string;
+  title?: string;
+  snippet?: string;
+  /** Provider-supplied age/date hint, free text. */
+  pageAge?: string;
+}
+
+export interface ExportBundle {
+  exportedAt: string;
+  appVersion: string;
+  videos: VideoSummary[];
+  predictions: Prediction[];
+  plans: ValidationPlan[];
+  runs: ResearchRun[];
+  sources: SourceRecord[];
+  evidence: EvidenceItem[];
+  assessments: Assessment[];
 }

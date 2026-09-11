@@ -184,3 +184,115 @@ export const PLAN_JSON_SCHEMA: Record<string, unknown> = {
     researchPrompt: { type: "string", description: "Complete executable prompt for the research agent." },
   },
 };
+
+// ---- Evidence extraction (per page) ---------------------------------------------
+
+export const evidenceOutputSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        component_id: z.string().nullable().optional(),
+        stance: z.enum(["supports", "contradicts", "context"]),
+        excerpt: z.string().min(15),
+        fact: nullableStr,
+        event_date: nullableStr,
+        action_stage: z.enum(["proposed", "announced", "enacted", "approved", "completed", "other"]).nullable().optional(),
+        quality_notes: nullableStr,
+      }),
+    )
+    .default([]),
+  page_relevance: z.enum(["high", "medium", "low", "none"]).optional(),
+});
+export type EvidenceOutput = z.infer<typeof evidenceOutputSchema>;
+
+export const EVIDENCE_JSON_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  additionalProperties: false,
+  required: ["items"],
+  properties: {
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["stance", "excerpt"],
+        properties: {
+          component_id: { type: ["string", "null"], description: "Id of the prediction component this item addresses." },
+          stance: { type: "string", enum: ["supports", "contradicts", "context"] },
+          excerpt: { type: "string", description: "Verbatim text copied from the page." },
+          fact: { type: ["string", "null"], description: "One-sentence fact the excerpt establishes." },
+          event_date: { type: ["string", "null"], description: "YYYY-MM-DD if the event date is stated." },
+          action_stage: { type: ["string", "null"], enum: ["proposed", "announced", "enacted", "approved", "completed", "other", null] },
+          quality_notes: { type: ["string", "null"] },
+        },
+      },
+    },
+    page_relevance: { type: "string", enum: ["high", "medium", "low", "none"] },
+  },
+};
+
+// ---- Assessment -------------------------------------------------------------------
+
+const verdictEnum = z.enum(["supported", "partially_supported", "contradicted", "insufficient", "not_assessable"]);
+
+export const assessmentOutputSchema = z.object({
+  component_assessments: z.array(
+    z.object({
+      component_id: z.string(),
+      assessment: verdictEnum,
+      explanation: z.string().min(10),
+      evidence_ids: z.array(z.string()).default([]),
+    }),
+  ),
+  overall: z.object({
+    evidence_assessment: verdictEnum,
+    explanation: z.string().min(20),
+    citations: z.array(z.object({ claim: z.string(), evidence_ids: z.array(z.string()).min(1) })).default([]),
+    supporting_ids: z.array(z.string()).default([]),
+    contradicting_ids: z.array(z.string()).default([]),
+    later_developments: nullableStr,
+    uncertainty: nullableStr,
+    confidence: z.enum(["high", "medium", "low"]),
+    confidence_rationale: nullableStr,
+  }),
+});
+export type AssessmentOutput = z.infer<typeof assessmentOutputSchema>;
+
+const VERDICT_ENUM = ["supported", "partially_supported", "contradicted", "insufficient", "not_assessable"];
+export const ASSESSMENT_JSON_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  additionalProperties: false,
+  required: ["component_assessments", "overall"],
+  properties: {
+    component_assessments: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["component_id", "assessment", "explanation"],
+        properties: {
+          component_id: { type: "string" },
+          assessment: { type: "string", enum: VERDICT_ENUM },
+          explanation: { type: "string" },
+          evidence_ids: { type: "array", items: { type: "string" } },
+        },
+      },
+    },
+    overall: {
+      type: "object",
+      additionalProperties: false,
+      required: ["evidence_assessment", "explanation", "confidence"],
+      properties: {
+        evidence_assessment: { type: "string", enum: VERDICT_ENUM },
+        explanation: { type: "string", description: "2–4 sentences." },
+        citations: { type: "array", items: { type: "object", required: ["claim", "evidence_ids"], properties: { claim: { type: "string" }, evidence_ids: { type: "array", items: { type: "string" } } } } },
+        supporting_ids: { type: "array", items: { type: "string" } },
+        contradicting_ids: { type: "array", items: { type: "string" } },
+        later_developments: { type: ["string", "null"] },
+        uncertainty: { type: ["string", "null"] },
+        confidence: { type: "string", enum: ["high", "medium", "low"] },
+        confidence_rationale: { type: ["string", "null"] },
+      },
+    },
+  },
+};

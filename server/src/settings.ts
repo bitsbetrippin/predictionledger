@@ -54,6 +54,11 @@ export const persistedSettingsSchema = z.object({
   privacy: z.object({
     allowInternet: z.boolean(),
   }),
+  research: z.object({
+    reviewPlanBeforeResearch: z.boolean(),
+    recheckAfterDays: z.number().int().min(1).max(365),
+    maxSourceChars: z.number().int().min(1000).max(60000),
+  }),
 });
 
 export type PersistedSettings = z.infer<typeof persistedSettingsSchema>;
@@ -78,6 +83,7 @@ export const DEFAULT_SETTINGS: PersistedSettings = {
   search: { provider: "none" },
   limits: { concurrency: 2, maxSearchesPerRun: 8, maxSourcesPerRun: 12, requestsPerMinute: 30 },
   privacy: { allowInternet: true },
+  research: { reviewPlanBeforeResearch: false, recheckAfterDays: 90, maxSourceChars: 12000 },
 };
 
 export class SettingsService {

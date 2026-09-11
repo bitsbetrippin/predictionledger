@@ -8,8 +8,8 @@
  * Result/explanation/sources/last-checked are populated by Release 0.3; here they show "not researched".
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { JobSummary, VideoSummary } from "@prediction-ledger/shared";
-import { content, fmtClock, pollJob, type PredictionFull, type PredictionRow } from "../api";
+import { EVIDENCE_ASSESSMENT_LABEL, type JobSummary, type VideoSummary } from "@prediction-ledger/shared";
+import { api, content, fmtClock, pollJob, type PredictionFull, type PredictionRow } from "../api";
 import { PredictionDetail } from "../components/PredictionDetail";
 
 const TIME_LABEL: Record<PredictionRow["timeStatus"], string> = { pending: "Deadline pending", reached: "Deadline reached", unknown: "Deadline unknown" };
@@ -22,6 +22,8 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
   const [topic, setTopic] = useState("");
   const [status, setStatus] = useState<"" | "pending" | "accepted" | "dismissed" | "merged">("");
   const [deadline, setDeadline] = useState<"" | "pending" | "reached" | "unknown">("");
+  const [result, setResult] = useState("");
+  const [researchJobs, setResearchJobs] = useState<Record<string, JobSummary>>({});
   const [selectedId, setSelectedId] = useState<string | undefined>(initialPredictionId);
   const [selected, setSelected] = useState<PredictionFull | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
@@ -31,7 +33,7 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
   const reload = useCallback(async () => {
     try {
       const [r, v, t] = await Promise.all([
-        content.listPredictions({ videoId: videoId || undefined, topic: topic || undefined, userStatus: status || undefined, includeDismissed: !!status }),
+        content.listPredictions({ videoId: videoId || undefined, topic: topic || undefined, userStatus: status || undefined, includeDismissed: !!status, result: result || undefined }),
         content.listVideos(),
         content.topics(),
       ]);
@@ -39,7 +41,7 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
     } catch (e) {
       setError((e as Error).message);
     }
-  }, [videoId, topic, status]);
+  }, [videoId, topic, status, result]);
   useEffect(() => void reload(), [reload]);
 
   const loadSelected = useCallback(async (id: string | undefined) => {
@@ -60,6 +62,27 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
       const { jobId } = await content.generatePlan(id);
       const done = await pollJob(jobId, (j) => setPlanJobs((m) => ({ ...m, [id]: j })));
       if (done.status === "failed") setError(done.error ?? "Plan generation failed.");
+      await reload();
+      await loadSelected(id);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  /** Research (or recheck). Follows the chain plan → research → assessment by polling each job. */
+  const research = async (id: string) => {
+    try {
+      const { jobId } = await content.research(id);
+      let done = await pollJob(jobId, (j) => setResearchJobs((m) => ({ ...m, [id]: j })));
+      // Chained jobs (research after plan, assessment after research) show up in the job list for this subject.
+      for (let hops = 0; hops < 3 && done.status === "completed"; hops++) {
+        await new Promise((r) => setTimeout(r, 1200));
+        const next = (await api.listJobs()).find((j) => j.subjectId === id && j.id !== done.id && (j.status === "queued" || j.status === "running"));
+        if (!next) break;
+        done = await pollJob(next.id, (j) => setResearchJobs((m) => ({ ...m, [id]: j })));
+      }
+      if (done.status === "failed") setError(done.error ?? "Research failed.");
+      setResearchJobs((m) => { const n = { ...m }; delete n[id]; return n; });
       await reload();
       await loadSelected(id);
     } catch (e) {
@@ -88,7 +111,7 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
         <label>Topic <select value={topic} onChange={(e) => setTopic(e.target.value)}><option value="">All</option>{topics.map((t) => <option key={t} value={t}>{t}</option>)}</select></label>
         <label>Review status <select value={status} onChange={(e) => setStatus(e.target.value as typeof status)}><option value="">Pending + accepted</option><option value="pending">Pending review</option><option value="accepted">Accepted</option><option value="dismissed">Dismissed</option><option value="merged">Merged</option></select></label>
         <label>Deadline <select value={deadline} onChange={(e) => setDeadline(e.target.value as typeof deadline)}><option value="">Any</option><option value="pending">Pending</option><option value="reached">Reached</option><option value="unknown">Unknown</option></select></label>
-        <label>Result <select disabled><option>Any (Release 0.3)</option></select></label>
+        <label>Result <select value={result} onChange={(e) => setResult(e.target.value)}><option value="">Any</option><option value="not_researched">Not researched</option>{(Object.keys(EVIDENCE_ASSESSMENT_LABEL) as (keyof typeof EVIDENCE_ASSESSMENT_LABEL)[]).map((k) => <option key={k} value={k}>{EVIDENCE_ASSESSMENT_LABEL[k]}</option>)}</select></label>
         {checked.size >= 2 && <button type="button" onClick={mergeChecked}>Merge {checked.size} selected</button>}
       </div>
 
@@ -105,7 +128,8 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
                 <tbody key={vid}>
                   <tr className="group"><td colSpan={8}>▸ {list[0].videoTitle ?? vid} <span className="muted">({list.length})</span> <a href={`#/videos/${vid}`} className="small">open video</a></td></tr>
                   {list.map((p) => {
-                    const pj = planJobs[p.id];
+                    const pj = planJobs[p.id] ?? researchJobs[p.id];
+                    const r = p.result;
                     return (
                       <tr key={p.id} className={selectedId === p.id ? "selected" : ""} onClick={() => setSelectedId(p.id)}>
                         <td onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label="select for merge" checked={checked.has(p.id)} onChange={(e) => setChecked((s) => { const n = new Set(s); e.target.checked ? n.add(p.id) : n.delete(p.id); return n; })} /></td>
@@ -114,11 +138,14 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
                           <div className="muted small">{fmtClock(p.startS)} · {p.userStatus}{p.components.length > 1 ? ` · ${p.components.length} components` : ""}{p.latestPlanVersion ? ` · plan v${p.latestPlanVersion}` : ""}{pj && (pj.status === "running" || pj.status === "queued") ? ` · ${pj.stage ?? "planning…"}` : ""}</div>
                         </td>
                         <td>{p.deadlineDate ?? <span className="muted">unknown</span>}</td>
-                        <td><span className="muted">— not researched</span></td>
+                        <td>
+                          {r ? <span className={`verdict v-${r.evidenceAssessment}`}>{EVIDENCE_ASSESSMENT_LABEL[r.evidenceAssessment]}</span> : p.processingStatus === "running" ? <span className="muted">researching…</span> : p.processingStatus === "failed" ? <span className="result error">research failed</span> : <span className="muted">— not researched</span>}
+                          {r && <div className="muted small">confidence {r.confidence} · v{r.version}</div>}
+                        </td>
                         <td>{TIME_LABEL[p.timeStatus]}</td>
-                        <td className="muted">—</td>
-                        <td className="muted">—</td>
-                        <td className="muted">—</td>
+                        <td className="explain">{r ? r.explanation : <span className="muted">—</span>}</td>
+                        <td>{r ? r.sourceCount : <span className="muted">—</span>}</td>
+                        <td>{r ? <>{r.researchedAt}{r.recheckAfter ? <div className="muted small">recheck {r.recheckAfter}</div> : null}</> : <span className="muted">—</span>}</td>
                       </tr>
                     );
                   })}
@@ -132,6 +159,8 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
                 prediction={selected}
                 planJob={planJobs[selected.id]}
                 onGeneratePlan={() => generatePlan(selected.id)}
+                onResearch={() => research(selected.id)}
+                researchJob={researchJobs[selected.id]}
                 onChanged={async () => { await reload(); await loadSelected(selected.id); }}
                 onClose={() => setSelectedId(undefined)}
               />

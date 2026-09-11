@@ -78,6 +78,7 @@ export function toPayload(s: AppSettings): SettingsPayload {
     search: { provider: s.search.provider, baseUrl: s.search.baseUrl },
     limits: s.limits,
     privacy: s.privacy,
+    research: s.research,
   };
 }
 
@@ -86,8 +87,13 @@ export function toPayload(s: AppSettings): SettingsPayload {
 // ---------------------------------------------------------------------------
 
 import type {
+  Assessment,
+  EvidenceItem,
   Prediction,
   PredictionEdit,
+  ProcessingStatus,
+  ResearchRun,
+  ResultSummary,
   PredictionFilters,
   PromptTemplateInfo,
   TranscriptImportRequest,
@@ -99,11 +105,14 @@ import type {
 } from "@prediction-ledger/shared";
 
 export type TimeStatus = "pending" | "reached" | "unknown";
-export type PredictionRow = Prediction & { timeStatus: TimeStatus };
+export type PredictionRow = Prediction & { timeStatus: TimeStatus; result?: ResultSummary; processingStatus: ProcessingStatus };
 export type PredictionFull = PredictionRow & {
   plans: ValidationPlan[];
   revisions: { version: number; reason: string | null; createdAt: string; snapshot: unknown }[];
+  runs: ResearchRun[];
+  assessments: Assessment[];
 };
+export type RunDetail = ResearchRun & { evidence: EvidenceItem[] };
 
 function qs(obj: Record<string, string | boolean | undefined>): string {
   const p = new URLSearchParams();
@@ -122,8 +131,10 @@ export const content = {
   deleteVideo: (id: string) => request<{ ok: true }>("DELETE", `/api/videos/${id}`),
   extract: (videoId: string) => request<{ jobId: string }>("POST", `/api/videos/${videoId}/extract`),
 
-  listPredictions: (f: PredictionFilters = {}) =>
-    request<PredictionRow[]>("GET", `/api/predictions${qs({ videoId: f.videoId, topic: f.topic, userStatus: f.userStatus, deadlineBefore: f.deadlineBefore, deadlineAfter: f.deadlineAfter, includeDismissed: f.includeDismissed })}`),
+  listPredictions: (f: PredictionFilters & { result?: string } = {}) =>
+    request<PredictionRow[]>("GET", `/api/predictions${qs({ videoId: f.videoId, topic: f.topic, userStatus: f.userStatus, deadlineBefore: f.deadlineBefore, deadlineAfter: f.deadlineAfter, includeDismissed: f.includeDismissed, result: f.result })}`),
+  research: (id: string, planId?: string) => request<{ jobId: string; stage: "plan" | "research"; planVersion?: number }>("POST", `/api/predictions/${id}/research`, { planId, autoPlan: true }),
+  run: (id: string) => request<RunDetail>("GET", `/api/runs/${id}`),
   topics: () => request<string[]>("GET", "/api/predictions/topics"),
   getPrediction: (id: string) => request<PredictionFull>("GET", `/api/predictions/${id}`),
   editPrediction: (id: string, patch: PredictionEdit) => request<Prediction>("PATCH", `/api/predictions/${id}`, patch),

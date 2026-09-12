@@ -148,7 +148,7 @@ export const content = {
   savePlanEdit: (id: string, plan: Partial<ValidationPlanBody>, researchPrompt: string) => request<ValidationPlan>("POST", `/api/predictions/${id}/plans`, { plan, researchPrompt }),
 
   templates: () => request<PromptTemplateInfo[]>("GET", "/api/templates"),
-  setTemplate: (name: "extraction" | "plan", body: string | null) => request<PromptTemplateInfo>("PUT", `/api/templates/${name}`, { body }),
+  setTemplate: (name: PromptTemplateInfo["name"], body: string | null) => request<PromptTemplateInfo>("PUT", `/api/templates/${name}`, { body }),
   job: (id: string) => request<import("@prediction-ledger/shared").JobSummary>("GET", `/api/jobs/${id}`),
   cancelJob: (id: string) => request<import("@prediction-ledger/shared").JobSummary>("POST", `/api/jobs/${id}/cancel`),
   retryJob: (id: string) => request<import("@prediction-ledger/shared").JobSummary>("POST", `/api/jobs/${id}/retry`),

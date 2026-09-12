@@ -7,21 +7,21 @@ Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assist
 ## Legend
 **Executed** = the command/test ran and passed on that platform. **Static** = code and docs reviewed for that platform's behaviour, not run. **—** = not yet attempted.
 
-## Release 1.1.0
+## Release 1.1.2
 
 | Check | Linux (cloud sandbox, Node 22.22) | Windows 11 | macOS |
 |---|---|---|---|
-| `npm run setup` (install + build) | — (registry blocked) | **Executed (rc.2)**: install ✓, shared ✓, server ✓, web ✓ (after the setTemplate fix) | — |
+| `npm run setup` (install + build) | — (registry blocked) | **In progress**: install ✓, shared ✓; server ✗ (4 Zod type errors → fixed 1.1.1), web ✓ earlier; full chain re-run pending | — |
 | `npm test` (46 tests) | **Executed** via compiled scratch build with a zod shim; real ffmpeg 6.1.1; fake yt-dlp; fake Transformers.js | — | — |
-| `npm start` → ready line → dashboard opens | — | rc.1: ✗ migrations missing from dist → fixed in rc.2; re-run pending | — |
+| `npm start` → ready line → dashboard opens | — | **Executed (1.1.1)** | — |
 | Port walk when 7317 is busy | Static | Static | Static |
 | Restart recovery (stale running job re-queued) | **Executed** (unit) | — | — |
 | Transcript import → extraction → plan (fake model) | **Executed** | — | — |
 | Research → evidence → verdict (fake search/fetch) | **Executed** | — | — |
 | Local media upload → audio → chunked transcription | **Executed** (real ffmpeg, fake engine) | — | — |
 | Real Whisper (Transformers.js) throughput on 30 min (S-3) | — (provider logic executed against a fake module) | — | — |
-| YouTube import (real yt-dlp, `--js-runtimes node`) (S-4) | — (fake only) | — | — |
-| yt-dlp installer download + checksum | — | — | — |
+| YouTube import (real yt-dlp, `--js-runtimes node`) (S-4) | — (fake only) | **Executed (1.1.1)**: install from Setup ✓, auto captions ✓ (45 s video) | — |
+| yt-dlp installer download + checksum | — | **Executed (1.1.1)** | — |
 | Promptfoo evals with real providers | — | — | — |
 | Backups (`VACUUM INTO`, key copy) | **Executed** (unit) | — | — |
 | Provider timeout / 429 backoff / 401 no-retry | **Executed** (unit) | — | — |

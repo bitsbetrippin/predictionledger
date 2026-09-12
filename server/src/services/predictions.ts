@@ -10,11 +10,13 @@
  */
 
 import crypto from "node:crypto";
-import type { ComponentKind, Prediction, PredictionComponent, PredictionEdit, PredictionFilters, PredictionUserStatus } from "@prediction-ledger/shared";
+import type { ComponentKind, Prediction, PredictionComponent, PredictionEdit, PredictionFilters, PredictionUserStatus, SportsPick } from "@prediction-ledger/shared";
 import type { Database } from "../db/index.js";
 
 export interface NewPrediction {
   videoId: string;
+  kind?: Prediction["kind"];
+  sportsPick?: SportsPick;
   quoteExact: string;
   contextBefore?: string;
   contextAfter?: string;
@@ -47,6 +49,8 @@ export interface NewPrediction {
 interface PredictionRow {
   id: string;
   video_id: string;
+  kind: Prediction["kind"];
+  sports_json: string | null;
   video_title: string | null;
   quote_exact: string;
   context_before: string | null;
@@ -103,12 +107,12 @@ export class PredictionService {
     const id = crypto.randomUUID();
     this.db.transaction(() => {
       this.db.run(
-        `INSERT INTO predictions (id, video_id, quote_exact, context_before, context_after, start_s, end_s, speaker,
+        `INSERT INTO predictions (id, video_id, kind, sports_json, quote_exact, context_before, context_after, start_s, end_s, speaker,
            normalized_statement, entities_json, topic, geography, scope, conditions_json, thresholds_json, modality,
            made_on_date, made_on_basis, time_expression, deadline_date, deadline_basis, ambiguities_json,
            extraction_confidence, occurrences_json, extraction_provider, extraction_model, extraction_template, extraction_job_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        id, n.videoId, n.quoteExact, n.contextBefore ?? null, n.contextAfter ?? null, n.startS ?? null, n.endS ?? null, n.speaker ?? null,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, n.videoId, n.kind ?? "general", n.sportsPick ? JSON.stringify(n.sportsPick) : null, n.quoteExact, n.contextBefore ?? null, n.contextAfter ?? null, n.startS ?? null, n.endS ?? null, n.speaker ?? null,
         n.normalizedStatement, JSON.stringify(n.entities), n.topic ?? null, n.geography ?? null, n.scope ?? null,
         JSON.stringify(n.conditions), JSON.stringify(n.thresholds), n.modality ?? null,
         n.madeOnDate ?? null, n.madeOnBasis, n.timeExpression ?? null, n.deadlineDate ?? null, n.deadlineBasis ?? null,
@@ -129,6 +133,7 @@ export class PredictionService {
     const where: string[] = [];
     const params: unknown[] = [];
     if (f.videoId) { where.push("p.video_id = ?"); params.push(f.videoId); }
+    if (f.kind) { where.push("p.kind = ?"); params.push(f.kind); }
     if (f.topic) { where.push("p.topic = ?"); params.push(f.topic); }
     if (f.userStatus) { where.push("p.user_status = ?"); params.push(f.userStatus); }
     else if (!f.includeDismissed) { where.push("p.user_status IN ('pending','accepted')"); }
@@ -301,6 +306,8 @@ export class PredictionService {
     return {
       id: r.id,
       videoId: r.video_id,
+      kind: r.kind ?? "general",
+      sportsPick: r.sports_json ? (JSON.parse(r.sports_json) as SportsPick) : undefined,
       videoTitle: r.video_title ?? undefined,
       quoteExact: r.quote_exact,
       contextBefore: r.context_before ?? undefined,

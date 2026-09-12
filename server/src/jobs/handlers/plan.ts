@@ -16,6 +16,7 @@ import { render } from "../../analysis/prompts.js";
 import { planOutputSchema, PLAN_JSON_SCHEMA, type PlanOutput } from "../../analysis/schemas.js";
 import { completeStructured } from "../../analysis/structured.js";
 import { resolveStageTarget } from "../../analysis/stages.js";
+import { buildSportsPlan } from "../../analysis/sports.js";
 
 export function makePlanHandler(ctx: AppContext) {
   return async (job: JobContext): Promise<Record<string, unknown>> => {
@@ -24,9 +25,24 @@ export function makePlanHandler(ctx: AppContext) {
     if (!p) throw new Error(`Prediction ${predictionId} no longer exists.`);
 
     const settings = ctx.settings.getPersisted();
+    const researchCutoff = new Date().toISOString().slice(0, 10);
+
+    // Sports picks (1.2): the plan is a settlement rule + score look-ups, written by code — no model call.
+    if (p.kind === "sports_pick" && p.sportsPick) {
+      job.progress(10, "Building settlement plan");
+      const { researchPrompt, ...planBody } = buildSportsPlan(p.sportsPick, { predictionMade: p.madeOnDate, deadline: p.deadlineDate, researchCutoff }, p.components[0]?.statement ?? p.normalizedStatement);
+      const plan = ctx.plans.add({ predictionId, plan: normalizePlan(planBody), researchPrompt, provider: "app", model: "rule", templateVersion: "plan.sports.v1", jobId: job.id });
+      if (job.payload.thenResearch === true) {
+        ctx.jobs.enqueue({ kind: "research.run", subjectType: "prediction", subjectId: predictionId, payload: { predictionId, planId: plan.id }, dedupeKey: `research.run:${predictionId}`, maxAttempts: 1 });
+        job.progress(100, `Settlement plan v${plan.version} saved; looking up the score…`);
+      } else {
+        job.progress(100, `Settlement plan v${plan.version} saved`);
+      }
+      return { planId: plan.id, version: plan.version, attempts: 0, deterministic: true };
+    }
+
     const target = resolveStageTarget("validationPlan", ctx.settings, ctx.secrets);
     const template = ctx.templates.effective("plan");
-    const researchCutoff = new Date().toISOString().slice(0, 10);
 
     job.progress(10, "Generating validation plan");
     const result = await completeStructured<PlanOutput>({

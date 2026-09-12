@@ -309,9 +309,37 @@ export interface PredictionOccurrence {
   windowId: string;
 }
 
+/**
+ * Sports picks (1.2): a prediction about a single game reduces to who wins, the spread, or the total.
+ * The app validates these deterministically — find the final score — instead of the open-ended
+ * research loop used for general predictions.
+ */
+export type PickType = "moneyline" | "spread" | "total";
+export interface SportsPick {
+  sport: string; // "NFL", "NBA", "NHL", "MLB", "soccer", "college football", …
+  league?: string;
+  /** Teams as spoken; `team` inside `pick` must match one of them for moneyline/spread. */
+  teams: [string, string];
+  /** Game date (YYYY-MM-DD) when stated or inferable from the transcript; never guessed. */
+  eventDate?: string;
+  pick: {
+    type: PickType;
+    /** Winner (moneyline) or covering team (spread). */
+    team?: string;
+    /** Spread line (negative = favourite, e.g. -3.5) or total line (e.g. 45.5). */
+    line?: number;
+    /** For totals. */
+    side?: "over" | "under";
+  };
+}
+export type PredictionKind = "general" | "sports_pick";
+
 export interface Prediction {
   id: string;
   videoId: string;
+  /** "sports_pick" predictions use the simplified game-result validation path. */
+  kind: PredictionKind;
+  sportsPick?: SportsPick;
   videoTitle?: string;
   quoteExact: string;
   contextBefore?: string;
@@ -392,6 +420,7 @@ export interface ValidationPlan {
 
 export interface PredictionFilters {
   videoId?: string;
+  kind?: PredictionKind;
   topic?: string;
   userStatus?: PredictionUserStatus;
   deadlineBefore?: string;
@@ -400,7 +429,7 @@ export interface PredictionFilters {
 }
 
 export interface PromptTemplateInfo {
-  name: "extraction" | "plan" | "evidence" | "assessment";
+  name: "extraction" | "plan" | "evidence" | "assessment" | "sports_assessment";
   builtInVersion: string;
   builtInBody: string;
   override?: { body: string; baseVersion: string; updatedAt: string };

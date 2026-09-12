@@ -52,6 +52,20 @@ export function PredictionDetail(props: {
       ) : (
         <>
           <dl className="facts">
+            {p.kind === "sports_pick" && p.sportsPick && (
+              <>
+                <dt>Sports pick</dt>
+                <dd>
+                  <strong>{p.sportsPick.teams[0]} vs {p.sportsPick.teams[1]}</strong> · {p.sportsPick.sport}{p.sportsPick.league ? ` (${p.sportsPick.league})` : ""}{p.sportsPick.eventDate ? ` · game ${p.sportsPick.eventDate}` : " · game date unknown"}
+                  <div className="muted small">
+                    {p.sportsPick.pick.type === "moneyline" && <>Moneyline: <strong>{p.sportsPick.pick.team}</strong> to win</>}
+                    {p.sportsPick.pick.type === "spread" && <>Spread: <strong>{p.sportsPick.pick.team}</strong> {p.sportsPick.pick.line !== undefined ? (p.sportsPick.pick.line > 0 ? `+${p.sportsPick.pick.line}` : p.sportsPick.pick.line) : "(no line)"}</>}
+                    {p.sportsPick.pick.type === "total" && <>Total: <strong>{p.sportsPick.pick.side}</strong> {p.sportsPick.pick.line ?? "(no line)"}</>}
+                    {" "}— settled from the final score; the validation plan is written by the app and research is capped at a few score look-ups.
+                  </div>
+                </dd>
+              </>
+            )}
             <dt>Normalized</dt><dd>{p.normalizedStatement}</dd>
             <dt>Made on</dt><dd>{p.madeOnDate ?? "unknown"} <span className="muted small">({p.madeOnBasis})</span></dd>
             <dt>Time expression</dt><dd>{p.timeExpression ?? <span className="muted">none</span>}</dd>

@@ -41,6 +41,7 @@ gantt
 | **0.4** | Milestone 3 — Local video | Drag-drop an MP4/MPEG, get audio extracted and transcribed locally (Whisper) or via OpenAI, watch chunked progress, read a timestamped transcript on the video page. | 0.1 (+0.2 to analyse it) |
 | **0.5** | Milestone 4 — YouTube | Paste a URL: captions first, audio download + transcription second, transcript import as the documented fallback; clear errors for unavailable content. | 0.4 |
 | **0.6** | Milestone 5a — Evals + hardening | 30-minute labelled fixture and pipeline tests, Promptfoo suite, provider timeouts/backoff, job retry, backups, release scaffolding. | 0.5 |
+| **1.2** | Sports picks | Game-related predictions reduce to win / spread / total and are settled from the final score with a code-generated plan and a capped look-up budget. | 1.1 |
 | **1.0.0-rc.1** | Milestone 5b — Release candidate | Model download job, timeout setting, security tests, doctor script, first-run runbook, static wiring review. `1.0.0` tag gated on the first verified run. | 0.6 |
 | **1.0** | Milestone 5 — MVP | Promptfoo regression suite over labeled fixtures, restart/cancel/rate-limit hardening, Windows and macOS verified, troubleshooting docs, tagged release. | 0.5 |
 
@@ -353,7 +354,7 @@ The 1.0 backlog split in two: 0.6 is everything that could be built and verified
 | `npm run doctor` and `docs/FIRST_RUN.md` so the first run is self-service and reports precisely | RT-01 | AG-16 | ✓ rc.1 |
 | Static review of never-executed wiring: Fastify 5 route/parser/static usage, `@fastify/static` v8 `sendFile`, pino `redact` paths, Vite proxy, `node --test` glob quoting, `npm.cmd`/`shell:true` on Windows, `createRequire` for CJS packages, `AbortSignal.any` (Node ≥ 20.3) | RT-01 | AG-05, AG-07, AG-08 | ✓ reviewed; no changes needed |
 | First real run: `npm run setup` / `test` / `start`; fix first-compile surprises | RT-01 | AG-05, AG-06 | **In progress**: install + shared/server/web builds ✓ on Windows 11 / Node 26.7; two fixes shipped (template names, migrations copied to dist); `npm start` re-run pending |
-| Spikes S-3 (Whisper throughput, default model) and S-4 (real yt-dlp, `--js-runtimes node`, installer path) | IN-03, IN-07 | AG-13 | **Pending** first run |
+| Spikes S-3 (Whisper throughput, default model) and S-4 (real yt-dlp, `--js-runtimes node`, installer path) | IN-03, IN-07 | AG-13 | **S-4 answered** (1.1.1 on Windows: installer + captions import worked); S-3 pending |
 | Promptfoo suite executed on Anthropic, OpenAI, one LM Studio model; scores in `docs/VERIFICATION.md`; defaults adjusted; plan/assessment eval cases | — | AG-14 | **Pending** first run |
 | Readability spike (ADR-014); optional Drizzle/AI SDK spikes (ADR-012) | RS-03 | AG-11/AG-13 | Deferred to 1.1 unless first-run evidence shows thin extraction |
 | Windows and macOS verification matrix executed and recorded | RT-01 | AG-08, AG-09, AG-14 | **Pending** |
@@ -363,7 +364,17 @@ The 1.0 backlog split in two: 0.6 is everything that could be built and verified
 
 ---
 
-## 9. Working agreements
+## 10. Release 1.2 — Sports picks (delivered)
+
+| Item | Req. | Agent | Done |
+|---|---|---|---|
+| Owner rule: game-related predictions reduce to win / spread / total, validated by the final score after the game date (ADR-021) | PX-*, VD-* | AG-03 | ✓ |
+| Extraction `sports_pick` field + prompt rule; `kind` on predictions; migration 006 | PX-01, PS-01 | AG-05, AG-11 | ✓ |
+| Deterministic settlement plan (`plan.sports.v1`), capped research budget, `sports_assessment` template | VP-01, RS-01, VD-01 | AG-05 | ✓ |
+| Dashboard chip, Kind filter, pick card | UX-03, UX-04 | AG-10 | ✓ (statically checked) |
+| Fixture `nfl-picks` + tests (normalisation, plan, pipeline) | — | AG-14 | ✓ 52/52 |
+
+## 11. Working agreements
 
 - **Small end-to-end increments.** Each release is usable on its own; nothing is merged that leaves the dashboard in a half-state.
 - **Fixtures first.** Every new model-facing feature ships with a human-reviewed fixture before it ships with a prompt tweak.

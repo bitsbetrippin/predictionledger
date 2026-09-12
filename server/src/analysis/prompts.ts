@@ -12,7 +12,7 @@
  */
 
 export interface PromptTemplate {
-  name: "extraction" | "plan" | "evidence" | "assessment";
+  name: "extraction" | "plan" | "evidence" | "assessment" | "sports_assessment";
   version: string;
   system: string;
   user: string;
@@ -38,6 +38,7 @@ Rules you must follow:
 5. Record the original time expression verbatim ("within two years", "by 2027"). Propose an ISO deadline ONLY if it follows directly from the words and the statement date given below; otherwise null. The application resolves dates independently.
 6. Extract every distinct prediction in the window, including repeated ones (the application deduplicates).
 7. Report a confidence 0–1 that the statement is a genuine prediction by the speaker.
+8. SPORTS RULE. When a statement is a pick on ONE specific game (NFL, NBA, NHL, MLB, soccer, college, etc.), fill "sports_pick" and keep everything else minimal: the pick is just who wins (moneyline), who covers a stated spread, or over/under a stated total. Put the two teams in "teams", the game date in "event_date" only if it is stated or unambiguous, the line as a number (spread negative for the favourite, e.g. -3.5; totals as the number, e.g. 45.5). One prediction per pick; do not extract the reasoning, injuries, weather, or player props as separate predictions. Season-long or futures claims ("they'll win the division", "MVP") are NOT game picks — leave sports_pick null and treat them as ordinary predictions.
 
 Return ONLY a JSON object that matches the provided schema. No prose before or after.`,
   user: `Video: {{videoTitle}}
@@ -164,11 +165,56 @@ Coverage limitations recorded by the application: {{coverage}}
 Produce the assessment JSON.`,
 };
 
+/**
+ * Sports picks (Release 1.2): the verdict is a look-up, not a judgement. Same output schema as the
+ * general assessment so the verdict guard, dashboard, and history work unchanged.
+ */
+export const SPORTS_ASSESSMENT_V1: PromptTemplate = {
+  name: "sports_assessment",
+  version: "sports_assessment.v1",
+  system: `You settle a SPORTS PICK from the final result of one game, using only the evidence set the application retrieved.
+
+The pick is one of:
+- moneyline: the named team wins the game (a draw/tie does not count as a win unless the sport has no draws and the pick said "wins or ties");
+- spread: the named team's margin beats the line (favourite at -3.5 must win by 4+; underdog at +3.5 wins outright or loses by 3 or less; an exact-line result is a PUSH);
+- total: the combined final score is over/under the line (exactly the line is a PUSH).
+
+Labels (the application enforces these):
+- supported: the evidence set contains a final score for THIS game (both teams, the date or a clear identification of the matchup) and the pick hit.
+- contradicted: the evidence set contains the final score and the pick missed.
+- partially_supported: the result is a PUSH (spread/total exactly on the line) or a draw on a moneyline pick.
+- insufficient: no final score for this game is in the evidence set (not yet played, postponed, wrong game, or only previews/odds retrieved). NEVER infer a result from previews, odds, or memory.
+- not_assessable: the pick cannot be settled as stated (line missing for a spread/total pick, teams or game not identifiable).
+
+Cite the evidence item(s) that carry the final score. Explanation: two sentences at most — the final score and how it settles the pick. Do not research, speculate, or add context.
+
+Return ONLY a JSON object that matches the provided schema.`,
+  user: `Pick to settle (validation plan v{{planVersion}}): {{proposition}}
+Settlement rule: {{supporting}}
+Miss rule: {{contradicting}}
+Push rule: {{partial}}
+
+Game date (deadline): {{deadline}} · Research cutoff: {{cutoff}} · Time status: {{timeStatus}}
+
+Components (use these ids):
+{{components}}
+
+Evidence set ({{evidenceCount}} items; cite by id):
+<evidence>
+{{evidence}}
+</evidence>
+
+Coverage limitations recorded by the application: {{coverage}}
+
+Settle the pick and return the JSON object.`,
+};
+
 export const BUILT_IN_TEMPLATES: Record<PromptTemplate["name"], PromptTemplate> = {
   extraction: EXTRACTION_V1,
   plan: PLAN_V1,
   evidence: EVIDENCE_V1,
   assessment: ASSESSMENT_V1,
+  sports_assessment: SPORTS_ASSESSMENT_V1,
 };
 
 /** Replace {{key}} placeholders. Missing keys render as "unknown" so a typo never leaks a template tag. */

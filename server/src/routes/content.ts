@@ -121,6 +121,7 @@ export function registerContentRoutes(app: FastifyInstance, ctx: AppContext): vo
     const q = req.query as Record<string, string | undefined>;
     const filters: PredictionFilters = {
       videoId: q.videoId || undefined,
+      kind: q.kind === "general" || q.kind === "sports_pick" ? q.kind : undefined,
       topic: q.topic || undefined,
       userStatus: (q.userStatus as PredictionFilters["userStatus"]) || undefined,
       deadlineBefore: q.deadlineBefore || undefined,
@@ -232,12 +233,12 @@ export function registerContentRoutes(app: FastifyInstance, ctx: AppContext): vo
   });
 
   // ---- Prompt templates -----------------------------------------------------------
-  app.get("/api/templates", async () => (["extraction", "plan", "evidence", "assessment"] as const).map((n) => ctx.templates.info(n)));
+  app.get("/api/templates", async () => (["extraction", "plan", "evidence", "assessment", "sports_assessment"] as const).map((n) => ctx.templates.info(n)));
 
   app.put<{ Params: { name: string } }>("/api/templates/:name", async (req, reply) => {
-    if (!["extraction", "plan", "evidence", "assessment"].includes(req.params.name)) return reply.code(404).send({ error: "not_found" });
+    if (!["extraction", "plan", "evidence", "assessment", "sports_assessment"].includes(req.params.name)) return reply.code(404).send({ error: "not_found" });
     const parsed = templateSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", issues: parsed.error.issues });
-    return ctx.templates.setOverride(req.params.name as "extraction" | "plan" | "evidence" | "assessment", parsed.data.body);
+    return ctx.templates.setOverride(req.params.name as "extraction" | "plan" | "evidence" | "assessment" | "sports_assessment", parsed.data.body);
   });
 }

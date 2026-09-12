@@ -14,12 +14,20 @@ import { PredictionDetail } from "../components/PredictionDetail";
 
 const TIME_LABEL: Record<PredictionRow["timeStatus"], string> = { pending: "Deadline pending", reached: "Deadline reached", unknown: "Deadline unknown" };
 
+function pickLabel(sp: NonNullable<import("@prediction-ledger/shared").Prediction["sportsPick"]>): string {
+  const line = (l?: number) => (l === undefined ? "" : l > 0 ? ` +${l}` : ` ${l}`);
+  if (sp.pick.type === "moneyline") return `${sp.sport} · ML ${sp.pick.team ?? "?"}`;
+  if (sp.pick.type === "spread") return `${sp.sport} · ${sp.pick.team ?? "?"}${line(sp.pick.line)}`;
+  return `${sp.sport} · ${sp.pick.side === "over" ? "O" : "U"} ${sp.pick.line ?? "?"}`;
+}
+
 export function PredictionsPage({ initialVideoId, initialPredictionId }: { initialVideoId?: string; initialPredictionId?: string }) {
   const [rows, setRows] = useState<PredictionRow[] | null>(null);
   const [videos, setVideos] = useState<VideoSummary[]>([]);
   const [topics, setTopics] = useState<string[]>([]);
   const [videoId, setVideoId] = useState(initialVideoId ?? "");
   const [topic, setTopic] = useState("");
+  const [kind, setKind] = useState<"" | "general" | "sports_pick">("");
   const [status, setStatus] = useState<"" | "pending" | "accepted" | "dismissed" | "merged">("");
   const [deadline, setDeadline] = useState<"" | "pending" | "reached" | "unknown">("");
   const [result, setResult] = useState("");
@@ -33,7 +41,7 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
   const reload = useCallback(async () => {
     try {
       const [r, v, t] = await Promise.all([
-        content.listPredictions({ videoId: videoId || undefined, topic: topic || undefined, userStatus: status || undefined, includeDismissed: !!status, result: result || undefined }),
+        content.listPredictions({ videoId: videoId || undefined, kind: kind || undefined, topic: topic || undefined, userStatus: status || undefined, includeDismissed: !!status, result: result || undefined }),
         content.listVideos(),
         content.topics(),
       ]);
@@ -41,7 +49,7 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
     } catch (e) {
       setError((e as Error).message);
     }
-  }, [videoId, topic, status, result]);
+  }, [videoId, kind, topic, status, result]);
   useEffect(() => void reload(), [reload]);
 
   const loadSelected = useCallback(async (id: string | undefined) => {
@@ -108,6 +116,7 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
 
       <div className="filters">
         <label>Video <select value={videoId} onChange={(e) => setVideoId(e.target.value)}><option value="">All</option>{videos.map((v) => <option key={v.id} value={v.id}>{v.title}</option>)}</select></label>
+        <label>Kind <select value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}><option value="">All</option><option value="general">General</option><option value="sports_pick">Sports picks</option></select></label>
         <label>Topic <select value={topic} onChange={(e) => setTopic(e.target.value)}><option value="">All</option>{topics.map((t) => <option key={t} value={t}>{t}</option>)}</select></label>
         <label>Review status <select value={status} onChange={(e) => setStatus(e.target.value as typeof status)}><option value="">Pending + accepted</option><option value="pending">Pending review</option><option value="accepted">Accepted</option><option value="dismissed">Dismissed</option><option value="merged">Merged</option></select></label>
         <label>Deadline <select value={deadline} onChange={(e) => setDeadline(e.target.value as typeof deadline)}><option value="">Any</option><option value="pending">Pending</option><option value="reached">Reached</option><option value="unknown">Unknown</option></select></label>
@@ -134,7 +143,7 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
                       <tr key={p.id} className={selectedId === p.id ? "selected" : ""} onClick={() => setSelectedId(p.id)}>
                         <td onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label="select for merge" checked={checked.has(p.id)} onChange={(e) => setChecked((s) => { const n = new Set(s); e.target.checked ? n.add(p.id) : n.delete(p.id); return n; })} /></td>
                         <td>
-                          <div>{p.normalizedStatement}</div>
+                          <div>{p.kind === "sports_pick" && p.sportsPick && <span className="chip sports" title="Sports pick — settled from the final score, no deep research">{pickLabel(p.sportsPick)}</span>} {p.normalizedStatement}</div>
                           <div className="muted small">{fmtClock(p.startS)} · {p.userStatus}{p.components.length > 1 ? ` · ${p.components.length} components` : ""}{p.latestPlanVersion ? ` · plan v${p.latestPlanVersion}` : ""}{pj && (pj.status === "running" || pj.status === "queued") ? ` · ${pj.stage ?? "planning…"}` : ""}</div>
                         </td>
                         <td>{p.deadlineDate ?? <span className="muted">unknown</span>}</td>

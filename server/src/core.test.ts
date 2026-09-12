@@ -27,7 +27,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 test("migrations apply in order and create the expected tables", () => {
   const paths = tempPaths();
   const { db, schemaVersion } = openDatabase(paths as never);
-  assert.equal(schemaVersion, 5);
+  assert.equal(schemaVersion, 6);
   const tables = db
     .all<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     .map((r) => r.name);
@@ -36,7 +36,7 @@ test("migrations apply in order and create the expected tables", () => {
     "prompt_templates", "research_runs", "run_results", "schema_migrations", "search_cache", "secrets", "settings", "sources",
     "transcript_segments", "transcription_chunks", "validation_plans", "videos",
   ]);
-  assert.deepEqual(db.all<{ version: number }>("SELECT version FROM schema_migrations ORDER BY version").map((r) => r.version), [1, 2, 3, 4, 5]);
+  assert.deepEqual(db.all<{ version: number }>("SELECT version FROM schema_migrations ORDER BY version").map((r) => r.version), [1, 2, 3, 4, 5, 6]);
   db.close();
 });
 

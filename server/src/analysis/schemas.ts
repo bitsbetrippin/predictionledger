@@ -22,6 +22,17 @@ export const extractedComponentSchema = z.object({
   notes: nullableStr,
 });
 
+export const sportsPickSchema = z.object({
+  sport: z.string().min(2),
+  league: nullableStr,
+  teams: z.array(z.string().min(1)).min(2).max(2),
+  event_date: nullableStr,
+  pick_type: z.enum(["moneyline", "spread", "total"]),
+  team: nullableStr,
+  line: z.number().nullable().optional(),
+  side: z.enum(["over", "under"]).nullable().optional(),
+});
+
 export const extractedPredictionSchema = z.object({
   quote: z.string().min(10),
   speaker: nullableStr,
@@ -38,6 +49,8 @@ export const extractedPredictionSchema = z.object({
   ambiguities: z.array(z.string()).default([]),
   confidence: z.number().min(0).max(1),
   components: z.array(extractedComponentSchema).min(1),
+  /** Present only when the statement is a pick on a single game (Release 1.2 sports rule). */
+  sports_pick: sportsPickSchema.nullable().optional(),
 });
 
 export const extractionOutputSchema = z.object({
@@ -74,6 +87,22 @@ export const EXTRACTION_JSON_SCHEMA: Record<string, unknown> = {
           time_expression: { type: ["string", "null"], description: "Original wording, e.g. 'within two years'." },
           proposed_deadline: { type: ["string", "null"], description: "YYYY-MM-DD only if it follows directly from the words." },
           ambiguities: { type: "array", items: { type: "string" } },
+          sports_pick: {
+            type: ["object", "null"],
+            description: "Only for a pick on ONE specific game (who wins / spread / total). Null otherwise.",
+            additionalProperties: false,
+            required: ["sport", "teams", "pick_type"],
+            properties: {
+              sport: { type: "string", description: "NFL, NBA, NHL, MLB, soccer, college football, …" },
+              league: { type: ["string", "null"] },
+              teams: { type: "array", items: { type: "string" }, minItems: 2, maxItems: 2 },
+              event_date: { type: ["string", "null"], description: "YYYY-MM-DD only if stated or unambiguous from the transcript." },
+              pick_type: { type: "string", enum: ["moneyline", "spread", "total"] },
+              team: { type: ["string", "null"], description: "Winner (moneyline) or covering team (spread)." },
+              line: { type: ["number", "null"], description: "Spread (negative = favourite) or total line." },
+              side: { type: ["string", "null"], enum: ["over", "under", null] },
+            },
+          },
           confidence: { type: "number", minimum: 0, maximum: 1 },
           components: {
             type: "array",

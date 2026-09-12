@@ -110,6 +110,10 @@ Provider calls made by every job now go through a resilience wrapper: 120 s per-
 
 `limits.modelTimeoutSeconds` (30–900, default 120) is the per-try timeout applied to every model call.
 
+## Release 1.2
+
+`GET /api/predictions` accepts `kind=general|sports_pick`. `Prediction` gains `kind` and, for picks, `sportsPick: { sport, league?, teams: [a, b], eventDate?, pick: { type: "moneyline"|"spread"|"total", team?, line?, side? } }`. Plans for picks report `provider: "app"`, `templateVersion: "plan.sports.v1"`; their assessments report `templateVersion: "sports_assessment.v1"`. A fifth template name, `sports_assessment`, is available on `/api/templates`.
+
 ## Job kinds and payloads
 
 | Kind | Payload | Subject | Result |

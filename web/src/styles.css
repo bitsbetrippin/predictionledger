@@ -160,4 +160,5 @@ details summary { cursor: pointer; }
 .chip.stance-contradicts { background: #fdecec; color: var(--error); }
 .chip.stance-context { background: var(--bg); }
 .chip.late { background: #fff4e5; color: #7a3e00; }
+.chip.sports { background: #e8f5e9; color: #1b5e20; text-transform: none; letter-spacing: 0; font-weight: 600; margin-right: 6px; }
 @media (prefers-color-scheme: dark) { .chip.stance-contradicts { background: #3a1616; } .chip.late { background: #3a2a10; color: #f5c27b; } }

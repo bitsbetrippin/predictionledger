@@ -24,6 +24,7 @@ import { render } from "../../analysis/prompts.js";
 import { extractionOutputSchema, EXTRACTION_JSON_SCHEMA, type ExtractedPrediction, type ExtractionOutput } from "../../analysis/schemas.js";
 import { completeStructured } from "../../analysis/structured.js";
 import { resolveStageTarget } from "../../analysis/stages.js";
+import { describePick, normalizeSportsPick } from "../../analysis/sports.js";
 import type { NewPrediction } from "../../services/predictions.js";
 
 interface Candidate extends DedupeCandidate<ExtractedPrediction> {
@@ -130,14 +131,37 @@ export function makeExtractHandler(ctx: AppContext) {
             matchedExisting++;
             continue;
           }
-          const deadline = resolveDeadline(p.time_expression ?? undefined, madeOnDate, p.proposed_deadline ?? undefined);
+          let deadline = resolveDeadline(p.time_expression ?? undefined, madeOnDate, p.proposed_deadline ?? undefined);
           const ambiguities = [...p.ambiguities];
+
+          // Sports rule (1.2): a pick on one game → kind 'sports_pick', deadline = game date, one settleable component.
+          let kind: "general" | "sports_pick" = "general";
+          let sportsPick: ReturnType<typeof normalizeSportsPick>["pick"];
+          let components = p.components.map((c) => ({
+            kind: c.kind,
+            statement: c.statement,
+            deadlineDate: c.deadline && isIso(c.deadline) ? c.deadline : undefined,
+            notes: c.notes ?? undefined,
+          }));
+          if (p.sports_pick) {
+            const norm = normalizeSportsPick(p.sports_pick);
+            ambiguities.push(...norm.problems);
+            if (norm.pick) {
+              kind = "sports_pick";
+              sportsPick = norm.pick;
+              if (norm.pick.eventDate) deadline = { deadlineDate: norm.pick.eventDate, basis: "rule:event" };
+              else if (!deadline.deadlineDate) deadline = { basis: "unresolved", note: "Game date not stated; the pick settles when the matchup is identified." };
+              components = [{ kind: "future_claim", statement: describePick(norm.pick), deadlineDate: norm.pick.eventDate, notes: "Sports pick — settled from the final score." }];
+            }
+          }
           if (g.primary.matchScore !== undefined && g.primary.matchScore < 0.85) ambiguities.push(`Quote matched transcript at ${Math.round(g.primary.matchScore * 100)}% — verify wording.`);
           if (g.primary.startS === undefined) ambiguities.push("Quote could not be located in the transcript; timestamps unknown.");
           if (deadline.note) ambiguities.push(deadline.note);
 
           ctx.predictions.create({
             videoId,
+            kind,
+            sportsPick,
             quoteExact: p.quote,
             contextBefore: g.primary.contextBefore,
             contextAfter: g.primary.contextAfter,
@@ -164,12 +188,7 @@ export function makeExtractHandler(ctx: AppContext) {
             extractionModel: target.model,
             extractionTemplate: template.effectiveVersion,
             extractionJobId: job.id,
-            components: p.components.map((c) => ({
-              kind: c.kind,
-              statement: c.statement,
-              deadlineDate: c.deadline && isIso(c.deadline) ? c.deadline : undefined,
-              notes: c.notes ?? undefined,
-            })),
+            components,
           });
           created++;
         }

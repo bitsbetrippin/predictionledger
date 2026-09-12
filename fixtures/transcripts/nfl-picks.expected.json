@@ -1,0 +1,47 @@
+{
+  "_comment": "Human-reviewed expectations for fixtures/transcripts/nfl-picks.srt (sports rule). Statement date 2026-01-08. Three game picks become kind=sports_pick with deadline = game date 2026-01-11 and a deterministic settlement plan; the season-long claim stays a general prediction.",
+  "publishedAt": "2026-01-08",
+  "mustExtract": [
+    {
+      "id": "S1",
+      "quoteContains": "Chiefs to cover minus three and a half",
+      "kind": "sports_pick",
+      "pickType": "spread",
+      "team": "Kansas City Chiefs",
+      "line": -3.5,
+      "deadlineDate": "2026-01-11"
+    },
+    {
+      "id": "S2",
+      "quoteContains": "the Eagles win this game",
+      "kind": "sports_pick",
+      "pickType": "moneyline",
+      "team": "Philadelphia Eagles",
+      "deadlineDate": "2026-01-11"
+    },
+    {
+      "id": "S3",
+      "quoteContains": "I like the over",
+      "kind": "sports_pick",
+      "pickType": "total",
+      "side": "over",
+      "line": 48.5,
+      "deadlineDate": "2026-01-11"
+    },
+    {
+      "id": "G1",
+      "quoteContains": "NFC championship game",
+      "kind": "general"
+    }
+  ],
+  "mustNotExtract": [
+    {
+      "reason": "rationale, not a pick",
+      "quoteContains": "offensive line has been banged up"
+    },
+    {
+      "reason": "past game",
+      "quoteContains": "Mahomes still put up twenty-seven"
+    }
+  ]
+}

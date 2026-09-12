@@ -18,7 +18,7 @@
 
 export interface DeadlineResolution {
   deadlineDate?: string; // YYYY-MM-DD
-  basis: "rule:relative" | "rule:absolute" | "model" | "user" | "unresolved";
+  basis: "rule:relative" | "rule:absolute" | "rule:event" | "model" | "user" | "unresolved";
   note?: string;
 }
 

@@ -133,7 +133,7 @@ export const content = {
   extract: (videoId: string) => request<{ jobId: string }>("POST", `/api/videos/${videoId}/extract`),
 
   listPredictions: (f: PredictionFilters & { result?: string } = {}) =>
-    request<PredictionRow[]>("GET", `/api/predictions${qs({ videoId: f.videoId, topic: f.topic, userStatus: f.userStatus, deadlineBefore: f.deadlineBefore, deadlineAfter: f.deadlineAfter, includeDismissed: f.includeDismissed, result: f.result })}`),
+    request<PredictionRow[]>("GET", `/api/predictions${qs({ videoId: f.videoId, kind: f.kind, topic: f.topic, userStatus: f.userStatus, deadlineBefore: f.deadlineBefore, deadlineAfter: f.deadlineAfter, includeDismissed: f.includeDismissed, result: f.result })}`),
   research: (id: string, planId?: string) => request<{ jobId: string; stage: "plan" | "research"; planVersion?: number }>("POST", `/api/predictions/${id}/research`, { planId, autoPlan: true }),
   run: (id: string) => request<RunDetail>("GET", `/api/runs/${id}`),
   topics: () => request<string[]>("GET", "/api/predictions/topics"),

@@ -1,0 +1,142 @@
+{
+  "_comment": "SYNTHETIC canned extraction reply for fixtures/transcripts/nfl-picks.srt (Release 1.2 sports rule). Not a real model output.",
+  "predictions": [
+    {
+      "quote": "I'm taking the Chiefs to cover minus three and a half",
+      "speaker": "Host",
+      "normalized_statement": "Kansas City Chiefs cover -3.5 vs Buffalo Bills on 2026-01-11.",
+      "modality": "will",
+      "entities": [],
+      "topic": "NFL picks",
+      "geography": null,
+      "scope": null,
+      "conditions": [],
+      "thresholds": [],
+      "time_expression": "Sunday, January eleventh",
+      "proposed_deadline": "2026-01-11",
+      "ambiguities": [],
+      "confidence": 0.9,
+      "components": [
+        {
+          "kind": "future_claim",
+          "statement": "Kansas City Chiefs cover -3.5 vs Buffalo Bills on 2026-01-11.",
+          "deadline": "2026-01-11",
+          "notes": null
+        }
+      ],
+      "sports_pick": {
+        "sport": "NFL",
+        "league": null,
+        "teams": [
+          "Kansas City Chiefs",
+          "Buffalo Bills"
+        ],
+        "event_date": "2026-01-11",
+        "pick_type": "spread",
+        "team": "Chiefs",
+        "line": -3.5,
+        "side": null
+      }
+    },
+    {
+      "quote": "the Eagles win this game, I don't care about the number",
+      "speaker": "Host",
+      "normalized_statement": "Philadelphia Eagles beat Dallas Cowboys on 2026-01-11 (moneyline).",
+      "modality": "will",
+      "entities": [],
+      "topic": "NFL picks",
+      "geography": null,
+      "scope": null,
+      "conditions": [],
+      "thresholds": [],
+      "time_expression": "same day",
+      "proposed_deadline": "2026-01-11",
+      "ambiguities": [],
+      "confidence": 0.9,
+      "components": [
+        {
+          "kind": "future_claim",
+          "statement": "Philadelphia Eagles beat Dallas Cowboys on 2026-01-11 (moneyline).",
+          "deadline": "2026-01-11",
+          "notes": null
+        }
+      ],
+      "sports_pick": {
+        "sport": "NFL",
+        "league": null,
+        "teams": [
+          "Philadelphia Eagles",
+          "Dallas Cowboys"
+        ],
+        "event_date": "2026-01-11",
+        "pick_type": "moneyline",
+        "team": "Eagles",
+        "line": null,
+        "side": null
+      }
+    },
+    {
+      "quote": "Total is forty-eight and a half and I like the over",
+      "speaker": "Host",
+      "normalized_statement": "Lions vs Packers on 2026-01-11 total goes over 48.5.",
+      "modality": "will",
+      "entities": [],
+      "topic": "NFL picks",
+      "geography": null,
+      "scope": null,
+      "conditions": [],
+      "thresholds": [],
+      "time_expression": "Sunday the eleventh",
+      "proposed_deadline": "2026-01-11",
+      "ambiguities": [],
+      "confidence": 0.9,
+      "components": [
+        {
+          "kind": "future_claim",
+          "statement": "Lions vs Packers on 2026-01-11 total goes over 48.5.",
+          "deadline": "2026-01-11",
+          "notes": null
+        }
+      ],
+      "sports_pick": {
+        "sport": "NFL",
+        "league": null,
+        "teams": [
+          "Detroit Lions",
+          "Green Bay Packers"
+        ],
+        "event_date": "2026-01-11",
+        "pick_type": "total",
+        "team": null,
+        "line": 48.5,
+        "side": "over"
+      }
+    },
+    {
+      "quote": "I think Detroit ends up in the NFC championship game this year",
+      "speaker": "Host",
+      "normalized_statement": "The Detroit Lions will reach the NFC Championship game this season.",
+      "modality": "will",
+      "entities": [],
+      "topic": "NFL season",
+      "geography": null,
+      "scope": null,
+      "conditions": [],
+      "thresholds": [],
+      "time_expression": "this year",
+      "proposed_deadline": null,
+      "ambiguities": [],
+      "confidence": 0.8,
+      "components": [
+        {
+          "kind": "future_claim",
+          "statement": "The Detroit Lions will reach the NFC Championship game this season.",
+          "deadline": null,
+          "notes": null
+        }
+      ],
+      "sports_pick": null
+    }
+  ],
+  "notes": "Three single-game picks (spread, moneyline, total) plus one season-long claim that is not a game pick."
+}

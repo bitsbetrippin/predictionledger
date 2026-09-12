@@ -4,6 +4,19 @@ All notable changes to Prediction Ledger. Format follows [Keep a Changelog](http
 
 Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
 
+## [1.2.0] — 2026-09-12 — Sports picks
+Product rule (owner): a prediction about a single game reduces to who wins, the spread, or the total, and validation is "did it happen after the game date" — no deep research.
+### Added
+- Extraction: rule 8 in the extraction prompt plus a `sports_pick` field (sport, teams, game date if stated, pick type moneyline/spread/total, team, line, side). Season-long claims stay ordinary predictions.
+- Predictions gain `kind` (`general` | `sports_pick`) and `sportsPick`; migration 006. Deadline for a pick is the game date (`rule:event`) and the single component is the settleable pick.
+- Validation plan for picks is built by code (`plan.sports.v1`, provider `app`): settlement rules (win / cover / over-under, push handling), score look-up queries, "no previews or odds" research prompt. No model call.
+- Research budget for picks capped at 3 searches / 3 sources regardless of Setup limits.
+- Assessment for picks uses the `sports_assessment` template (settlement, not judgement): supported = hit, contradicted = miss, partially supported = push/draw, insufficient = no final score yet. Same output schema, so the verdict guard, history, and dashboard apply unchanged.
+- Dashboard: sports chip on the row (e.g. `NFL · Kansas City Chiefs -3.5`), Kind filter, pick card in the detail panel; `GET /api/predictions?kind=`.
+- Fixture `fixtures/transcripts/nfl-picks.*` (spread, moneyline, total, plus a season-long claim) and tests for normalisation, the deterministic plan, and the full pipeline (52 tests).
+### Changed
+- Evidence the model did not tie to a component is attributed to the prediction's only future claim when there is exactly one (guard G2 previously ignored it).
+
 ## [1.1.2] — 2026-09-12 — First live model call
 ### Fixed
 - Anthropic adapter: current Claude models reject `temperature` (HTTP 400 "`temperature` is deprecated for this model"); it is no longer sent. Forced tool use already yields structured output.

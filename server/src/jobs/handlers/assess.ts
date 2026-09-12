@@ -68,7 +68,8 @@ export function makeAssessHandler(ctx: AppContext) {
     }
 
     const target = resolveStageTarget("assessment", ctx.settings, ctx.secrets);
-    const template = ctx.templates.effective("assessment");
+    // Sports picks (1.2) are settled by a look-up template with the same output schema.
+    const template = ctx.templates.effective(p.kind === "sports_pick" ? "sports_assessment" : "assessment");
     job.progress(20, "Assessing evidence");
 
     const result = await completeStructured<AssessmentOutput>({

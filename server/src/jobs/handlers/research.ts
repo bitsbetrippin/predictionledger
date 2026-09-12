@@ -15,6 +15,7 @@
 import type { QueryGroup, SearchResult, ValidationPlan } from "@prediction-ledger/shared";
 import type { JobContext } from "../queue.js";
 import type { AppContext } from "../../context.js";
+import { SPORTS_RESEARCH_BUDGET } from "../../analysis/sports.js";
 import { render } from "../../analysis/prompts.js";
 import { evidenceOutputSchema, EVIDENCE_JSON_SCHEMA, type EvidenceOutput } from "../../analysis/schemas.js";
 import { completeStructured, MalformedOutputError } from "../../analysis/structured.js";
@@ -55,7 +56,9 @@ export function makeResearchHandler(ctx: AppContext) {
       const candidates = new Map<string, { result: SearchResult; group: QueryGroup; query: string; rank: number; runResultId: string }>();
       const groups: QueryGroup[] = ["neutral", "supporting", "disconfirming"];
       const perGroup = plan.plan.queries;
-      const budget = settings.limits.maxSearchesPerRun;
+      // Sports picks (1.2): a score look-up needs a couple of searches, not the research budget.
+      const sports = p.kind === "sports_pick";
+      const budget = sports ? Math.min(settings.limits.maxSearchesPerRun, SPORTS_RESEARCH_BUDGET.searches) : settings.limits.maxSearchesPerRun;
       const order: { group: QueryGroup; query: string }[] = [];
       for (let i = 0; i < 10; i++) for (const g of groups) if (perGroup[g][i]) order.push({ group: g, query: perGroup[g][i] });
       let used = 0;
@@ -96,7 +99,7 @@ export function makeResearchHandler(ctx: AppContext) {
 
       // ---- 2. fetch top distinct sources (interleave groups for balance) ----
       const ordered = [...candidates.values()].sort((a, b) => a.rank - b.rank || groups.indexOf(a.group) - groups.indexOf(b.group));
-      const toFetch = ordered.slice(0, settings.limits.maxSourcesPerRun);
+      const toFetch = ordered.slice(0, sports ? Math.min(settings.limits.maxSourcesPerRun, SPORTS_RESEARCH_BUDGET.sources) : settings.limits.maxSourcesPerRun);
       if (ordered.length > toFetch.length) coverage.push(`Source budget: fetched ${toFetch.length} of ${ordered.length} distinct results (Setup → Limits).`);
       const fetched: { sourceId: string; text: string; title?: string; publishedAt?: string; url: string }[] = [];
       let failedFetches = 0;
@@ -186,7 +189,10 @@ export function makeResearchHandler(ctx: AppContext) {
             rejected++;
             continue;
           }
-          const component = p.components.find((c) => c.id === it.component_id) ?? undefined;
+          // An item the model did not tie to a component still belongs to the only future claim when there is
+          // exactly one (always true for sports picks) — otherwise guard G2 would ignore it.
+          const soleClaim = p.components.filter((c) => c.kind === "future_claim").length === 1 ? p.components.find((c) => c.kind === "future_claim") : undefined;
+          const component = p.components.find((c) => c.id === it.component_id) ?? soleClaim;
           const eventDate = it.event_date && isIso(it.event_date) ? it.event_date : undefined;
           const inWindow = eventDate && p.deadlineDate ? eventDate <= p.deadlineDate : eventDate && !p.deadlineDate ? true : undefined;
           ctx.research.addEvidence({

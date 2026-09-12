@@ -4,6 +4,12 @@ All notable changes to Prediction Ledger. Format follows [Keep a Changelog](http
 
 Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
 
+## [1.1.1] — 2026-09-12 — Server type fix from the first clean rebuild
+### Fixed
+- Server: `completeStructured` declared its schema as `z.ZodType<T>`, which requires the schema's *input* type to equal its *output* type; every schema with `.default()` fields (extraction, plan, evidence, assessment) violates that, so a real `tsc` failed with four TS2322 errors. Now `z.ZodType<T, z.ZodTypeDef, unknown>`. Not caught earlier because the sandbox typechecks against a stand-in Zod typing, and because `tsc` still emits JavaScript on type errors — the rc.1 folder's `server/dist` existed despite the errors, which misled the earlier "server compiled cleanly" note.
+### Verified on the real machine (Windows 11, Node 26.7, fresh extract)
+- `npm install` (210 packages) and the `shared` build. Server and web builds re-run pending.
+
 ## [1.1.0] — 2026-09-12 — First build that runs on real hardware
 Consolidates 1.0.0-rc.1 and the two first-run patches into one fresh build (versioned 1.1.0 at the product owner's request; the 1.0.x line is retired). First run on Windows 11 / Node 26.7: `npm install`, the shared and server builds, and — after the fix below — the dashboard build all succeeded. `npm start` and the workflow steps in `docs/FIRST_RUN.md` are the remaining verification.
 ### Fixed

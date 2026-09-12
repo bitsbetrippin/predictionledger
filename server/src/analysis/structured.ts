@@ -46,7 +46,8 @@ export interface StructuredRequest<T> {
   stage: AnalysisStage;
   target: StageTarget;
   messages: ChatMessage[];
-  zodSchema: z.ZodType<T>;
+  /** Output type T; input may differ (fields with .default() are optional on the way in). */
+  zodSchema: z.ZodType<T, z.ZodTypeDef, unknown>;
   jsonSchema: Record<string, unknown>;
   schemaName: string;
   maxTokens?: number;

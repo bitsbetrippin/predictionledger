@@ -250,7 +250,7 @@ export function makeResearchHandler(ctx: AppContext) {
 
 type ResearchRun_Query = { group: QueryGroup; query: string; resultCount: number; error?: string; cached?: boolean };
 
-function buildSearchProvider(ctx: AppContext): SearchProvider | undefined {
+export function buildSearchProvider(ctx: AppContext): SearchProvider | undefined {
   const s = ctx.settings.getPersisted();
   const id = s.search.provider;
   const llm = id === "anthropic-native" ? "anthropic" : id === "openai-native" ? "openai" : undefined;

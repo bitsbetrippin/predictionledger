@@ -30,7 +30,9 @@ export function makePlanHandler(ctx: AppContext) {
     // Sports picks (1.2): the plan is a settlement rule + score look-ups, written by code — no model call.
     if (p.kind === "sports_pick" && p.sportsPick) {
       job.progress(10, "Building settlement plan");
-      const { researchPrompt, ...planBody } = buildSportsPlan(p.sportsPick, { predictionMade: p.madeOnDate, deadline: p.deadlineDate, researchCutoff }, p.components[0]?.statement ?? p.normalizedStatement);
+      // A user-edited deadline counts as the game date for the score look-up queries.
+      const pick = { ...p.sportsPick, eventDate: p.sportsPick.eventDate ?? p.deadlineDate };
+      const { researchPrompt, ...planBody } = buildSportsPlan(pick, { predictionMade: p.madeOnDate, deadline: p.deadlineDate, researchCutoff }, p.components[0]?.statement ?? p.normalizedStatement);
       const plan = ctx.plans.add({ predictionId, plan: normalizePlan(planBody), researchPrompt, provider: "app", model: "rule", templateVersion: "plan.sports.v1", jobId: job.id });
       if (job.payload.thenResearch === true) {
         ctx.jobs.enqueue({ kind: "research.run", subjectType: "prediction", subjectId: predictionId, payload: { predictionId, planId: plan.id }, dedupeKey: `research.run:${predictionId}`, maxAttempts: 1 });

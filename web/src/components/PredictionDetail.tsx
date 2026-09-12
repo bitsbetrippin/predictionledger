@@ -58,6 +58,10 @@ export function PredictionDetail(props: {
                 <dt>Sports pick</dt>
                 <dd>
                   <strong>{p.sportsPick.teams[0]} vs {p.sportsPick.teams[1]}</strong> · {p.sportsPick.sport}{p.sportsPick.league ? ` (${p.sportsPick.league})` : ""}{p.sportsPick.eventDate ? ` · game ${p.sportsPick.eventDate}${p.sportsPick.eventTime ? ` ${p.sportsPick.eventTime}` : ""}` : " · game date unknown"}
+                  {p.sportsPick.eventHint && !p.sportsPick.eventDate && <span className="muted small"> ({p.sportsPick.eventHint} — Validate scores looks the date up from the schedule)</span>}
+                  {p.sportsPick.eventDateSource === "lookup" && (
+                    <span className="muted small"> · date from schedule look-up{p.sportsPick.eventDateSourceUrl ? <> (<a href={p.sportsPick.eventDateSourceUrl} target="_blank" rel="noreferrer noopener">source</a>)</> : null}</span>
+                  )}
                   <div className="muted small">
                     {p.sportsPick.pick.type === "moneyline" && <>Moneyline: <strong>{p.sportsPick.pick.team}</strong> to win</>}
                     {p.sportsPick.pick.type === "spread" && <>Spread: <strong>{p.sportsPick.pick.team}</strong> {p.sportsPick.pick.line !== undefined ? (p.sportsPick.pick.line > 0 ? `+${p.sportsPick.pick.line}` : p.sportsPick.pick.line) : "(no line)"}</>}

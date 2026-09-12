@@ -180,6 +180,38 @@ export class PredictionService {
     return this.get(id);
   }
 
+  /**
+   * 1.3.1 — record the game date/time of a sports pick found by the schedule look-up (or set by the user).
+   * Updates the pick, the deadline (basis "lookup" / "user"), the sole component's deadline and
+   * statement, and adds a revision so the change is inspectable.
+   */
+  setSportsEvent(id: string, ev: { eventDate: string; eventTime?: string; source: "lookup" | "user"; sourceUrl?: string; describe: (p: SportsPick) => string }): Prediction | undefined {
+    const current = this.get(id);
+    if (!current || current.kind !== "sports_pick" || !current.sportsPick) return undefined;
+    const pick: SportsPick = { ...current.sportsPick, eventDate: ev.eventDate, eventTime: ev.eventTime ?? current.sportsPick.eventTime, eventDateSource: ev.source, eventDateSourceUrl: ev.sourceUrl };
+    const statement = ev.describe(pick);
+    const ambiguities = current.ambiguities.filter((a) => !/^Game date not stated/i.test(a));
+    if (ev.source === "lookup") ambiguities.push(`Game date ${ev.eventDate}${ev.eventTime ? ` ${ev.eventTime}` : ""} came from a schedule look-up${ev.sourceUrl ? ` (${ev.sourceUrl})` : ""}, not from the transcript.`);
+    this.db.transaction(() => {
+      this.snapshot(current, ev.source === "lookup" ? "schedule-lookup" : "edit");
+      this.db.run(
+        `UPDATE predictions SET sports_json = ?, normalized_statement = ?, deadline_date = ?, deadline_basis = ?, ambiguities_json = ?,
+           updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
+        JSON.stringify(pick),
+        statement,
+        ev.eventDate,
+        ev.source,
+        JSON.stringify(ambiguities),
+        id,
+      );
+      this.replaceComponents(
+        id,
+        current.components.map((c) => (c.kind === "future_claim" ? { kind: c.kind, statement, deadlineDate: ev.eventDate, notes: c.notes } : { kind: c.kind, statement: c.statement, deadlineDate: c.deadlineDate, notes: c.notes })),
+      );
+    });
+    return this.get(id);
+  }
+
   setStatus(id: string, status: Exclude<PredictionUserStatus, "merged">): Prediction | undefined {
     const current = this.get(id);
     if (!current) return undefined;

@@ -114,9 +114,13 @@ Provider calls made by every job now go through a resilience wrapper: 120 s per-
 
 | Method | Path | Body / notes |
 |---|---|---|
-| POST | `/api/predictions/:id/validate-score` | Sports picks only. Chains the code-written settlement plan (if none), a capped trusted-source box-score search, and the settlement verdict → `202 { jobId, stage: "plan"\|"research" }`. `409 not_sports_pick`, `409 game_pending` (game date in the future), `409 game_date_unknown`, plus the usual `no_search_provider` / `offline`. |
+| POST | `/api/predictions/:id/validate-score` | Sports picks only. Chains the code-written settlement plan (if none), a capped trusted-source box-score search, and the settlement verdict → `202 { jobId, stage: "plan"\|"research" }`. `409 not_sports_pick`, `409 game_pending` (game date in the future), plus the usual `no_search_provider` / `offline`. **1.3.1:** when the game date is unknown the response is `202 { jobId, stage: "schedule" }` — a `sports.resolve_date` job looks the date up and chains into the rest when the game has been played. |
 
 Settings gain `sports: { enabled, trackSpreads }`.
+
+## Release 1.3.1
+
+`sportsPick` gains `eventHint?` (spoken non-date reference), `eventDateSource?: "transcript" | "lookup" | "user"` and `eventDateSourceUrl?`. A prediction whose date came from a look-up has `deadlineBasis: "lookup"` and a `schedule-lookup` revision.
 
 ## Release 1.2
 
@@ -129,6 +133,7 @@ Settings gain `sports: { enabled, trackSpreads }`.
 | `prediction.extract` | `{ videoId }` | `video` | `{ windows, candidates, created, matchedExisting, notes[] }` |
 | `plan.generate` | `{ predictionId, thenResearch? }` | `prediction` | `{ planId, version, attempts }` — with `thenResearch` it enqueues `research.run` |
 | `research.run` | `{ predictionId, planId }` | `prediction` | `{ runId, searches, sources, evidence, rejected, coverage[] }` — enqueues `assessment.run` on completion |
+| `sports.resolve_date` | `{ predictionId, thenValidate? }` | `prediction` | `{ eventDate, eventTime?, via, sourceUrl?, hits, notes[], pending }` — with `thenValidate` it enqueues `plan.generate { thenResearch }` when the game date has passed. Fails with `Could not find the game date for A vs B …` when no page states it. |
 | `assessment.run` | `{ predictionId, runId }` | `prediction` | `{ assessmentId, version, guardNotes[] }` or `{ …, deterministic: true }` for zero-evidence runs |
 | `video.import` | `{ videoId, userSupplied: { title?, publishedAt?, language? }, forceAudio? }` | `video` | `{ source: "captions-manual"\|"captions-auto", lang, segments }` or `{ source: "audio", bytes, ext }` — the latter enqueues `audio.extract`. `maxAttempts` 1: failures are explained, not retried blindly. |
 | `tool.install` | `{ tool: "yt-dlp" }` | `tool` | `{ path, version, bytes }` |

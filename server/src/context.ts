@@ -11,6 +11,7 @@ import { JobQueue } from "./jobs/queue.js";
 import { makeExtractHandler } from "./jobs/handlers/extract.js";
 import { makePlanHandler } from "./jobs/handlers/plan.js";
 import { makeResearchHandler } from "./jobs/handlers/research.js";
+import { makeScheduleHandler } from "./jobs/handlers/schedule.js";
 import { makeAssessHandler } from "./jobs/handlers/assess.js";
 import { SecretStore } from "./security/secrets.js";
 import { SettingsService } from "./settings.js";
@@ -81,6 +82,7 @@ export function createContext(overrides: Partial<Pick<AppContext, "fetcher" | "t
   jobs.register("prediction.extract", makeExtractHandler(ctx));
   jobs.register("plan.generate", makePlanHandler(ctx));
   jobs.register("research.run", makeResearchHandler(ctx));
+  jobs.register("sports.resolve_date", makeScheduleHandler(ctx));
   jobs.register("assessment.run", makeAssessHandler(ctx));
   jobs.register("audio.extract", makeAudioExtractHandler(ctx));
   jobs.register("transcript.generate", makeTranscribeHandler(ctx));

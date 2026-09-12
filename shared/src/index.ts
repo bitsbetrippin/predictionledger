@@ -164,7 +164,9 @@ export type JobKind =
   | "research.run"
   | "assessment.run"
   | "tool.install"
-  | "model.download";
+  | "model.download"
+  /** 1.3.1: look up the game date/time of a sports pick from a published schedule. */
+  | "sports.resolve_date";
 
 export type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 
@@ -330,6 +332,12 @@ export interface SportsPick {
   eventDate?: string;
   /** Kick-off / tip-off time as spoken (e.g. "8:20 PM ET"), informational. */
   eventTime?: string;
+  /** Non-date time reference from the transcript ("Week 1", "Thursday night opener") — drives the schedule look-up (1.3.1). */
+  eventHint?: string;
+  /** Where the game date came from: the transcript, a schedule look-up (1.3.1), or a user edit. */
+  eventDateSource?: "transcript" | "lookup" | "user";
+  /** Schedule page the date was read from, when it came from a look-up. */
+  eventDateSourceUrl?: string;
   pick: {
     type: PickType;
     /** Winner (moneyline) or covering team (spread). */

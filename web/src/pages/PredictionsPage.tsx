@@ -86,7 +86,7 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
       const { jobId } = mode === "validate" ? await content.validateScore(id) : await content.research(id);
       let done = await pollJob(jobId, (j) => setResearchJobs((m) => ({ ...m, [id]: j })));
       // Chained jobs (research after plan, assessment after research) show up in the job list for this subject.
-      for (let hops = 0; hops < 3 && done.status === "completed"; hops++) {
+      for (let hops = 0; hops < 4 && done.status === "completed"; hops++) {
         await new Promise((r) => setTimeout(r, 1200));
         const next = (await api.listJobs()).find((j) => j.subjectId === id && j.id !== done.id && (j.status === "queued" || j.status === "running"));
         if (!next) break;

@@ -4,6 +4,17 @@ All notable changes to Prediction Ledger. Format follows [Keep a Changelog](http
 
 Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
 
+## [1.3.1] — 2026-09-12 — Validate scores finds the game date itself
+Owner report: a Week-1 picks video (published 2026-09-09) produced 16 picks with *deadline unknown* because the transcript never says a date ("Week 1", "Sunday Night Football"), so Validate scores refused with `game_date_unknown`. The button now resolves the date from the published schedule.
+### Added
+- Job `sports.resolve_date`: searches for the schedule (two budgeted queries built from the teams, league, the spoken hint and the video's season), parses the game date/time out of result snippets first and then out of fetched schedule pages (trusted hosts first) with a deterministic parser — a date counts only when both team names sit on its line or in the rows under it, inside a 14-days-before / 45-days-after window around the video date, and a tie between two plausible dates is treated as *not found* rather than guessed. Only when the parser finds nothing does the assessment-stage model read the same page text, under an instruction to report a stated date or null. No date anywhere → the job fails with the old edit-the-deadline message; nothing is invented.
+- The resolved date is written back with deadline basis **`lookup`**, the pick records `eventDateSource: "lookup"` and the page URL, the component and normalized statement pick up the date, the "Game date not stated" ambiguity is replaced by a note naming the source, and a revision (`schedule-lookup`) preserves the previous state. When the game is already played the settlement chain (plan → box score → verdict) continues automatically; a future date leaves the pick as *Deadline pending*.
+- Extraction captures `event_hint` ("Week 1", "Thursday night opener") verbatim for picks with no stated date; it drives the schedule query and shows in the detail panel. Never converted into a date by the model.
+- `POST /api/predictions/:id/validate-score` on a dateless pick now answers `202 { stage: "schedule" }` instead of `409 game_date_unknown`; the dashboard follows the extra hop.
+### Changed
+- The settlement plan for a pick whose deadline was set by hand uses that date in its score queries.
+- 57 tests (5 new: parser windows/years/ties/formats, snippet path, page path, model fallback, honest failure).
+
 ## [1.3.0] — 2026-09-12 — Sports Mode and Validate scores
 Owner request: a Setup switch that treats videos as game-pick content, a one-click **Validate scores** action that settles a pick from a trusted box score, and a toggle for whether point spreads are tracked.
 ### Added

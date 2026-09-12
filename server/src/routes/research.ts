@@ -28,6 +28,7 @@ export function registerResearchRoutes(app: FastifyInstance, ctx: AppContext): v
   /**
    * Validate scores (1.3): one click for a sports pick — settlement plan (code) → trusted box-score search
    * (capped) → settlement verdict. Refused before the game date, since there is nothing to settle yet.
+   * When the game date is unknown (1.3.1) a schedule look-up job runs first and chains into the rest.
    */
   app.post<{ Params: { id: string } }>("/api/predictions/:id/validate-score", async (req, reply) => {
     const p = ctx.predictions.get(req.params.id);
@@ -38,7 +39,11 @@ export function registerResearchRoutes(app: FastifyInstance, ctx: AppContext): v
     if (!s.privacy.allowInternet) return reply.code(409).send({ error: "offline", message: "Internet access is disabled in Setup → Privacy; the box score cannot be looked up." });
     const today = new Date().toISOString().slice(0, 10);
     if (p.deadlineDate && p.deadlineDate > today) return reply.code(409).send({ error: "game_pending", message: `The game is on ${p.deadlineDate}; there is no final score to validate yet.` });
-    if (!p.deadlineDate) return reply.code(409).send({ error: "game_date_unknown", message: "The game date is unknown. Edit the prediction to set the deadline to the game date, then validate." });
+    if (!p.deadlineDate) {
+      // 1.3.1: the transcript never said when the game is — look the schedule up, then continue to settlement.
+      const jobId = ctx.jobs.enqueue({ kind: "sports.resolve_date", subjectType: "prediction", subjectId: p.id, payload: { predictionId: p.id, thenValidate: true }, dedupeKey: `sports.resolve_date:${p.id}`, maxAttempts: 1 });
+      return reply.code(202).send({ jobId, stage: "schedule" });
+    }
     // Plan is code-generated for picks, so chain plan → research → assessment without a review stop.
     const plan = ctx.plans.latest(p.id);
     if (!plan) {

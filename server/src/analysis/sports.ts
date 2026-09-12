@@ -36,7 +36,7 @@ export function isTrustedScoreHost(url: string): boolean {
 }
 
 /** Extraction output → SportsPick, or undefined when the pick is not settleable as stated. */
-export function normalizeSportsPick(raw: { sport: string; league?: string | null; teams: string[]; event_date?: string | null; event_time?: string | null; pick_type: "moneyline" | "spread" | "total"; team?: string | null; line?: number | null; side?: "over" | "under" | null }, opts: { trackSpreads?: boolean } = {}): { pick?: SportsPick; problems: string[] } {
+export function normalizeSportsPick(raw: { sport: string; league?: string | null; teams: string[]; event_date?: string | null; event_time?: string | null; event_hint?: string | null; pick_type: "moneyline" | "spread" | "total"; team?: string | null; line?: number | null; side?: "over" | "under" | null }, opts: { trackSpreads?: boolean } = {}): { pick?: SportsPick; problems: string[] } {
   const problems: string[] = [];
   if (raw.pick_type === "spread" && opts.trackSpreads === false) {
     // Setup → Sports Mode → "Track point spreads" off: the pick is recorded as win/loss on the named team.
@@ -64,7 +64,10 @@ export function normalizeSportsPick(raw: { sport: string; league?: string | null
       pick.line = raw.line ?? undefined;
     }
   }
-  return { pick: { sport: raw.sport.trim(), league: raw.league ?? undefined, teams, eventDate, eventTime: raw.event_time?.trim() || undefined, pick }, problems };
+  return {
+    pick: { sport: raw.sport.trim(), league: raw.league ?? undefined, teams, eventDate, eventTime: raw.event_time?.trim() || undefined, eventHint: raw.event_hint?.trim() || undefined, eventDateSource: eventDate ? "transcript" : undefined, pick },
+    problems,
+  };
 }
 
 function sameTeam(a: string, b: string): boolean {
@@ -150,4 +153,122 @@ export function buildSportsPlan(p: SportsPick, dates: { predictionMade?: string;
     outputSchemaNotes: "Sports pick: cite the evidence item carrying the final score; explanation is the score and how it settles the pick.",
     researchPrompt: `Find the official final score of ${a} vs ${b}${date ? ` played on ${date}` : ""} (${p.sport}${p.league ? `, ${p.league}` : ""}). Record both teams' final points and whether the game went to overtime. Do not use previews, odds, or predictions as evidence. If the game was postponed, cancelled, or has not been played, say so instead of guessing. The pick to settle: ${describePick(p)}.`,
   };
+}
+
+// ---------------------------------------------------------------------------
+// 1.3.1 — schedule look-up: find the game date/time when the transcript never says it.
+// ---------------------------------------------------------------------------
+
+export const SCHEDULE_LOOKUP_BUDGET = { searches: 2, sources: 3 } as const;
+
+/** Search queries for the schedule page. `anchor` (video publication date) supplies the season/year. */
+export function buildScheduleQueries(p: SportsPick, anchor?: string): string[] {
+  const [a, b] = p.teams;
+  const year = anchor && /^\d{4}/.test(anchor) ? anchor.slice(0, 4) : new Date().toISOString().slice(0, 4);
+  const league = p.league ?? p.sport;
+  const hint = p.eventHint ?? "";
+  const q = (s: string) => s.replace(/\s+/g, " ").trim();
+  return [q(`${a} vs ${b} ${league} ${hint} ${year} game date time`), q(`${league} ${year} schedule ${a} ${b}`)];
+}
+
+export interface GameDateCandidate {
+  eventDate: string;
+  eventTime?: string;
+  /** How many date mentions in the text sat next to both team names. */
+  hits: number;
+}
+
+export interface GameDateHit extends GameDateCandidate {
+  /** Another in-window date scored as many hits — do not trust without confirmation. */
+  ambiguous: boolean;
+}
+
+const MONTHS: Record<string, number> = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12 };
+const MONTH_RE = "(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";
+const DATE_RE = new RegExp(
+  `\\b${MONTH_RE}\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s+(\\d{4}))?\\b` + // September 9, 2026 / Sept. 9
+    `|\\b(\\d{1,2})\\s+${MONTH_RE}\\.?(?:,?\\s+(\\d{4}))?\\b` + // 9 September 2026
+    `|\\b(\\d{1,2})/(\\d{1,2})(?:/(\\d{2,4}))?\\b` + // 9/9/2026 (US month/day)
+    `|\\b(\\d{4})-(\\d{2})-(\\d{2})\\b`, // ISO
+  "gi",
+);
+const TIME_RE = /\b(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)\s*(ET|EST|EDT|CT|CST|CDT|MT|MST|MDT|PT|PST|PDT|GMT|BST|UTC)?\b/i;
+
+function pad(n: number): string {
+  return String(n).padStart(2, "0");
+}
+function isoDate(y: number, m: number, d: number): string | undefined {
+  if (m < 1 || m > 12 || d < 1 || d > 31) return undefined;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return undefined;
+  return `${y}-${pad(m)}-${pad(d)}`;
+}
+function dayDiff(a: string, b: string): number {
+  return Math.round((Date.parse(a + "T00:00:00Z") - Date.parse(b + "T00:00:00Z")) / 86_400_000);
+}
+/** Year-less dates take the year that lands them closest to the anchor. */
+function withNearestYear(m: number, d: number, anchor: string): string | undefined {
+  const y0 = Number(anchor.slice(0, 4));
+  let best: string | undefined;
+  for (const y of [y0 - 1, y0, y0 + 1]) {
+    const iso = isoDate(y, m, d);
+    if (!iso) continue;
+    if (!best || Math.abs(dayDiff(iso, anchor)) < Math.abs(dayDiff(best, anchor))) best = iso;
+  }
+  return best;
+}
+
+/** True when the team is mentioned in the text: nickname (last word ≥ 3 chars) or the full name. */
+export function teamMentioned(text: string, team: string): boolean {
+  const t = text.toLowerCase();
+  const words = team.toLowerCase().split(/\s+/).filter(Boolean);
+  const nick = words[words.length - 1];
+  if (nick && nick.length >= 3 && new RegExp(`\\b${nick.replace(/[^a-z0-9]/g, "")}\\b`, "i").test(t.replace(/[^a-z0-9\s]/g, " "))) return true;
+  return t.includes(team.toLowerCase());
+}
+
+/**
+ * Deterministic schedule parser. Every date mention whose surrounding text (its own line before it; up
+ * to the next date mention after it) names BOTH teams is a candidate; candidates are kept only inside a plausible window around the anchor (video date):
+ * 14 days before to 45 days after. The winner has the most hits; ties resolve to the date nearest the
+ * anchor and are flagged ambiguous. A kick-off time in the same window is attached when present.
+ */
+export function findGameDate(text: string, p: SportsPick, opts: { anchor?: string; radius?: number } = {}): GameDateHit | undefined {
+  const anchor = opts.anchor && /^\d{4}-\d{2}-\d{2}/.test(opts.anchor) ? opts.anchor.slice(0, 10) : new Date().toISOString().slice(0, 10);
+  const radius = opts.radius ?? 300;
+  const tally = new Map<string, GameDateCandidate>();
+  DATE_RE.lastIndex = 0;
+  const matches: RegExpExecArray[] = [];
+  for (let m = DATE_RE.exec(text); m; m = DATE_RE.exec(text)) matches.push(m);
+  for (let i = 0; i < matches.length; i++) {
+    const m = matches[i];
+    let iso: string | undefined;
+    if (m[1]) iso = m[3] ? isoDate(Number(m[3]), MONTHS[m[1].toLowerCase().slice(0, 4)] ?? MONTHS[m[1].toLowerCase().slice(0, 3)], Number(m[2])) : withNearestYear(MONTHS[m[1].toLowerCase().slice(0, 4)] ?? MONTHS[m[1].toLowerCase().slice(0, 3)], Number(m[2]), anchor);
+    else if (m[5]) iso = m[6] ? isoDate(Number(m[6]), MONTHS[m[5].toLowerCase().slice(0, 4)] ?? MONTHS[m[5].toLowerCase().slice(0, 3)], Number(m[4])) : withNearestYear(MONTHS[m[5].toLowerCase().slice(0, 4)] ?? MONTHS[m[5].toLowerCase().slice(0, 3)], Number(m[4]), anchor);
+    else if (m[7]) iso = m[9] ? isoDate(m[9].length === 2 ? 2000 + Number(m[9]) : Number(m[9]), Number(m[7]), Number(m[8])) : withNearestYear(Number(m[7]), Number(m[8]), anchor);
+    else if (m[10]) iso = isoDate(Number(m[10]), Number(m[11]), Number(m[12]));
+    if (!iso) continue;
+    const diff = dayDiff(iso, anchor);
+    if (diff < -14 || diff > 45) continue;
+    // A date "owns" the rest of its own line/paragraph and the following ones up to the next date
+    // mention (date header + game rows), but only its own line before it — so adjacent schedule
+    // rows ("Sept. 10 — A at B / Sept. 13 — C at D") never bleed into each other.
+    const lineStart = text.lastIndexOf("\n", m.index) + 1;
+    const prevEnd = i > 0 ? matches[i - 1].index + matches[i - 1][0].length : 0;
+    const nextStart = i + 1 < matches.length ? matches[i + 1].index : text.length;
+    const window = text.slice(Math.max(prevEnd, lineStart, m.index - radius), Math.min(nextStart, m.index + m[0].length + radius));
+    if (!teamMentioned(window, p.teams[0]) || !teamMentioned(window, p.teams[1])) continue;
+    const c = tally.get(iso) ?? { eventDate: iso, hits: 0 };
+    c.hits++;
+    if (!c.eventTime) {
+      const t = TIME_RE.exec(window);
+      if (t) c.eventTime = `${t[1]}${t[2] ? ":" + t[2] : ""} ${t[3].replace(/\./g, "").toUpperCase()}${t[4] ? " " + t[4].toUpperCase() : ""}`;
+    }
+    tally.set(iso, c);
+  }
+  const ranked = [...tally.values()].sort((x, y) => y.hits - x.hits || Math.abs(dayDiff(x.eventDate, anchor)) - Math.abs(dayDiff(y.eventDate, anchor)));
+  if (ranked.length === 0) return undefined;
+  const best = ranked[0];
+  const ambiguous = ranked.length > 1 && ranked[1].hits === best.hits;
+  return { ...best, ambiguous };
 }

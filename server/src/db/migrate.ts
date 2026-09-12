@@ -15,7 +15,19 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Database } from "./index.js";
 
-const migrationsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "migrations");
+const here = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Migrations live next to this file in src/. The build copies them into dist/db/migrations
+ * (scripts/copy-migrations.mjs); as a safety net, fall back to the source tree so a build that
+ * skipped the copy still starts instead of failing with ENOENT (first-run finding, rc.2).
+ */
+function resolveMigrationsDir(): string {
+  const candidates = [path.join(here, "migrations"), path.resolve(here, "..", "..", "src", "db", "migrations")];
+  for (const c of candidates) if (fs.existsSync(c)) return c;
+  throw new Error(`Migration files not found. Looked in:\n  ${candidates.join("\n  ")}\nRun \`npm run build\` again.`);
+}
+const migrationsDir = resolveMigrationsDir();
 
 interface MigrationFile {
   version: number;

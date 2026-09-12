@@ -9,9 +9,10 @@ First run on Windows 11 / Node 26.7: `npm install` and the server build succeede
 ### Fixed
 - Web: `setTemplate` in the API client only accepted the two template names from 0.2; Setup lists four (extraction, plan, evidence, assessment) → `tsc` error, no `web/dist`. (Our stub-based typecheck could not catch it — the stub typed `useState` as `any`; the stub is now typed.)
 - Web: added `src/vite-env.d.ts` (Vite ambient types) so CSS side-effect imports type-check on newer TypeScript.
+- Server: `tsc` never copied the `.sql` migration files into `server/dist`, so `npm start` failed with ENOENT on the first real start. The server build now copies them (`scripts/copy-migrations.mjs`), and the migration loader falls back to `server/src/db/migrations` if a build skipped the copy.
 - `npm run doctor`: npm version probe failed on Windows (Node refuses to spawn `npm.cmd` without a shell); now read from npm's own environment or spawned with a shell.
 ### Verified on the real machine
-- Windows 11 (26200), Node 26.7.0: `npm install` (lockfile produced, optional `@huggingface/transformers` installed), `shared` and `server` builds.
+- Windows 11 (26200), Node 26.7.0: `npm install` (lockfile produced, optional `@huggingface/transformers` installed), `shared`, `server`, and (after the fix) `web` builds — Vite 5.4.21, 39 modules, 220 kB bundle.
 
 ## [1.0.0-rc.1] — 2026-09-12 — Release candidate
 Feature-complete for the MVP as specified. Tagged as a release candidate, not 1.0.0, because no machine has yet run `npm run setup`/`npm start` on the real dependencies; `docs/FIRST_RUN.md` is the checklist that closes that gap.

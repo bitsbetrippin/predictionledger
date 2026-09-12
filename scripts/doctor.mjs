@@ -16,9 +16,9 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const lines = [];
 const say = (k, v) => lines.push(`${k.padEnd(28)} ${v}`);
-const ver = (cmd, args) => {
+const ver = (cmd, args, opts = {}) => {
   try {
-    return execFileSync(cmd, args, { stdio: ["ignore", "pipe", "ignore"], timeout: 10_000 }).toString().split(/\r?\n/)[0].trim().slice(0, 80);
+    return execFileSync(cmd, args, { stdio: ["ignore", "pipe", "ignore"], timeout: 10_000, ...opts }).toString().split(/\r?\n/)[0].trim().slice(0, 80);
   } catch {
     return "not found";
   }
@@ -29,13 +29,14 @@ const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"))
 say("Prediction Ledger", pkg.version);
 say("OS", `${os.type()} ${os.release()} (${process.platform}/${process.arch})`);
 say("Node", process.versions.node + (Number(process.versions.node.split(".")[0]) < 22 ? "  ✕ need >= 22.13" : ""));
-say("npm", ver(process.platform === "win32" ? "npm.cmd" : "npm", ["--version"]));
+// npm is a .cmd shim on Windows; Node ≥ 20.12 refuses to spawn .cmd files without a shell (CVE-2024-27980).
+say("npm", process.env.npm_config_user_agent?.match(/npm\/(\S+)/)?.[1] ?? ver("npm", ["--version"], { shell: process.platform === "win32" }));
 say("node:sqlite available", (() => { try { process.getBuiltinModule?.("node:sqlite"); return "yes"; } catch { return "no (Node < 22.13?)"; } })());
 say("Repo path", root + (/\s/.test(root) ? "  (contains spaces — fine, but quote it in shells)" : ""));
 say("node_modules", exists(path.join(root, "node_modules")));
 say("shared/dist", exists(path.join(root, "shared", "dist", "index.js")));
 say("server/dist", exists(path.join(root, "server", "dist", "index.js")));
-say("web/dist", exists(path.join(root, "web", "dist", "index.html")));
+say("web/dist", exists(path.join(root, "web", "dist", "index.html")) + (fs.existsSync(path.join(root, "server", "dist", "index.js")) && !fs.existsSync(path.join(root, "web", "dist", "index.html")) ? "  ← dashboard build did not finish: run `npm run build --workspace web` and paste the output" : ""));
 say("package-lock.json", exists(path.join(root, "package-lock.json")));
 say("@huggingface/transformers", fs.existsSync(path.join(root, "node_modules", "@huggingface", "transformers", "package.json")) ? "installed (local Whisper available)" : "not installed (optional)");
 say("ffmpeg", ver("ffmpeg", ["-version"]));

@@ -25,7 +25,7 @@ gantt
   section Milestone 2
   0.3 Research → evidence → assessments       :done, r03, after r02, 2
   section Milestone 3
-  0.4 Local video → timestamped transcription :r04, after r03, 2
+  0.4 Local video → timestamped transcription :done, r04, after r03, 2
   section Milestone 4
   0.5 YouTube ingestion + recovery paths      :r05, after r04, 1
   section Milestone 5
@@ -258,27 +258,34 @@ IDs are stable; wording may be refined. "Rel." is the release that first satisfi
 
 **Verification status (2026-09-11).** Executed in the cloud sandbox on Node 22.22: 24/24 tests (pipeline tests against the minimal zod shim). Not executed: any live search provider or real web fetch, `npm install`/`build`/`start`, the React build, browser interaction, Windows/macOS. The linked machine still has no `node_modules`.
 
-## 6. Release 0.4 — Milestone 3: local video → timestamped transcription
+## 6. Release 0.4 — Milestone 3: local video → timestamped transcription (delivered)
 
-| Item | Req. | Agent | Depends on |
+| Item | Req. | Agent | Done |
 |---|---|---|---|
-| Spike S-3: Transformers.js Whisper throughput/memory on a 30-min file; choose default model | IN-03 | AG-05 | — |
-| Upload route (`@fastify/multipart`, size limit, extension allow-list), drag-drop UI, ffprobe validation, content-hash storage | IN-02, SC-03 | AG-05 + AG-10 | — |
-| `audio.extract` job: ffmpeg (system or `ffmpeg-static`) → 16 kHz mono WAV; silent-audio detection | IN-03, IN-08 | AG-05 | ffmpeg detection in Setup |
-| `TranscriptionProvider`: local Whisper (chunked with overlap, timestamp stitching, progressive segment writes, resumable), OpenAI transcription | IN-03, IN-04, SP-05 | AG-05 | S-3 |
-| Model download manager (progress, checksum, consent) into `models/` | RT-05 | AG-05 | — |
-| Jobs tab with live progress; video page shows transcript as it arrives | UX-06 | AG-10 | — |
-| Windows + macOS verification of ffmpeg detection and child-process spawning | RT-05 | AG-08, AG-09 | — |
+| Spike S-3: Transformers.js Whisper throughput/memory on a 30-min file; choose default model | IN-03 | AG-05 | **Deferred to first real run** — the sandbox cannot install `@huggingface/transformers` (registry blocked). Default stays `onnx-community/whisper-base`; the engine is loaded dynamically so the app runs without it (ADR-016). |
+| Upload route: **raw `application/octet-stream` body** with metadata headers (no multipart dependency), streamed to disk while hashing, 8 GiB cap, extension allow-list, traversal-proof title, ffprobe validation *before* registration, content-hash storage under `media/`, duplicate detection by hash | IN-02, SC-03 | AG-05 + AG-15 | ✓ (ADR-016) |
+| Migration 004: media columns on `videos`, `transcription_chunks` | PS-01 | AG-11 | ✓ |
+| ffmpeg/ffprobe wrapper: located via `PL_FFMPEG_PATH` → optional `ffmpeg-static` → PATH; argument arrays only; probe parsing; 16 kHz mono WAV extraction; `volumedetect` silence check (−60 dB); chunk cutting | IN-03, IN-08, SC-03 | AG-05 | ✓ (integration-tested against real ffmpeg 6.1) |
+| `audio.extract` job: media → WAV → silence check → chains `transcript.generate` | IN-03, IN-08 | AG-05 | ✓ |
+| `TranscriptionProvider` interface; `LocalWhisperProvider` (Transformers.js, dynamic import, models under `<data>/models`, offline-aware) and `OpenAiTranscriptionProvider` (`whisper-1` verbose_json segments) | SP-05, SP-09 | AG-13 | ✓ (local engine statically reviewed — see S-3; OpenAI adapter statically reviewed) |
+| `transcript.generate` job: chunk plan (300 s / 5 s overlap, tail absorption), per-chunk cut → transcribe → stitch (overlap de-duplicated by committed end time) → **commit segments + chunk state in one transaction**; resumes at the first non-done chunk; bounded retry | IN-03, IN-04 | AG-05 | ✓ |
+| Model download manager with progress/checksum/consent UI | RT-05 | AG-05 | **Descoped to 0.5/1.0** — Transformers.js downloads the model on first use into `models/`; Setup reports "needs download" and SETUP.md explains the one-time step. A progress UI is queued. |
+| Drag-drop upload card; media-tools banner; per-video chunk progress (Library + Video page, live refresh); Retry / Re-transcribe (restart) controls; Setup transcription fields + "Check media tools" | UX-01, UX-02, UX-06 | AG-10 | ✓ (statically checked) |
+| `GET /api/media/status`, `POST /api/videos/upload`, `POST /api/videos/:id/transcribe`; media files removed on video delete | PS-02 | AG-13 | ✓ (`docs/API.md`) |
+| Tests: parseProbe, planChunks, stitchChunk, checkUploadName; ffmpeg integration (probe/extract/silence/cut/WAV reader/video-only/missing file); end-to-end upload → duplicate → video-only rejection → audio.extract → chunked transcription with a crash on chunk 1, automatic resume, no-op re-run → silent media failure | — | AG-14 | ✓ 30/30 total |
+| Windows + macOS verification of ffmpeg detection and child-process spawning | RT-05 | AG-08, AG-09 | **Pending** — no machine with `node_modules` yet. |
 
-**Acceptance criteria for 0.4**
+**Acceptance criteria for 0.4 — status**
 
-| # | Criterion |
-|---|---|
-| D1 | A 30-minute MP4 transcribes locally with continuous timestamps (no gap or overlap > 1 s at chunk boundaries) and segments appear progressively. |
-| D2 | Interrupting the server at chunk k and restarting resumes from chunk k (no re-transcription of completed chunks, no duplicate segments). |
-| D3 | A file with no audio track, an unsupported codec, or 30 minutes of silence each produce a distinct, recoverable error message. |
-| D4 | Uploading `../../evil.mp4` (path traversal name) stores the file under a hash name inside `media/`. |
-| D5 | With ffmpeg absent, import fails before upload finishes, with install instructions per OS. |
+| # | Criterion | Status |
+|---|---|---|
+| D1 | A 30-minute MP4 transcribes locally with continuous timestamps (no gap or overlap > 1 s at chunk boundaries) and segments appear progressively. | Stitching verified on a 130 s synthetic file with 60 s chunks (timestamps monotonic; chunk-1 offset applied; last segment reaches the end). Segments are committed per chunk and the video page refreshes every 1.5 s. Real Whisper throughput on 30 min: **pending S-3**. |
+| D2 | Interrupting at chunk k and restarting resumes from chunk k (no re-transcription, no duplicates). | **Verified**: engine crash on chunk 1 → job retry resumes at chunk 1; chunk 0 transcribed exactly once; a further explicit re-run transcribes nothing and segment count is unchanged. Process kill mid-chunk follows the same path via the queue's restart recovery (0.1). |
+| D3 | No audio track / unsupported codec / silence each produce a distinct, recoverable error. | **Verified**: video-only → 422 "no audio track" at upload; unreadable file → 422 with ffprobe's reason; silent track → `audio.extract` fails with "audio track is silent", video marked *failed* with Retry. |
+| D4 | Uploading `../../evil.mp4` stores the file under a hash name inside `media/`. | **Verified**: name is used only for extension/title (`checkUploadName` test); stored path is `media/<sha256><ext>`. |
+| D5 | With ffmpeg absent, import fails with install instructions per OS. | **Implemented**: `locateTools()` fails with per-OS hints → 503 before the stream is written; the Library shows a banner and disables the upload button. Verified only for the *present* case in the sandbox. |
+
+**Verification status (2026-09-11).** Executed in the cloud sandbox on Node 22.22 with ffmpeg 6.1.1: 30/30 tests. Not executed: the real Whisper engine (`@huggingface/transformers` could not be installed — registry blocked), OpenAI transcription, `npm install`/`build`/`start`, the React build, browser interaction, Windows/macOS. The linked machine still has no `node_modules`.
 
 ---
 

@@ -68,6 +68,18 @@ Base URL `http://127.0.0.1:7317`. JSON in/out. Every `POST`/`PUT`/`PATCH`/`DELET
 
 `GET /api/predictions` now includes `result` (latest `ResultSummary`) and `processingStatus` (`not_researched\|running\|completed\|failed`), and accepts `result=<evidence assessment>` or `result=not_researched` as a filter. `GET /api/predictions/:id` adds `runs[]` and `assessments[]`.
 
+## Release 0.4
+
+### Local media and transcription
+| Method | Path | Body / notes |
+|---|---|---|
+| POST | `/api/videos/upload` | **Raw file bytes** with `content-type: application/octet-stream` (no multipart). Metadata rides in headers: `x-file-name` (percent-encoded, required — only its extension and stem are used), `x-file-size` (bytes, optional), `x-published-at` (`YYYY-MM-DD`, optional), `x-language` (optional), `x-title` (percent-encoded, optional). Streams to `media/upload-<uuid>.tmp` while hashing; validated with ffprobe *before* the video is registered; stored as `media/<sha256><ext>`. → `201 { video, duplicate: false, jobId }` (an `audio.extract` job is queued) or `200 { video, duplicate: true }` when the same bytes were imported before. Errors: `400` bad name/extension/empty, `413` over 8 GiB, `422` unreadable or no audio track, `503` ffmpeg/ffprobe not found (message carries per-OS install hints). Allowed extensions: `.mp4 .m4v .mpg .mpeg .mov .mkv .webm .m4a .mp3 .wav .aac .ogg .flac`. |
+| POST | `/api/videos/:id/transcribe` | `{ restart?: boolean }` → `202 { jobId, stage: "audio.extract"\|"transcript.generate" }`. Without `restart` it resumes: audio is extracted only if missing, and only chunks not yet `done` are transcribed (safe after a crash or engine failure). With `restart: true` it deletes the transcript segments, chunk states, and any user corrections, then starts over. `404` when the video has no local media (transcript-only imports). |
+| GET | `/api/media/status` | `MediaStatus`: `{ ffmpeg: { ok, message, source? }, engine: { id, ok, message, needsDownload? } }` for the engine currently selected in Setup. The local engine reports `needsDownload` when the model is not in `models/` yet. |
+| DELETE | `/api/videos/:id` | (0.2 route) now also removes the stored media file, extracted WAV, and chunk scratch files before deleting the row. |
+
+`VideoSummary`/`VideoDetail` gain `mediaSize`, `transcriptionEngine`, `transcriptionModel`, `error`, `chunksDone`, `chunksTotal`. Video `status` moves `importing` → `transcribing` → `ready` (or `failed` with `error` set; Retry re-enqueues without restart).
+
 ## Job kinds and payloads
 
 | Kind | Payload | Subject | Result |
@@ -76,9 +88,11 @@ Base URL `http://127.0.0.1:7317`. JSON in/out. Every `POST`/`PUT`/`PATCH`/`DELET
 | `plan.generate` | `{ predictionId, thenResearch? }` | `prediction` | `{ planId, version, attempts }` — with `thenResearch` it enqueues `research.run` |
 | `research.run` | `{ predictionId, planId }` | `prediction` | `{ runId, searches, sources, evidence, rejected, coverage[] }` — enqueues `assessment.run` on completion |
 | `assessment.run` | `{ predictionId, runId }` | `prediction` | `{ assessmentId, version, guardNotes[] }` or `{ …, deterministic: true }` for zero-evidence runs |
+| `audio.extract` | `{ videoId }` | `video` | `{ audioPath, meanVolumeDb }` — enqueues `transcript.generate`; fails with "audio track is silent" below −60 dB |
+| `transcript.generate` | `{ videoId }` | `video` | `{ chunks, newSegments, segmentCount }` — resumable per chunk; progress reads "Transcribing chunk k of n" |
 
-Failure messages users will see: `Stage "extraction" is routed to … which is disabled in Setup`, `… has no API key saved`, `Internet access is disabled in Setup → Privacy …`, `Model returned output that did not match the … schema after a repair attempt.`, plus the provider's own HTTP error text.
+Failure messages users will see: `Stage "extraction" is routed to … which is disabled in Setup`, `… has no API key saved`, `Internet access is disabled in Setup → Privacy …`, `Model returned output that did not match the … schema after a repair attempt.`, plus the provider's own HTTP error text. Media failures: `ffmpeg/ffprobe were not found …`, `The file has no audio track …`, `The audio track is silent …`, `Local Whisper engine is not installed …`, `Whisper model … is not downloaded and internet access is disabled …`.
 
 ## Error shape
 
-`{ error: "<code>", message?: string, issues?: ZodIssue[] }` with 400 (invalid body), 403 (CSRF/origin), 404, 409 (state conflict), 422 (import failed).
+`{ error: "<code>", message?: string, issues?: ZodIssue[] }` with 400 (invalid body), 403 (CSRF/origin), 404, 409 (state conflict), 413 (upload too large), 422 (import failed), 503 (required local tool missing).

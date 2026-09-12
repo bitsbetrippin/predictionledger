@@ -68,7 +68,11 @@ export interface AppSettings {
     engine: TranscriptionProviderId;
     /** Whisper model id for the local engine, e.g. "onnx-community/whisper-base". */
     localModel: string;
+    /** OpenAI transcription model; whisper-1 returns segment timestamps, gpt-4o-*-transcribe do not. */
+    openaiModel: string;
     language: string; // "auto" or ISO-639-1
+    chunkSeconds: number;
+    overlapSeconds: number;
   };
   search: {
     provider: SearchProviderId;
@@ -204,6 +208,20 @@ export interface VideoSummary {
   segmentCount: number;
   predictionCount: number;
   pendingPredictionCount: number;
+  /** Local media only (0.4+). */
+  mediaSize?: number;
+  transcriptionEngine?: string;
+  transcriptionModel?: string;
+  error?: string;
+  /** Chunk progress for resumable transcription. */
+  chunksDone?: number;
+  chunksTotal?: number;
+}
+
+/** Status of media tooling and transcription engines (Setup → Transcription, Library banner). */
+export interface MediaStatus {
+  ffmpeg: { ok: boolean; message: string; source?: string };
+  engine: { id: TranscriptionProviderId; ok: boolean; message: string; needsDownload?: boolean };
 }
 
 export interface TranscriptSegment {

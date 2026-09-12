@@ -12,7 +12,8 @@ This guide covers everything that is *not* just `npm run setup` + `npm start`. T
 |---|---|---|---|
 | **Node.js 24 LTS** (≥ 22.13 works) | Installer from nodejs.org, or `winget install OpenJS.NodeJS.LTS` | Installer from nodejs.org, or `brew install node@24` | `node --version` must print v22.13+ / v24.x. |
 | **Git** (or GitHub Desktop) | GitHub Desktop bundles Git | GitHub Desktop bundles Git | Only needed to clone/update. |
-| ffmpeg *(Release 0.4+)* | `winget install Gyan.FFmpeg` then reopen the terminal | `brew install ffmpeg` | Needed for local video import only. `npm run setup` reports whether it is found. |
+| **ffmpeg + ffprobe** *(for local video/audio import)* | `winget install Gyan.FFmpeg` then reopen the terminal | `brew install ffmpeg` | Needed for local video import only. Setup → Transcription → *Check media tools* reports whether it is found. Alternative: `npm install ffmpeg-static -w server` bundles a binary; or set `PL_FFMPEG_PATH` to a folder containing both binaries. |
+| Local Whisper engine *(optional)* | `npm install @huggingface/transformers -w server` | same | Only for on-device transcription. The first transcription downloads the model (~75 MB for whisper-base) into the data directory's `models/`. Requires internet for that one download. |
 | yt-dlp *(Release 0.5+)* | downloaded by the app into the data directory after you approve it | same | Nothing to install manually. |
 | LM Studio *(optional)* | lmstudio.ai | lmstudio.ai | Only if you want a fully local model. |
 
@@ -123,6 +124,16 @@ Tip: LM Studio's *Just-in-time model loading* setting lets the server load a mod
 
 Costs: each research run uses up to *Searches per research run* searches and *Sources fetched per run* page fetches (Setup → Limits), plus one model call per readable source and one for the assessment. Brave and provider-native search are metered; SearXNG is free but self-hosted.
 
+## 4.7 Local video and audio import (Release 0.4)
+
+1. Install **ffmpeg** (table above). In Setup → Transcription click **Check media tools**; it must say ffmpeg is found.
+2. Choose the **engine**:
+   - **Local Whisper** — audio never leaves your computer. Run `npm install @huggingface/transformers -w server` once (it is an optional dependency; the app works without it, but this engine reports *not installed*). The model named in *Local Whisper model* is downloaded on first use into `<data directory>/models/` — this needs internet once, and *Allow internet access* must be on for that first run. Default `onnx-community/whisper-base` is fast on CPU; `onnx-community/whisper-small` is noticeably more accurate; `whisper-large-v3-turbo` is the best and the slowest. Expect roughly 0.3–1× real time on a modern CPU for *base* (a 30-minute talk ≈ 10–30 minutes); this is the S-3 measurement still to be taken on real hardware.
+   - **OpenAI transcription** — the audio chunks are uploaded to OpenAI (an OpenAI key must be saved in Setup → Providers). `whisper-1` returns segment timestamps; other models yield one segment per chunk.
+3. In the Library, drop an MP4/MPEG/MOV/MKV/WebM (or M4A/MP3/WAV…) file onto the **Import a local video or audio file** card, optionally set the recorded date (used for deadlines — never guessed), and click **Upload and transcribe**. The file is copied into `<data directory>/media/` under its content hash; uploading the same file twice is recognised.
+4. Progress shows as *Extracting audio…* then *Transcribing k/n chunks*. Long recordings are cut into 300-second chunks with 5 seconds of overlap (Setup → Transcription); each finished chunk is saved immediately, so you can close the browser or even stop the server and the job resumes at the next chunk.
+5. A video that fails shows the reason and a **Retry** button (resumes) — for example *silent audio* or *engine not installed*. **Re-transcribe** on a ready video starts from scratch (it replaces the transcript and any corrections).
+
 ## 5. Data directory
 
 | OS | Path |
@@ -171,5 +182,12 @@ Other environment variables: `PL_PORT` (default 7317), `PL_NO_OPEN=1` (don't ope
 | Research fails with `Every search failed` | The search provider rejected the key or is unreachable — check Setup → Web search and the provider's dashboard; nothing was concluded about the prediction. |
 | Verdict is "Insufficient evidence" with few sources | Coverage was thin (see the Evidence tab → Coverage limitations). Raise the search/source budgets, add a better provider, or recheck later. |
 | A source shows "blocked … non-public address" | The URL resolved to a private/local address; the app refuses to fetch it by design. |
+| Upload fails with `ffmpeg/ffprobe were not found` | Install ffmpeg (Prerequisites) and reopen the terminal so PATH refreshes; or set `PL_FFMPEG_PATH`. Setup → *Check media tools* confirms. |
+| `The file has no audio track` / `Could not read the media file` | The file is video-only, corrupt, or an unsupported container. Re-export it, or import a transcript instead. |
+| Video fails with `The audio track is silent` | ffmpeg measured below −60 dB for the whole track — usually a muted export. Check the file locally; nothing to transcribe. |
+| `Local Whisper engine is not installed` | `npm install @huggingface/transformers -w server`, then Retry. |
+| `Whisper model … is not downloaded and internet access is disabled` | Turn *Allow internet access* on for the first run (one-time model download), then Retry; turn it off again afterwards if you like. |
+| First local transcription is very slow or memory-heavy | The model is being downloaded/compiled the first time; later runs are faster. Use `whisper-base` for speed, or reduce *Chunk length*. |
+| Transcription produced no text | The audio may be music, noise, or in a language the model did not detect — set *Language* explicitly and Re-transcribe. |
 
 Logs: the terminal running `npm start`. Set `PL_LOG_LEVEL=debug` for more detail. API keys are redacted from logs.

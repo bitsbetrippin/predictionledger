@@ -25,9 +25,18 @@ interface VideoRow {
   imported_at: string;
   status: VideoSummary["status"];
   notes: string | null;
+  media_path: string | null;
+  media_hash: string | null;
+  media_size: number | null;
+  audio_path: string | null;
+  transcription_engine: string | null;
+  transcription_model: string | null;
+  error: string | null;
   segment_count: number;
   prediction_count: number;
   pending_count: number;
+  chunks_done: number;
+  chunks_total: number;
 }
 
 interface SegmentRow {
@@ -45,7 +54,9 @@ const SUMMARY_SQL = `
   SELECT v.*,
     (SELECT COUNT(*) FROM transcript_segments s WHERE s.video_id = v.id) AS segment_count,
     (SELECT COUNT(*) FROM predictions p WHERE p.video_id = v.id AND p.user_status IN ('pending','accepted')) AS prediction_count,
-    (SELECT COUNT(*) FROM predictions p WHERE p.video_id = v.id AND p.user_status = 'pending') AS pending_count
+    (SELECT COUNT(*) FROM predictions p WHERE p.video_id = v.id AND p.user_status = 'pending') AS pending_count,
+    (SELECT COUNT(*) FROM transcription_chunks c WHERE c.video_id = v.id AND c.status = 'done') AS chunks_done,
+    (SELECT COUNT(*) FROM transcription_chunks c WHERE c.video_id = v.id) AS chunks_total
   FROM videos v`;
 
 export class VideoService {
@@ -88,6 +99,80 @@ export class VideoService {
       });
     });
     return { video: this.get(id)!, warnings: parsed.warnings };
+  }
+
+  /** Create a video record for an uploaded local media file (Release 0.4). Transcript arrives via jobs. */
+  createFromMedia(input: { title: string; mediaPath: string; mediaHash: string; mediaSize: number; durationS: number; publishedAt?: string; language?: string; notes?: string }): VideoDetail {
+    const id = crypto.randomUUID();
+    this.db.run(
+      `INSERT INTO videos (id, title, source_kind, source_ref, duration_s, published_at, language, status, notes, media_path, media_hash, media_size)
+       VALUES (?, ?, 'local', ?, ?, ?, ?, 'importing', ?, ?, ?, ?)`,
+      id, input.title, input.mediaHash, input.durationS, input.publishedAt ?? null, input.language ?? null, input.notes ?? null, input.mediaPath, input.mediaHash, input.mediaSize,
+    );
+    return this.get(id)!;
+  }
+
+  findByMediaHash(hash: string): VideoSummary | undefined {
+    const row = this.db.get<VideoRow>(`${SUMMARY_SQL} WHERE v.media_hash = ?`, hash);
+    return row ? toSummary(row) : undefined;
+  }
+
+  mediaInfo(id: string): { mediaPath?: string; audioPath?: string; durationS?: number } | undefined {
+    const r = this.db.get<{ media_path: string | null; audio_path: string | null; duration_s: number | null }>("SELECT media_path, audio_path, duration_s FROM videos WHERE id = ?", id);
+    return r ? { mediaPath: r.media_path ?? undefined, audioPath: r.audio_path ?? undefined, durationS: r.duration_s ?? undefined } : undefined;
+  }
+
+  setAudioPath(id: string, audioPath: string, durationS?: number): void {
+    this.db.run("UPDATE videos SET audio_path = ?, duration_s = COALESCE(?, duration_s) WHERE id = ?", audioPath, durationS ?? null, id);
+  }
+
+  setError(id: string, error: string | null): void {
+    this.db.run("UPDATE videos SET error = ? WHERE id = ?", error, id);
+  }
+
+  setTranscriptionEngine(id: string, engine: string, model: string): void {
+    this.db.run("UPDATE videos SET transcription_engine = ?, transcription_model = ? WHERE id = ?", engine, model, id);
+  }
+
+  // ---- resumable transcription chunks ----
+  planChunks(videoId: string, chunks: { index: number; startS: number; endS: number }[]): void {
+    this.db.transaction(() => {
+      for (const c of chunks) {
+        this.db.run(
+          "INSERT OR IGNORE INTO transcription_chunks (video_id, chunk_index, start_s, end_s) VALUES (?, ?, ?, ?)",
+          videoId, c.index, c.startS, c.endS,
+        );
+      }
+    });
+  }
+
+  chunkStates(videoId: string): { index: number; startS: number; endS: number; status: "pending" | "done" | "failed" }[] {
+    return this.db
+      .all<{ chunk_index: number; start_s: number; end_s: number; status: "pending" | "done" | "failed" }>("SELECT chunk_index, start_s, end_s, status FROM transcription_chunks WHERE video_id = ? ORDER BY chunk_index", videoId)
+      .map((r) => ({ index: r.chunk_index, startS: r.start_s, endS: r.end_s, status: r.status }));
+  }
+
+  /** Persist a chunk's segments and mark it done in one transaction (progressive, crash-safe). */
+  commitChunk(videoId: string, chunkIndex: number, engine: string, segments: { startS: number; endS: number; text: string }[]): void {
+    this.db.transaction(() => {
+      const next = (this.db.get<{ n: number | null }>("SELECT MAX(seq) AS n FROM transcript_segments WHERE video_id = ?", videoId)?.n ?? -1) + 1;
+      segments.forEach((s, i) => {
+        this.db.run(
+          "INSERT INTO transcript_segments (id, video_id, seq, start_s, end_s, text_original, engine, chunk_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          crypto.randomUUID(), videoId, next + i, s.startS, s.endS, s.text, engine, `c${chunkIndex}`,
+        );
+      });
+      this.db.run("UPDATE transcription_chunks SET status = 'done', segment_count = ?, error = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE video_id = ? AND chunk_index = ?", segments.length, videoId, chunkIndex);
+    });
+  }
+
+  failChunk(videoId: string, chunkIndex: number, error: string): void {
+    this.db.run("UPDATE transcription_chunks SET status = 'failed', error = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE video_id = ? AND chunk_index = ?", error.slice(0, 500), videoId, chunkIndex);
+  }
+
+  /** Committed transcript end time (for stitching the next chunk). */
+  transcriptEnd(videoId: string): number {
+    return this.db.get<{ e: number | null }>("SELECT MAX(end_s) AS e FROM transcript_segments WHERE video_id = ?", videoId)?.e ?? 0;
   }
 
   list(): VideoSummary[] {
@@ -159,6 +244,12 @@ function toSummary(r: VideoRow): VideoSummary {
     segmentCount: Number(r.segment_count),
     predictionCount: Number(r.prediction_count),
     pendingPredictionCount: Number(r.pending_count),
+    mediaSize: r.media_size ?? undefined,
+    transcriptionEngine: r.transcription_engine ?? undefined,
+    transcriptionModel: r.transcription_model ?? undefined,
+    error: r.error ?? undefined,
+    chunksDone: Number(r.chunks_done),
+    chunksTotal: Number(r.chunks_total),
   };
 }
 

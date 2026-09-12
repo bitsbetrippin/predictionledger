@@ -39,7 +39,11 @@ export const persistedSettingsSchema = z.object({
   transcription: z.object({
     engine: z.enum(["local-whisper", "openai-transcribe", "youtube-captions", "import"]),
     localModel: z.string().max(200),
+    openaiModel: z.string().max(200).default("whisper-1"),
     language: z.string().max(10),
+    /** Seconds per transcription chunk and overlap; chunks are transcribed and persisted one at a time. */
+    chunkSeconds: z.number().int().min(60).max(1800).default(300),
+    overlapSeconds: z.number().int().min(0).max(30).default(5),
   }),
   search: z.object({
     provider: z.enum(["brave", "tavily", "searxng", "anthropic-native", "openai-native", "none"]),
@@ -78,7 +82,10 @@ export const DEFAULT_SETTINGS: PersistedSettings = {
   transcription: {
     engine: "local-whisper",
     localModel: "onnx-community/whisper-base",
+    openaiModel: "whisper-1",
     language: "auto",
+    chunkSeconds: 300,
+    overlapSeconds: 5,
   },
   search: { provider: "none" },
   limits: { concurrency: 2, maxSearchesPerRun: 8, maxSourcesPerRun: 12, requestsPerMinute: 30 },

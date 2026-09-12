@@ -21,6 +21,9 @@ import { PlanService } from "./services/plans.js";
 import { TemplateService } from "./services/templates.js";
 import { ResearchService } from "./services/research.js";
 import { GuardedFetcher, type SourceFetcher } from "./research/fetcher.js";
+import { makeAudioExtractHandler, makeTranscribeHandler } from "./jobs/handlers/media.js";
+import { LocalWhisperProvider, OpenAiTranscriptionProvider, type TranscriptionProvider } from "./media/transcription.js";
+import { SECRET_NAMES } from "./settings.js";
 
 export interface AppContext {
   paths: DataPaths;
@@ -36,9 +39,11 @@ export interface AppContext {
   templates: TemplateService;
   research: ResearchService;
   fetcher: SourceFetcher;
+  /** Builds the transcription engine selected in Setup (or a test override). */
+  transcription: () => TranscriptionProvider;
 }
 
-export function createContext(overrides: Partial<Pick<AppContext, "fetcher">> = {}): AppContext {
+export function createContext(overrides: Partial<Pick<AppContext, "fetcher" | "transcription">> = {}): AppContext {
   const paths = resolveDataPaths();
   ensureDataDirs(paths);
   const { db, schemaVersion } = openDatabase(paths);
@@ -61,6 +66,14 @@ export function createContext(overrides: Partial<Pick<AppContext, "fetcher">> = 
     templates: new TemplateService(db),
     research: new ResearchService(db, paths.artifacts),
     fetcher: overrides.fetcher ?? new GuardedFetcher(),
+    transcription:
+      overrides.transcription ??
+      (() => {
+        const s = settings.getPersisted();
+        const allow = () => settings.getPersisted().privacy.allowInternet;
+        if (s.transcription.engine === "openai-transcribe") return new OpenAiTranscriptionProvider(() => secrets.get(SECRET_NAMES.llm("openai")), s.transcription.openaiModel, allow);
+        return new LocalWhisperProvider(s.transcription.localModel, paths.models, allow);
+      }),
   };
 
   // Job handlers (Release 0.2). Later releases register audio/transcript/research/assessment kinds.
@@ -68,6 +81,8 @@ export function createContext(overrides: Partial<Pick<AppContext, "fetcher">> = 
   jobs.register("plan.generate", makePlanHandler(ctx));
   jobs.register("research.run", makeResearchHandler(ctx));
   jobs.register("assessment.run", makeAssessHandler(ctx));
+  jobs.register("audio.extract", makeAudioExtractHandler(ctx));
+  jobs.register("transcript.generate", makeTranscribeHandler(ctx));
 
   // Research runs interrupted by a crash: the job queue re-runs the job, which creates a new run.
   const orphaned = ctx.research.failOrphanedRuns();

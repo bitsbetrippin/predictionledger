@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import type { JobSummary, TranscriptSegment, VideoDetail } from "@prediction-ledger/shared";
-import { content, fmtClock, pollJob, type PredictionRow } from "../api";
+import { content, fmtClock, media, pollJob, type PredictionRow } from "../api";
 
 export function VideoPage({ id }: { id: string }) {
   const [video, setVideo] = useState<VideoDetail | null>(null);
@@ -29,6 +29,25 @@ export function VideoPage({ id }: { id: string }) {
     }
   }, [id]);
   useEffect(() => void reload(), [reload]);
+
+  // Live refresh while the media pipeline (0.4) is extracting audio / transcribing this video.
+  const busy = video?.status === "importing" || video?.status === "transcribing";
+  useEffect(() => {
+    if (!busy) return;
+    const t = setInterval(() => void reload(), 1500);
+    return () => clearInterval(t);
+  }, [busy, reload]);
+
+  const transcribe = async (restart: boolean) => {
+    if (restart && !window.confirm("Re-transcribe from scratch? The current transcript and any corrections will be replaced.")) return;
+    setError(null);
+    try {
+      await media.transcribe(id, restart);
+      await reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
 
   const extract = async () => {
     setError(null);
@@ -70,14 +89,31 @@ export function VideoPage({ id }: { id: string }) {
           </p>
         </>
       )}
-      {video.notes && <div className="banner">{video.notes}</div>}
+      {video.notes && <div className="banner">{video.notes}{video.transcriptionEngine ? ` · transcribed by ${video.transcriptionEngine}${video.transcriptionModel ? ` (${video.transcriptionModel})` : ""}` : ""}</div>}
       {error && <div className="banner error" role="alert">{error}</div>}
+      {video.status === "importing" && <div className="banner" role="status"><span className="progress"><span className="bar" style={{ width: "10%" }} /> Extracting audio…</span></div>}
+      {video.status === "transcribing" && (
+        <div className="banner" role="status">
+          <span className="progress">
+            <span className="bar" style={{ width: `${video.chunksTotal ? Math.round(((video.chunksDone ?? 0) / video.chunksTotal) * 100) : 5}%` }} />
+            {video.chunksTotal ? ` Transcribing chunk ${Math.min((video.chunksDone ?? 0) + 1, video.chunksTotal)} of ${video.chunksTotal}` : " Transcribing…"}
+          </span>
+          <small className="muted"> Segments appear below as each chunk completes. Safe to close the tab — transcription resumes after a restart.</small>
+        </div>
+      )}
+      {video.status === "failed" && (
+        <div className="banner error" role="alert">
+          {video.error ?? "Processing failed."}{" "}
+          {video.mediaSize !== undefined && <button type="button" onClick={() => transcribe(false)}>Retry</button>}
+        </div>
+      )}
 
       <div className="row">
-        <button type="button" className="primary" onClick={extract} disabled={!!running}>{preds.length ? "Re-extract predictions" : "Extract predictions"}</button>
+        <button type="button" className="primary" onClick={extract} disabled={!!running || busy || video.segments.length === 0}>{preds.length ? "Re-extract predictions" : "Extract predictions"}</button>
         {running && <span className="progress"><span className="bar" style={{ width: `${job!.progress}%` }} /> {job!.stage ?? job!.status}</span>}
         {job?.status === "completed" && <span className="result ok">✓ {job.stage}</span>}
         {preds.length > 0 && <a href={`#/predictions?videoId=${video.id}`}>Open in Predictions →</a>}
+        {video.mediaSize !== undefined && video.status === "ready" && <button type="button" onClick={() => transcribe(true)} disabled={!!running}>Re-transcribe</button>}
       </div>
 
       <div className="two-col">

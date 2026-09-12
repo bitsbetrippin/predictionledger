@@ -9,8 +9,8 @@
  * sends an empty string, which deletes it.
  */
 import { useEffect, useState } from "react";
-import type { AnalysisStage, AppSettings, LlmProviderId, ModelInfo, ProviderTestResult } from "@prediction-ledger/shared";
-import { api, content, toPayload, type SecretUpdates } from "../api";
+import type { AnalysisStage, AppSettings, LlmProviderId, MediaStatus, ModelInfo, ProviderTestResult } from "@prediction-ledger/shared";
+import { api, content, media, toPayload, type SecretUpdates } from "../api";
 import type { PromptTemplateInfo } from "@prediction-ledger/shared";
 
 const PROVIDER_LABELS: Record<LlmProviderId, string> = {
@@ -32,6 +32,8 @@ export function SetupPage() {
   const [models, setModels] = useState<Partial<Record<LlmProviderId, ModelInfo[]>>>({});
   const [status, setStatus] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [mediaStatus, setMediaStatus] = useState<MediaStatus | null | "checking">(null);
+  const checkMedia = () => { setMediaStatus("checking"); media.status().then(setMediaStatus).catch(() => setMediaStatus(null)); };
 
   useEffect(() => {
     api.getSettings().then(setSettings).catch((e: Error) => setStatus({ kind: "error", text: e.message }));
@@ -204,20 +206,52 @@ export function SetupPage() {
           <span>Engine</span>
           <select value={settings.transcription.engine} onChange={(e) => update((s) => ((s.transcription.engine = e.target.value as AppSettings["transcription"]["engine"]), s))}>
             <option value="local-whisper">Local Whisper (runs on this computer, model downloaded once)</option>
-            <option value="openai-transcribe">OpenAI transcription (cloud)</option>
-            <option value="youtube-captions">YouTube captions when available</option>
+            <option value="openai-transcribe">OpenAI transcription (cloud — audio leaves this computer)</option>
+            <option value="youtube-captions">YouTube captions when available (Release 0.5)</option>
             <option value="import">Import transcript file only</option>
           </select>
-          <small>Engines become active in Release 0.2; the setting is stored now.</small>
+          <small>Video import always needs ffmpeg on this computer. Local Whisper also needs the optional <code>@huggingface/transformers</code> package and a one-time model download (see SETUP.md).</small>
         </label>
-        <label className="field">
-          <span>Local Whisper model</span>
-          <input value={settings.transcription.localModel} onChange={(e) => update((s) => ((s.transcription.localModel = e.target.value), s))} />
-        </label>
-        <label className="field">
-          <span>Language</span>
-          <input value={settings.transcription.language} placeholder="auto" onChange={(e) => update((s) => ((s.transcription.language = e.target.value), s))} />
-        </label>
+        <div className="grid-3">
+          <label className="field">
+            <span>Local Whisper model</span>
+            <input value={settings.transcription.localModel} onChange={(e) => update((s) => ((s.transcription.localModel = e.target.value), s))} />
+            <small>e.g. onnx-community/whisper-base (fast) · whisper-small (better) · whisper-large-v3-turbo (best, slow on CPU)</small>
+          </label>
+          <label className="field">
+            <span>OpenAI transcription model</span>
+            <input value={settings.transcription.openaiModel} onChange={(e) => update((s) => ((s.transcription.openaiModel = e.target.value), s))} />
+            <small>whisper-1 returns segment timestamps; other models yield one segment per chunk.</small>
+          </label>
+          <label className="field">
+            <span>Language</span>
+            <input value={settings.transcription.language} placeholder="auto" onChange={(e) => update((s) => ((s.transcription.language = e.target.value), s))} />
+            <small>Blank = auto-detect.</small>
+          </label>
+        </div>
+        <div className="grid-3">
+          <label className="field">
+            <span>Chunk length (seconds)</span>
+            <input type="number" min={60} max={1800} value={settings.transcription.chunkSeconds} onChange={(e) => update((s) => ((s.transcription.chunkSeconds = Number(e.target.value)), s))} />
+            <small>Long recordings are transcribed in resumable chunks. 300 s is a good default.</small>
+          </label>
+          <label className="field">
+            <span>Chunk overlap (seconds)</span>
+            <input type="number" min={0} max={30} value={settings.transcription.overlapSeconds} onChange={(e) => update((s) => ((s.transcription.overlapSeconds = Number(e.target.value)), s))} />
+            <small>Overlap keeps words at chunk edges intact; duplicates are dropped when stitching.</small>
+          </label>
+        </div>
+        <div className="row">
+          <button type="button" onClick={checkMedia} disabled={mediaStatus === "checking"}>{mediaStatus === "checking" ? "Checking…" : "Check media tools"}</button>
+          {mediaStatus && mediaStatus !== "checking" && (
+            <span className="small">
+              <span className={mediaStatus.ffmpeg.ok ? "result ok" : "result error"}>ffmpeg: {mediaStatus.ffmpeg.message}</span>
+              {" · "}
+              <span className={mediaStatus.engine.ok ? "result ok" : "result error"}>{mediaStatus.engine.id}: {mediaStatus.engine.message}</span>
+            </span>
+          )}
+        </div>
+        <small className="muted">Checks the saved settings — click Save first if you changed the engine.</small>
       </fieldset>
 
       <h2>Web search (for outcome research)</h2>

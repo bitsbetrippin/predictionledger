@@ -152,6 +152,37 @@ export const content = {
   cancelJob: (id: string) => request<import("@prediction-ledger/shared").JobSummary>("POST", `/api/jobs/${id}/cancel`),
 };
 
+// ---------------------------------------------------------------------------
+// Release 0.4 — local media upload and transcription
+// ---------------------------------------------------------------------------
+
+import type { MediaStatus } from "@prediction-ledger/shared";
+
+export const media = {
+  status: () => request<MediaStatus>("GET", "/api/media/status"),
+  /** Upload a local media file as a raw octet stream (no multipart). Metadata rides in headers. */
+  upload: async (file: File, meta: { publishedAt?: string; language?: string; title?: string } = {}): Promise<{ video: VideoDetail; duplicate: boolean; jobId?: string }> => {
+    const headers: Record<string, string> = {
+      "content-type": "application/octet-stream",
+      [CSRF_HEADER]: CSRF_VALUE,
+      "x-file-name": encodeURIComponent(file.name),
+      "x-file-size": String(file.size),
+    };
+    if (meta.publishedAt) headers["x-published-at"] = meta.publishedAt;
+    if (meta.language) headers["x-language"] = meta.language;
+    if (meta.title) headers["x-title"] = encodeURIComponent(meta.title);
+    const res = await fetch("/api/videos/upload", { method: "POST", headers, body: file });
+    const text = await res.text();
+    const json = text ? (JSON.parse(text) as unknown) : undefined;
+    if (!res.ok) {
+      const msg = (json as { message?: string; error?: string })?.message ?? (json as { error?: string })?.error ?? res.statusText;
+      throw new ApiError(msg, res.status, json);
+    }
+    return json as { video: VideoDetail; duplicate: boolean; jobId?: string };
+  },
+  transcribe: (videoId: string, restart = false) => request<{ jobId: string; stage: "audio.extract" | "transcript.generate" }>("POST", `/api/videos/${videoId}/transcribe`, { restart }),
+};
+
 /** Poll a job until it reaches a terminal state; calls onTick with each snapshot. */
 export async function pollJob(id: string, onTick?: (j: import("@prediction-ledger/shared").JobSummary) => void, intervalMs = 800) {
   for (;;) {

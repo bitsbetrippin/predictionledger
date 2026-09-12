@@ -418,13 +418,13 @@ Each dependency is adopted only after this table has a row (project rule). "Adop
 
 | Dependency | Purpose | License | Install requirement | Known limitations | Decision |
 |---|---|---|---|---|---|
-| fastify, @fastify/static, @fastify/multipart | HTTP server, static files, uploads | MIT | npm | — | **Adopted R0.1** (multipart in M3) |
+| fastify, @fastify/static | HTTP server, static files | MIT | npm | — | **Adopted R0.1**. Uploads use a raw octet-stream body (ADR-016), so `@fastify/multipart` was not adopted. |
 | zod | Validation | MIT | npm | — | **Adopted R0.1** |
 | react, react-dom, vite, @vitejs/plugin-react | Dashboard | MIT | npm (build-time) | — | **Adopted R0.1** |
 | drizzle-orm (`/node-sqlite`), drizzle-kit | Typed schema/queries, migration generation | Apache-2.0 | npm | node:sqlite driver is newer than the better-sqlite3 one; verify on Windows in M1 | **Adopt M1** (spike S-1) |
 | ai (Vercel AI SDK), @ai-sdk/anthropic, @ai-sdk/openai, @ai-sdk/openai-compatible | Structured output across providers | Apache-2.0 | npm | `generateObject` with OpenAI-compatible servers depends on the local model honouring JSON mode; fall back to prompt-and-parse | **Adopt M1** (spike S-2) |
-| @huggingface/transformers | Local Whisper (ONNX) | Apache-2.0 | npm; downloads `onnx-community/whisper-*` models (Apache-2.0/MIT) on first use | CPU-bound; WebGPU in Node is experimental; long files must be chunked (30 s windows with 5 s overlap) | **Adopt M3** (spike S-3) |
-| ffmpeg-static *or* system ffmpeg | Audio extraction | GPL-2+/LGPL (binary) | npm downloads platform binary, or user installs | GPL notice required if bundled; system install preferred on macOS via Homebrew | **Adopt M3** — default to system ffmpeg with `ffmpeg-static` as opt-in fallback |
+| @huggingface/transformers | Local Whisper (ONNX) | Apache-2.0 | npm; downloads `onnx-community/whisper-*` models (Apache-2.0/MIT) on first use | CPU-bound; WebGPU in Node is experimental; long files must be chunked (30 s windows with 5 s overlap) | **Adopted R0.4 as an optional dependency** (ADR-016); spike S-3 pending first real run |
+| ffmpeg-static *or* system ffmpeg | Audio extraction | GPL-2+/LGPL (binary) | npm downloads platform binary, or user installs | GPL notice required if bundled; system install preferred on macOS via Homebrew | **Adopted R0.4** — system ffmpeg by default (`PL_FFMPEG_PATH` → `ffmpeg-static` → PATH) |
 | yt-dlp | YouTube captions/audio | Unlicense | standalone binary downloaded to `tools/` after consent | Needs a JS runtime (Node qualifies); YouTube changes break it periodically → self-update path required; some videos need cookies/PO tokens and remain unavailable | **Adopt M4** (spike S-4) |
 | @mozilla/readability + linkedom | Evidence page extraction | Apache-2.0 / MIT | npm | paywalls and JS-rendered pages yield thin text → recorded as access limitation | **Deferred to 1.0** — 0.3 ships a built-in extractor (ADR-014) |
 | Brave Search API | Search adapter #1 | commercial API | key in Setup | metered billing; attribution required for monthly credit | **Adopted 0.3** (plain fetch adapter) |

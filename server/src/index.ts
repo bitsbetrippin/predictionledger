@@ -24,6 +24,7 @@ import { registerCsrfGuard } from "./security/csrf.js";
 import { registerRoutes } from "./routes/index.js";
 import { registerContentRoutes } from "./routes/content.js";
 import { registerResearchRoutes } from "./routes/research.js";
+import { registerMediaRoutes } from "./routes/media.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const webDist = path.resolve(here, "..", "..", "web", "dist");
@@ -33,7 +34,7 @@ async function main(): Promise<void> {
 
   const app = Fastify({
     logger: { level: process.env.PL_LOG_LEVEL ?? "info", redact: ["req.headers.authorization", "req.headers['x-api-key']"] },
-    bodyLimit: 25 * 1024 * 1024, // 25 MiB: transcript imports arrive as JSON text. Media uploads (Release 0.4) use multipart with its own limit.
+    bodyLimit: 25 * 1024 * 1024, // 25 MiB: transcript imports arrive as JSON text. The media upload route sets its own (8 GiB) limit.
   });
 
   // Hardening headers for the dashboard.
@@ -57,6 +58,7 @@ async function main(): Promise<void> {
   registerRoutes(app, ctx);
   registerContentRoutes(app, ctx);
   registerResearchRoutes(app, ctx);
+  registerMediaRoutes(app, ctx);
 
   if (fs.existsSync(webDist)) {
     await app.register(fastifyStatic, { root: webDist, prefix: "/", wildcard: false });

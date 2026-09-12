@@ -6,7 +6,7 @@ Prediction Ledger is an open-source, localhost-only application. It takes a loca
 
 Everything lives on your computer in a SQLite database. Cloud AI providers and web research are opt-in and clearly labelled; a fully local workflow (LM Studio + local Whisper + transcript import) is supported.
 
-> **Status:** Release 0.3 — Milestone 2. The full analysis loop works on an imported transcript: extract predictions → versioned validation plan → real web research (Brave, Tavily, SearXNG, or Anthropic/OpenAI native search) → verified evidence → two-field verdict with citations, app-enforced verdict rules, recheck history, and JSON/CSV export. Local video (0.4) and YouTube (0.5) are next. See [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) and the [worked example](docs/WORKED_EXAMPLE.md).
+> **Status:** Release 0.4 — Milestone 3. Drop a local MP4/MPEG (or audio) file: ffmpeg extracts the audio, a local Whisper engine (Transformers.js, optional install) or OpenAI transcribes it in resumable chunks with continuous timestamps, and the full analysis loop from 0.2–0.3 runs on the result: extract predictions → versioned validation plan → real web research → verified evidence → two-field verdict with citations, recheck history, JSON/CSV export. YouTube (0.5) is next. See [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) and the [worked example](docs/WORKED_EXAMPLE.md).
 
 ---
 
@@ -50,7 +50,7 @@ A useful mental model: it is a **courtroom, not a pundit**. Extraction is the cl
 
 ## Quick start
 
-**Prerequisites:** [Node.js 24 LTS](https://nodejs.org) (22.13+ works) and Git or [GitHub Desktop](https://desktop.github.com). Nothing else for Releases 0.1–0.2 (ffmpeg arrives with local video in 0.4). No admin rights, no Docker, no Python.
+**Prerequisites:** [Node.js 24 LTS](https://nodejs.org) (22.13+ works) and Git or [GitHub Desktop](https://desktop.github.com). Add [ffmpeg](docs/SETUP.md#1-prerequisites) if you want to import video/audio files (transcript import needs nothing extra). No admin rights, no Docker, no Python.
 
 ```bash
 # 1. Clone (or use GitHub Desktop → File → Clone repository)
@@ -242,7 +242,7 @@ Turning **Privacy → Allow internet access** off restricts the app to explicitl
 | **0.1** ✓ | Localhost server, Setup tab, encrypted credentials, provider tests, durable jobs, docs. |
 | **0.2** ✓ | Transcript import → prediction extraction (edit/merge/split/dismiss) → versioned validation plans. |
 | **0.3** ✓ | Web research, stored evidence, two-field verdicts with citations, app-enforced verdict rules, recheck history, JSON/CSV export. |
-| **0.4** | Local MP4/MPEG import, ffmpeg audio extraction, chunked local Whisper / OpenAI transcription. |
+| **0.4** ✓ | Local MP4/MPEG import, ffmpeg audio extraction, chunked + resumable local Whisper / OpenAI transcription with live progress. |
 | **0.5** | YouTube: captions → audio → transcript-import fallback; clear recovery paths. |
 | **1.0** | Cross-provider prompt evaluations (Promptfoo), hardening, Windows + macOS verification, MVP. |
 

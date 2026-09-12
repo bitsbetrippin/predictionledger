@@ -29,8 +29,7 @@ This file is maintained by hand. **Rule:** a dependency is added to `package.jso
 |---|---|---|---|---|
 | drizzle-orm, drizzle-kit | Apache-2.0 | Drizzle Team | 0.2 | Typed SQLite schema/queries |
 | ai (Vercel AI SDK) and @ai-sdk/* providers | Apache-2.0 | Vercel, Inc. | 0.2 | Structured model output |
-| @fastify/multipart | MIT | Fastify contributors | 0.4 | Uploads |
-| @huggingface/transformers | Apache-2.0 | Hugging Face | 0.4 | Whisper inference in Node (ONNX Runtime, MIT, bundled) |
+| @huggingface/transformers (**optional dependency**, adopted 0.4) | Apache-2.0 | Hugging Face | 0.4 | Whisper inference in Node (ONNX Runtime, MIT, bundled). Loaded dynamically; installed only when the user wants local transcription. Whisper models (`onnx-community/whisper-*`) are Apache-2.0/MIT, downloaded on first use into the data directory. |
 | onnx-community/whisper-* model weights | Apache-2.0 / MIT (per model card) | OpenAI (original Whisper, MIT) converted by the ONNX community | 0.4 | Downloaded at runtime into the data directory, not shipped in this repo |
 | ffmpeg / ffprobe | LGPL-2.1+ or GPL-2+ depending on build | FFmpeg developers | 0.4 | Invoked as a separate process; not linked. If `ffmpeg-static` is enabled it downloads GPL-licensed binaries — the GPL applies to those binaries, not to this project's code. |
 | ffmpeg-static (optional) | MIT (wrapper) + GPL (binaries) | Eugene Ware et al. | 0.4 | Optional convenience |

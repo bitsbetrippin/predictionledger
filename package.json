@@ -1,6 +1,6 @@
 {
   "name": "prediction-ledger",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Prediction Ledger — import a video, extract the predictions it makes, generate an inspectable validation plan, research what actually happened, and keep a ledger of the results. Runs entirely on localhost.",
   "license": "Apache-2.0",

@@ -344,7 +344,7 @@ The 1.0 backlog split in two: 0.6 is everything that could be built and verified
 
 ## 9. Release 1.0 — Milestone 5b: verification, evals executed, MVP
 
-**1.0.0-rc.1 (2026-09-12)** delivers every item below that does not need a machine with network and real dependencies; the rest is gated on `docs/FIRST_RUN.md`.
+**1.1.0 (2026-09-12)** — consolidated build of rc.1 plus the first real-machine fixes (see CHANGELOG); everything below that does not need a machine is delivered, and the first run on Windows has verified install and all three builds. The rest is tracked in `docs/FIRST_RUN.md` / `docs/VERIFICATION.md`.
 
 | Item | Req. | Agent | Status |
 |---|---|---|---|
@@ -352,7 +352,7 @@ The 1.0 backlog split in two: 0.6 is everything that could be built and verified
 | Security pass: upload-name fuzzing, secrets never in public settings/error text; fetch-guard re-reviewed; `npm audit` + log scan on a real run | SC-* | AG-15 | ✓ tests; **audit/log scan pending real run** |
 | `npm run doctor` and `docs/FIRST_RUN.md` so the first run is self-service and reports precisely | RT-01 | AG-16 | ✓ rc.1 |
 | Static review of never-executed wiring: Fastify 5 route/parser/static usage, `@fastify/static` v8 `sendFile`, pino `redact` paths, Vite proxy, `node --test` glob quoting, `npm.cmd`/`shell:true` on Windows, `createRequire` for CJS packages, `AbortSignal.any` (Node ≥ 20.3) | RT-01 | AG-05, AG-07, AG-08 | ✓ reviewed; no changes needed |
-| First real run: `npm run setup` / `test` / `start`; fix first-compile surprises | RT-01 | AG-05, AG-06 | **Pending** (blocked here: registry 403, VM mount) |
+| First real run: `npm run setup` / `test` / `start`; fix first-compile surprises | RT-01 | AG-05, AG-06 | **In progress**: install + shared/server/web builds ✓ on Windows 11 / Node 26.7; two fixes shipped (template names, migrations copied to dist); `npm start` re-run pending |
 | Spikes S-3 (Whisper throughput, default model) and S-4 (real yt-dlp, `--js-runtimes node`, installer path) | IN-03, IN-07 | AG-13 | **Pending** first run |
 | Promptfoo suite executed on Anthropic, OpenAI, one LM Studio model; scores in `docs/VERIFICATION.md`; defaults adjusted; plan/assessment eval cases | — | AG-14 | **Pending** first run |
 | Readability spike (ADR-014); optional Drizzle/AI SDK spikes (ADR-012) | RS-03 | AG-11/AG-13 | Deferred to 1.1 unless first-run evidence shows thin extraction |

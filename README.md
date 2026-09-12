@@ -6,7 +6,7 @@ Prediction Ledger is an open-source, localhost-only application. It takes a loca
 
 Everything lives on your computer in a SQLite database. Cloud AI providers and web research are opt-in and clearly labelled; a fully local workflow (LM Studio + local Whisper + transcript import) is supported.
 
-> **Status:** **1.0.0-rc.1** — feature-complete for the MVP as specified; release candidate pending its first run on real hardware (see [docs/FIRST_RUN.md](docs/FIRST_RUN.md) and [docs/VERIFICATION.md](docs/VERIFICATION.md) for exactly what has and has not been executed). Every import path is in: paste a **YouTube link** (creator captions → auto captions → audio download, via a consent-installed, checksum-verified yt-dlp), drop a **local MP4/MPEG or audio file** (ffmpeg + resumable chunked Whisper/OpenAI transcription), or **import a transcript**. The analysis loop then runs on the result: extract predictions → versioned validation plan → real web research → verified evidence → two-field verdict with citations, recheck history, JSON/CSV export. The `1.0.0` tag follows the first verified run on Windows and macOS. See [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) and the [worked example](docs/WORKED_EXAMPLE.md).
+> **Status:** **1.1.0** — feature-complete for the MVP as specified and building cleanly on real hardware (Windows 11, Node 26); the remaining first-run verification steps are tracked in (see [docs/FIRST_RUN.md](docs/FIRST_RUN.md) and [docs/VERIFICATION.md](docs/VERIFICATION.md) for exactly what has and has not been executed). Every import path is in: paste a **YouTube link** (creator captions → auto captions → audio download, via a consent-installed, checksum-verified yt-dlp), drop a **local MP4/MPEG or audio file** (ffmpeg + resumable chunked Whisper/OpenAI transcription), or **import a transcript**. The analysis loop then runs on the result: extract predictions → versioned validation plan → real web research → verified evidence → two-field verdict with citations, recheck history, JSON/CSV export. The verification matrix is filled in as each platform completes the first-run checklist. See [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) and the [worked example](docs/WORKED_EXAMPLE.md).
 
 ---
 
@@ -251,8 +251,8 @@ Turning **Privacy → Allow internet access** off restricts the app to explicitl
 | **0.4** ✓ | Local MP4/MPEG import, ffmpeg audio extraction, chunked + resumable local Whisper / OpenAI transcription with live progress. |
 | **0.5** ✓ | YouTube: consent-installed yt-dlp, captions → audio → transcript-import fallback, distinct unavailable-video messages, up-front privacy refusal. |
 | **0.6** ✓ | 30-minute labelled fixture + acceptance tests, Promptfoo suite, provider timeouts/backoff, job retry, backups, release scaffolding. |
-| **1.0.0-rc.1** ✓ | Model download job + progress, per-request model timeout setting, secrets/upload security tests, `npm run doctor`, first-run runbook. |
-| **1.0.0** | Gated on the first real run: `docs/FIRST_RUN.md` completed on Windows and macOS, spikes S-3/S-4 answered, eval scores recorded in `docs/VERIFICATION.md`. |
+| **1.1.0** ✓ | Model download job + progress, model timeout setting, security tests, `npm run doctor`, first-run runbook, and the first real-machine build fixes (template names, migration files in `dist`). |
+| **next** | Remaining first-run verification: `docs/FIRST_RUN.md` steps 4–10 on Windows and macOS, spikes S-3/S-4, eval scores in `docs/VERIFICATION.md`. |
 
 Full backlog with acceptance criteria: [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md).
 

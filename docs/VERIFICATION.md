@@ -7,13 +7,13 @@ Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assist
 ## Legend
 **Executed** = the command/test ran and passed on that platform. **Static** = code and docs reviewed for that platform's behaviour, not run. **—** = not yet attempted.
 
-## Release 1.0.0-rc.1
+## Release 1.1.0
 
 | Check | Linux (cloud sandbox, Node 22.22) | Windows 11 | macOS |
 |---|---|---|---|
-| `npm run setup` (install + build) | — (registry blocked) | — | — |
+| `npm run setup` (install + build) | — (registry blocked) | **Executed (rc.2)**: install ✓, shared ✓, server ✓, web ✓ (after the setTemplate fix) | — |
 | `npm test` (46 tests) | **Executed** via compiled scratch build with a zod shim; real ffmpeg 6.1.1; fake yt-dlp; fake Transformers.js | — | — |
-| `npm start` → ready line → dashboard opens | — | — | — |
+| `npm start` → ready line → dashboard opens | — | rc.1: ✗ migrations missing from dist → fixed in rc.2; re-run pending | — |
 | Port walk when 7317 is busy | Static | Static | Static |
 | Restart recovery (stale running job re-queued) | **Executed** (unit) | — | — |
 | Transcript import → extraction → plan (fake model) | **Executed** | — | — |

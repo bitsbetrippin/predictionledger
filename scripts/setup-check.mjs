@@ -31,7 +31,7 @@ for (const tool of [
   { cmd: "yt-dlp", args: ["--version"], why: "YouTube links. Not needed on PATH — Setup → YouTube → Install yt-dlp fetches it into the data directory." },
 ]) {
   try {
-    const out = execFileSync(tool.cmd, tool.args, { stdio: ["ignore", "pipe", "ignore"] }).toString().split("\n")[0];
+    const out = execFileSync(tool.cmd, tool.args, { stdio: ["ignore", "pipe", "ignore"], timeout: 10_000 }).toString().split("\n")[0];
     console.log(`${tool.cmd}: found (${out.trim().slice(0, 60)})`);
   } catch {
     console.log(`${tool.cmd}: not on PATH — used for ${tool.why}`);

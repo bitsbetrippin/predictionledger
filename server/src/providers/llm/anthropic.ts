@@ -75,10 +75,11 @@ export class AnthropicProvider implements LanguageModelProvider {
       .filter((m) => m.role !== "system")
       .map((m) => ({ role: m.role, content: m.content }));
 
+    // `temperature` is deprecated/rejected (HTTP 400) on current Claude models — first-run finding, 1.1.2.
+    // Forced tool use already yields deterministic-enough structured output, so it is simply not sent.
     const body: Record<string, unknown> = {
       model: req.model,
       max_tokens: req.maxTokens ?? 4096,
-      temperature: req.temperature ?? 0.2,
       messages,
     };
     if (system) body.system = system;

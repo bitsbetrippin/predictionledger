@@ -100,15 +100,26 @@ export class OpenAiCompatibleProvider implements LanguageModelProvider {
         json_schema: { name: req.jsonSchema.name, schema: req.jsonSchema.schema, strict: false },
       };
     }
-    const res = await fetch(`${this.baseUrl(creds)}/chat/completions`, {
-      method: "POST",
-      headers: this.headers(creds),
-      body: JSON.stringify(body),
-      signal: req.signal,
-    });
-    if (!res.ok) {
-      throw new ProviderHttpError(this.displayName, res.status, await res.text(), parseRetryAfter(res.headers.get("retry-after")));
+    const send = (payload: Record<string, unknown>) =>
+      fetch(`${this.baseUrl(creds)}/chat/completions`, { method: "POST", headers: this.headers(creds), body: JSON.stringify(payload), signal: req.signal });
+    // Reasoning models (gpt-5 family, o-series) reject `temperature` and want `max_completion_tokens`
+    // instead of `max_tokens`; older models and LM Studio accept the classic form. Adapt on a 400 that
+    // names the parameter, at most twice. First-run finding, 1.1.2.
+    let payload = { ...body };
+    let res = await send(payload);
+    for (let adjust = 0; adjust < 2 && res.status === 400; adjust++) {
+      const text = await res.text();
+      if (/temperature/i.test(text) && "temperature" in payload) {
+        delete payload.temperature;
+      } else if (/max_tokens/i.test(text) && "max_tokens" in payload) {
+        payload = { ...payload, max_completion_tokens: payload.max_tokens };
+        delete payload.max_tokens;
+      } else {
+        throw new ProviderHttpError(this.displayName, 400, text);
+      }
+      res = await send(payload);
     }
+    if (!res.ok) throw new ProviderHttpError(this.displayName, res.status, await res.text(), parseRetryAfter(res.headers.get("retry-after")));
     const json = (await res.json()) as {
       model?: string;
       choices?: { message?: { content?: string | null } }[];

@@ -4,6 +4,14 @@ All notable changes to Prediction Ledger. Format follows [Keep a Changelog](http
 
 Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
 
+## [1.1.2] — 2026-09-12 — First live model call
+### Fixed
+- Anthropic adapter: current Claude models reject `temperature` (HTTP 400 "`temperature` is deprecated for this model"); it is no longer sent. Forced tool use already yields structured output.
+- OpenAI-compatible adapter: reasoning models reject `temperature` and require `max_completion_tokens`; on a 400 naming the parameter the request is adapted and retried once per parameter. LM Studio and classic models still receive the requested temperature. Unrelated 400s surface unchanged.
+- Tests: adapter request shapes against a stubbed `fetch` (49 tests).
+### Verified on the real machine (Windows 11, Node 26.7)
+- `npm start` → dashboard; **YouTube import end to end** (yt-dlp installed from Setup, `--js-runtimes node` accepted, auto captions fetched) — spike S-4 answered; Anthropic key saved and a live request reached the API.
+
 ## [1.1.1] — 2026-09-12 — Server type fix from the first clean rebuild
 ### Fixed
 - Server: `completeStructured` declared its schema as `z.ZodType<T>`, which requires the schema's *input* type to equal its *output* type; every schema with `.default()` fields (extraction, plan, evidence, assessment) violates that, so a real `tsc` failed with four TS2322 errors. Now `z.ZodType<T, z.ZodTypeDef, unknown>`. Not caught earlier because the sandbox typechecks against a stand-in Zod typing, and because `tsc` still emits JavaScript on type errors — the rc.1 folder's `server/dist` existed despite the errors, which misled the earlier "server compiled cleanly" note.

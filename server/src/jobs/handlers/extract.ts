@@ -68,6 +68,7 @@ export function makeExtractHandler(ctx: AppContext) {
           target,
           allowInternet: settings.privacy.allowInternet,
           rateLimiter: ctx.rateLimiter,
+          timeoutMs: settings.limits.modelTimeoutSeconds * 1000,
           signal: job.signal,
           schemaName: "extraction_output",
           zodSchema: extractionOutputSchema,

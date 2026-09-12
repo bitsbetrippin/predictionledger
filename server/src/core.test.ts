@@ -74,6 +74,30 @@ test("secrets are encrypted at rest and only a masked hint is exposed", () => {
   db.close();
 });
 
+test("public settings view never carries secret values; error text from adapters never echoes the key", async () => {
+  process.env.PL_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "prediction-ledger-secrets-"));
+  const { createContext } = await import("./context.js");
+  const ctx = createContext();
+  try {
+    const KEY = "sk-ant-api03-SUPERSECRET-VALUE-1234";
+    ctx.secrets.set("llm.anthropic.apiKey", KEY);
+    ctx.secrets.set("search.apiKey", "brave-SECRET-9999");
+    const pub = JSON.stringify(ctx.settings.getPublic());
+    assert.ok(!pub.includes("SUPERSECRET"), "API key must not appear in GET /api/settings");
+    assert.ok(!pub.includes("brave-SECRET"), "search key must not appear in GET /api/settings");
+    assert.ok(pub.includes('"hasSecret":true'));
+    const exportText = JSON.stringify(ctx.db.all("SELECT * FROM settings"));
+    assert.ok(!exportText.includes("SUPERSECRET"), "settings table holds no plaintext secrets");
+    const { ProviderHttpError } = await import("./providers/llm/types.js");
+    const err = new ProviderHttpError("Anthropic", 401, '{"type":"error","error":{"message":"invalid x-api-key"}}');
+    assert.ok(!err.message.includes(KEY));
+  } finally {
+    await ctx.jobs.stop();
+    ctx.db.close();
+    delete process.env.PL_DATA_DIR;
+  }
+});
+
 test("job queue dedupes, reports progress, retries to maxAttempts, and recovers after restart", async () => {
   const paths = tempPaths();
   let { db } = openDatabase(paths as never);

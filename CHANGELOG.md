@@ -4,6 +4,17 @@ All notable changes to Prediction Ledger. Format follows [Keep a Changelog](http
 
 Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
 
+## [1.0.0-rc.1] — 2026-09-12 — Release candidate
+Feature-complete for the MVP as specified. Tagged as a release candidate, not 1.0.0, because no machine has yet run `npm run setup`/`npm start` on the real dependencies; `docs/FIRST_RUN.md` is the checklist that closes that gap.
+### Added
+- `model.download` job, `POST /api/tools/whisper/download`, and Setup → Transcription → **Download model now** with download progress (Transformers.js `progress_callback`).
+- Setup → Limits → **Model timeout (seconds per request)**; applied to every model call through the resilience wrapper.
+- `npm run doctor` (`scripts/doctor.mjs`): environment report without secrets, for issues and the first-run checklist.
+- `docs/FIRST_RUN.md`: step-by-step first-run runbook stating exactly what to report back.
+- Tests: LocalWhisperProvider against a fake Transformers.js module (readiness, offline, preload progress, cache reuse) and the download job; upload-name fuzzing (traversal, unicode, null byte, oversized); public settings and error messages never carry secret values. 46 tests total.
+### Changed
+- Static review of the never-executed wiring (Fastify routes, Vite config, launcher scripts, Windows path handling) recorded in `docs/VERIFICATION.md`.
+
 ## [0.6.0] — 2026-09-12 — Evaluation harness and hardening, part 1
 ### Added
 - Fixture B1: synthetic, labelled 30-minute transcript (`fixtures/transcripts/energy-outlook-30min.*`) with canned per-window model replies; pipeline test covering three overlapping windows, a prediction spanning the 720 s window boundary, a repeated statement (one row, two occurrences), the no-predictions transcript (B2), invalid credentials at extraction, and job retry.

@@ -43,6 +43,18 @@ export function registerMediaRoutes(app: FastifyInstance, ctx: AppContext): void
     }
   });
 
+  /** Download/load the selected local transcription model now (Release 1.0). Explicit, user-initiated. */
+  app.post("/api/tools/whisper/download", async (_req, reply) => {
+    const s = ctx.settings.getPersisted();
+    if (s.transcription.engine !== "local-whisper") return reply.code(409).send({ error: "not_local", message: "The selected transcription engine has no model to download. Choose Local Whisper in Setup first." });
+    if (!s.privacy.allowInternet) {
+      const st = await ctx.transcription().check();
+      if (st.needsDownload) return reply.code(409).send({ error: "offline", message: st.message });
+    }
+    const jobId = ctx.jobs.enqueue({ kind: "model.download", subjectType: "tool", subjectId: "whisper", payload: { model: s.transcription.localModel }, dedupeKey: "model.download:whisper", maxAttempts: 1 });
+    return reply.code(202).send({ jobId });
+  });
+
   /** Re-run transcription (resumes unfinished chunks; use `restart` to discard existing segments). */
   app.post<{ Params: { id: string }; Body: { restart?: boolean } }>("/api/videos/:id/transcribe", async (req, reply) => {
     const v = ctx.videos.get(req.params.id);

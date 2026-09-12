@@ -1,6 +1,6 @@
 {
   "name": "prediction-ledger",
-  "version": "0.6.0",
+  "version": "1.0.0-rc.1",
   "private": true,
   "description": "Prediction Ledger \u2014 import a video, extract the predictions it makes, generate an inspectable validation plan, research what actually happened, and keep a ledger of the results. Runs entirely on localhost.",
   "license": "Apache-2.0",
@@ -27,7 +27,8 @@
     "test": "npm run test --workspaces --if-present",
     "clean": "node scripts/clean.mjs",
     "eval": "npx promptfoo@latest eval -c evals/promptfooconfig.yaml",
-    "backup": "node scripts/backup.mjs"
+    "backup": "node scripts/backup.mjs",
+    "doctor": "node scripts/doctor.mjs"
   },
   "devDependencies": {
     "typescript": "^5.6.0"

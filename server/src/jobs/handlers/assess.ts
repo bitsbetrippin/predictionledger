@@ -76,6 +76,7 @@ export function makeAssessHandler(ctx: AppContext) {
       target,
       allowInternet: settings.privacy.allowInternet,
       rateLimiter: ctx.rateLimiter,
+          timeoutMs: settings.limits.modelTimeoutSeconds * 1000,
       signal: job.signal,
       schemaName: "assessment_output",
       zodSchema: assessmentOutputSchema,

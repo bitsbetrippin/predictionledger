@@ -98,6 +98,8 @@ export interface AppSettings {
     maxSourcesPerRun: number;
     /** Max model requests per minute across all providers. */
     requestsPerMinute: number;
+    /** Per-request model timeout in seconds (each try; 429/5xx retries are bounded separately). */
+    modelTimeoutSeconds: number;
   };
   privacy: {
     /**
@@ -155,7 +157,8 @@ export type JobKind =
   | "plan.generate"
   | "research.run"
   | "assessment.run"
-  | "tool.install";
+  | "tool.install"
+  | "model.download";
 
 export type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 

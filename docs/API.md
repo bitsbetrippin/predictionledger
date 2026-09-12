@@ -102,6 +102,14 @@ Base URL `http://127.0.0.1:7317`. JSON in/out. Every `POST`/`PUT`/`PATCH`/`DELET
 
 Provider calls made by every job now go through a resilience wrapper: 120 s per-try timeout, up to 3 tries with backoff (1 s, 4 s, capped 30 s; `Retry-After` honoured) for HTTP 408/429/5xx and network errors; HTTP 401/403 fail at once with the provider's message. Job errors read e.g. `Anthropic request failed: HTTP 401 …` or `The model did not answer within 120 s …`.
 
+## Release 1.0-rc
+
+| Method | Path | Body / notes |
+|---|---|---|
+| POST | `/api/tools/whisper/download` | Fetches/loads the Local Whisper model chosen in Setup into `<data>/models/` ahead of the first import → `202 { jobId }` (`model.download` job with download-progress stages). `409 not_local` when another engine is selected; `409 offline` when the model is not cached and internet is off. |
+
+`limits.modelTimeoutSeconds` (30–900, default 120) is the per-try timeout applied to every model call.
+
 ## Job kinds and payloads
 
 | Kind | Payload | Subject | Result |
@@ -112,6 +120,7 @@ Provider calls made by every job now go through a resilience wrapper: 120 s per-
 | `assessment.run` | `{ predictionId, runId }` | `prediction` | `{ assessmentId, version, guardNotes[] }` or `{ …, deterministic: true }` for zero-evidence runs |
 | `video.import` | `{ videoId, userSupplied: { title?, publishedAt?, language? }, forceAudio? }` | `video` | `{ source: "captions-manual"\|"captions-auto", lang, segments }` or `{ source: "audio", bytes, ext }` — the latter enqueues `audio.extract`. `maxAttempts` 1: failures are explained, not retried blindly. |
 | `tool.install` | `{ tool: "yt-dlp" }` | `tool` | `{ path, version, bytes }` |
+| `model.download` | `{ model }` | `tool` | `{ modelId, cached }` — progress "Downloading model <file>" |
 | `audio.extract` | `{ videoId }` | `video` | `{ audioPath, meanVolumeDb }` — enqueues `transcript.generate`; fails with "audio track is silent" below −60 dB |
 | `transcript.generate` | `{ videoId }` | `video` | `{ chunks, newSegments, segmentCount }` — resumable per chunk; progress reads "Transcribing chunk k of n" |
 

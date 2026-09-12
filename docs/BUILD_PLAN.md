@@ -41,6 +41,7 @@ gantt
 | **0.4** | Milestone 3 — Local video | Drag-drop an MP4/MPEG, get audio extracted and transcribed locally (Whisper) or via OpenAI, watch chunked progress, read a timestamped transcript on the video page. | 0.1 (+0.2 to analyse it) |
 | **0.5** | Milestone 4 — YouTube | Paste a URL: captions first, audio download + transcription second, transcript import as the documented fallback; clear errors for unavailable content. | 0.4 |
 | **0.6** | Milestone 5a — Evals + hardening | 30-minute labelled fixture and pipeline tests, Promptfoo suite, provider timeouts/backoff, job retry, backups, release scaffolding. | 0.5 |
+| **1.0.0-rc.1** | Milestone 5b — Release candidate | Model download job, timeout setting, security tests, doctor script, first-run runbook, static wiring review. `1.0.0` tag gated on the first verified run. | 0.6 |
 | **1.0** | Milestone 5 — MVP | Promptfoo regression suite over labeled fixtures, restart/cancel/rate-limit hardening, Windows and macOS verified, troubleshooting docs, tagged release. | 0.5 |
 
 Post-MVP candidates (not scheduled): whisper.cpp engine, OS-keychain secrets, SSE live progress, desktop shell (Tauri), live broadcast ingestion, multi-language UI.
@@ -343,16 +344,20 @@ The 1.0 backlog split in two: 0.6 is everything that could be built and verified
 
 ## 9. Release 1.0 — Milestone 5b: verification, evals executed, MVP
 
-| Item | Req. | Agent |
-|---|---|---|
-| First real run on Carter's machine: `npm run setup` / `test` / `start`; fix whatever the first compile of Fastify/Zod/React code surfaces | RT-01 | AG-05, AG-06 |
-| Spikes S-3 (Whisper throughput, default model) and S-4 (real yt-dlp, `--js-runtimes node`, installer path) | IN-03, IN-07 | AG-13 |
-| Promptfoo suite executed on Anthropic, OpenAI, and one LM Studio model; scores recorded in `docs/VERIFICATION.md`; defaults adjusted; plan/assessment eval cases added | — | AG-14 |
-| Security pass: `npm audit`, upload fuzzing, secrets-in-logs scan on a real run, fetch-guard re-review | SC-* | AG-15 |
-| Readability spike (ADR-014) and optional Drizzle/AI SDK spikes (ADR-012) — adopt only if they reduce code | RS-03 | AG-11/AG-13 |
-| Whisper model download progress UI | RT-05 | AG-10 |
-| Windows and macOS verification matrix executed and recorded | RT-01 | AG-08, AG-09, AG-14 |
-| README/SETUP/TROUBLESHOOTING final pass; release notes; `v1.0.0` tag | — | AG-16 |
+**1.0.0-rc.1 (2026-09-12)** delivers every item below that does not need a machine with network and real dependencies; the rest is gated on `docs/FIRST_RUN.md`.
+
+| Item | Req. | Agent | Status |
+|---|---|---|---|
+| Whisper model download job + progress UI; per-request model timeout setting | RT-05, PS-03 | AG-10, AG-05 | ✓ rc.1 (fake-module tested) |
+| Security pass: upload-name fuzzing, secrets never in public settings/error text; fetch-guard re-reviewed; `npm audit` + log scan on a real run | SC-* | AG-15 | ✓ tests; **audit/log scan pending real run** |
+| `npm run doctor` and `docs/FIRST_RUN.md` so the first run is self-service and reports precisely | RT-01 | AG-16 | ✓ rc.1 |
+| Static review of never-executed wiring: Fastify 5 route/parser/static usage, `@fastify/static` v8 `sendFile`, pino `redact` paths, Vite proxy, `node --test` glob quoting, `npm.cmd`/`shell:true` on Windows, `createRequire` for CJS packages, `AbortSignal.any` (Node ≥ 20.3) | RT-01 | AG-05, AG-07, AG-08 | ✓ reviewed; no changes needed |
+| First real run: `npm run setup` / `test` / `start`; fix first-compile surprises | RT-01 | AG-05, AG-06 | **Pending** (blocked here: registry 403, VM mount) |
+| Spikes S-3 (Whisper throughput, default model) and S-4 (real yt-dlp, `--js-runtimes node`, installer path) | IN-03, IN-07 | AG-13 | **Pending** first run |
+| Promptfoo suite executed on Anthropic, OpenAI, one LM Studio model; scores in `docs/VERIFICATION.md`; defaults adjusted; plan/assessment eval cases | — | AG-14 | **Pending** first run |
+| Readability spike (ADR-014); optional Drizzle/AI SDK spikes (ADR-012) | RS-03 | AG-11/AG-13 | Deferred to 1.1 unless first-run evidence shows thin extraction |
+| Windows and macOS verification matrix executed and recorded | RT-01 | AG-08, AG-09, AG-14 | **Pending** |
+| README/SETUP final pass; release notes; `v1.0.0` tag | — | AG-16 | rc.1 docs done; tag after verification |
 
 **MVP acceptance (cumulative).** All 0.1–0.6 criteria plus: invalid-credential handling at every stage (verified at extraction in 0.6; plan/research/assessment share the same call path), local-model-only operation for extraction, plans, and assessment (verified with the fake local provider), malformed output handling at every model call, restart recovery for every job kind, and the eval thresholds met by at least one cloud and one local model.
 

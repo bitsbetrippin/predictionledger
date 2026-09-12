@@ -192,6 +192,7 @@ export const media = {
     }
     return json as { video: VideoDetail; duplicate: boolean; jobId?: string };
   },
+  downloadModel: () => request<{ jobId: string }>("POST", "/api/tools/whisper/download"),
   transcribe: (videoId: string, restart = false) => request<{ jobId: string; stage: "audio.extract" | "transcript.generate" | "video.import" }>("POST", `/api/videos/${videoId}/transcribe`, { restart }),
 };
 

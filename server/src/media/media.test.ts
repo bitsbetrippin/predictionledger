@@ -61,6 +61,16 @@ test("checkUploadName: extension allow-list, traversal-proof title", () => {
   assert.deepEqual(checkUploadName("..\\..\\My.Talk_2026.MP4"), { ext: ".mp4", title: "My Talk 2026" });
   assert.throws(() => checkUploadName("payload.exe"), UploadError);
   assert.throws(() => checkUploadName("noext"), UploadError);
+  // fuzz: odd but legal names never escape the allow-list or produce an empty/oversized title
+  for (const name of ["C:\\Users\\x\\..\\..\\clip.MOV", "/etc/passwd.mp4", "ünïcödé 🎥.mp4", "a".repeat(5000) + ".mp3", "%2e%2e%2fclip.mkv"]) {
+    const r = checkUploadName(name);
+    assert.ok([".mov", ".mp4", ".mp3", ".mkv"].includes(r.ext), `${name} → ${r.ext}`);
+    assert.ok(r.title.length >= 1 && r.title.length <= 200, `${name} → title ${r.title.length}`);
+    assert.ok(!r.title.includes("/") && !r.title.includes("\\"), "title carries no path separators");
+  }
+  for (const name of ["clip.mp4.exe", ".mp4", " .mp4", "clip.php", "clip.mp4/evil.exe", "x.mp4\u0000.exe"]) {
+    assert.throws(() => checkUploadName(name), UploadError, name); // a bare dotfile has no extension; a null byte does not hide the real one
+  }
 });
 
 test("ffmpeg integration: probe, extract, silence detection, chunk cut, WAV reader", { skip: skipNoFfmpeg }, async () => {

@@ -135,3 +135,17 @@ export function makeTranscribeHandler(ctx: AppContext) {
     }
   };
 }
+
+/** model.download: fetch/load the selected local transcription model ahead of the first import (Release 1.0). */
+export function makeModelDownloadHandler(ctx: AppContext) {
+  return async (job: JobContext): Promise<Record<string, unknown>> => {
+    const engine = ctx.transcription();
+    if (!engine.preload) throw new Error(`The selected transcription engine (${engine.id}) has no model to download.`);
+    const ready = await engine.check();
+    if (!ready.ok && !ready.needsDownload) throw new TranscriptionError(ready.message, "engine_missing");
+    job.progress(2, ready.needsDownload ? "Downloading model" : "Loading cached model");
+    const result = await engine.preload((f, note) => job.progress(Math.max(2, Math.min(99, Math.round(f * 100))), note ?? "Downloading model"));
+    job.progress(100, `Model ${result.modelId} ready`);
+    return { modelId: result.modelId, cached: result.cached };
+  };
+}

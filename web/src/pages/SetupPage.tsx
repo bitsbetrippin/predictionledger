@@ -34,6 +34,21 @@ export function SetupPage() {
   const [saving, setSaving] = useState(false);
   const [mediaStatus, setMediaStatus] = useState<MediaStatus | null | "checking">(null);
   const checkMedia = () => { setMediaStatus("checking"); media.status().then(setMediaStatus).catch(() => setMediaStatus(null)); };
+  const [modelJob, setModelJob] = useState<JobSummary | null>(null);
+  const [modelMsg, setModelMsg] = useState<string | null>(null);
+  const downloadModel = async () => {
+    setModelMsg(null);
+    try {
+      const { jobId } = await media.downloadModel();
+      const done = await pollJob(jobId, setModelJob);
+      setModelJob(null);
+      setModelMsg(done.status === "failed" ? `Download failed: ${done.error}` : done.stage ?? "Model ready.");
+      checkMedia();
+    } catch (e) {
+      setModelJob(null);
+      setModelMsg((e as Error).message);
+    }
+  };
   const [backupList, setBackupList] = useState<BackupInfo[] | null>(null);
   const [backupMsg, setBackupMsg] = useState<string | null>(null);
   const loadBackups = () => backups.list().then(setBackupList).catch(() => setBackupList(null));
@@ -276,6 +291,10 @@ export function SetupPage() {
         </div>
         <div className="row">
           <button type="button" onClick={checkMedia} disabled={mediaStatus === "checking"}>{mediaStatus === "checking" ? "Checking…" : "Check media tools"}</button>
+          {settings.transcription.engine === "local-whisper" && (
+            <button type="button" onClick={downloadModel} disabled={!!modelJob}>{modelJob ? `Downloading… ${modelJob.progress}%` : "Download model now"}</button>
+          )}
+          {modelJob?.stage && <small className="muted">{modelJob.stage}</small>}
           {mediaStatus && mediaStatus !== "checking" && (
             <span className="small">
               <span className={mediaStatus.ffmpeg.ok ? "result ok" : "result error"}>ffmpeg: {mediaStatus.ffmpeg.message}</span>
@@ -284,7 +303,8 @@ export function SetupPage() {
             </span>
           )}
         </div>
-        <small className="muted">Checks the saved settings — click Save first if you changed the engine.</small>
+        {modelMsg && <div className="banner" role="status">{modelMsg}</div>}
+        <small className="muted">Checks the saved settings — click Save first if you changed the engine. "Download model now" fetches the Whisper model into the data directory ahead of your first import (needs internet once).</small>
       </fieldset>
 
       <h2>YouTube</h2>
@@ -402,6 +422,7 @@ export function SetupPage() {
         <NumberField label="Searches per research run" value={settings.limits.maxSearchesPerRun} min={1} max={50} onChange={(v) => update((s) => ((s.limits.maxSearchesPerRun = v), s))} />
         <NumberField label="Sources fetched per run" value={settings.limits.maxSourcesPerRun} min={1} max={100} onChange={(v) => update((s) => ((s.limits.maxSourcesPerRun = v), s))} />
         <NumberField label="Model requests / minute" value={settings.limits.requestsPerMinute} min={1} max={600} onChange={(v) => update((s) => ((s.limits.requestsPerMinute = v), s))} />
+        <NumberField label="Model timeout (seconds per request)" value={settings.limits.modelTimeoutSeconds} min={30} max={900} onChange={(v) => update((s) => ((s.limits.modelTimeoutSeconds = v), s))} />
       </fieldset>
 
       <div className="actions">

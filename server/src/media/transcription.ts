@@ -33,6 +33,8 @@ export interface TranscriptionProvider {
   /** Cheap readiness check with an actionable message (engine installed, model cached, key present). */
   check(): Promise<{ ok: boolean; message: string; needsDownload?: boolean }>;
   transcribeChunk(wavPath: string, opts: TranscribeOptions): Promise<RawSegment[]>;
+  /** Engines with a downloadable model implement this so Setup can fetch it ahead of the first import. */
+  preload?(onProgress?: TranscribeOptions["onProgress"]): Promise<{ modelId: string; cached: boolean }>;
 }
 
 export class TranscriptionError extends Error {
@@ -62,12 +64,14 @@ export class LocalWhisperProvider implements TranscriptionProvider {
     private readonly modelId: string,
     private readonly modelsDir: string,
     private readonly allowInternet: () => boolean,
+    /** Test seam: supply a fake Transformers.js module instead of importing the optional dependency. */
+    private readonly moduleLoader?: () => Promise<TransformersModule>,
   ) {}
 
   private async loadModule(): Promise<TransformersModule> {
     try {
       // Dynamic import so a missing optional dependency is a runtime message, not a startup crash.
-      const mod = (await import("@huggingface/transformers" as string)) as unknown as TransformersModule;
+      const mod = this.moduleLoader ? await this.moduleLoader() : ((await import("@huggingface/transformers" as string)) as unknown as TransformersModule);
       return mod;
     } catch {
       throw new TranscriptionError(
@@ -114,6 +118,12 @@ export class LocalWhisperProvider implements TranscriptionProvider {
     } catch (err) {
       throw new TranscriptionError(`Could not load Whisper model ${this.modelId}: ${(err as Error).message}`, "failed");
     }
+  }
+
+  /** Download (if needed) and load the model ahead of time, reporting progress (Release 1.0 model.download job). */
+  async preload(onProgress?: TranscribeOptions["onProgress"]): Promise<{ modelId: string; cached: boolean }> {
+    await this.getPipeline(onProgress);
+    return { modelId: this.modelId, cached: this.modelCached() };
   }
 
   async transcribeChunk(wavPath: string, opts: TranscribeOptions): Promise<RawSegment[]> {

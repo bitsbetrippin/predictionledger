@@ -61,6 +61,7 @@ export const persistedSettingsSchema = z.object({
     maxSearchesPerRun: z.number().int().min(1).max(50),
     maxSourcesPerRun: z.number().int().min(1).max(100),
     requestsPerMinute: z.number().int().min(1).max(600),
+    modelTimeoutSeconds: z.number().int().min(30).max(900).default(120),
   }),
   privacy: z.object({
     allowInternet: z.boolean(),
@@ -96,7 +97,7 @@ export const DEFAULT_SETTINGS: PersistedSettings = {
   },
   youtube: { captions: "manual-then-auto", allowAudioDownload: true, captionLanguage: "auto" },
   search: { provider: "none" },
-  limits: { concurrency: 2, maxSearchesPerRun: 8, maxSourcesPerRun: 12, requestsPerMinute: 30 },
+  limits: { concurrency: 2, maxSearchesPerRun: 8, maxSourcesPerRun: 12, requestsPerMinute: 30, modelTimeoutSeconds: 120 },
   privacy: { allowInternet: true },
   research: { reviewPlanBeforeResearch: false, recheckAfterDays: 90, maxSourceChars: 12000 },
 };

@@ -45,6 +45,14 @@ export const persistedSettingsSchema = z.object({
     chunkSeconds: z.number().int().min(60).max(1800).default(300),
     overlapSeconds: z.number().int().min(0).max(30).default(5),
   }),
+  sports: z
+    .object({
+      /** Sports Mode: treat videos as game-pick content — extraction looks for team-vs-team picks, deadline = game. */
+      enabled: z.boolean().default(false),
+      /** When off, spread picks are recorded as plain win/loss picks on the named team. */
+      trackSpreads: z.boolean().default(true),
+    })
+    .default({ enabled: false, trackSpreads: true }),
   youtube: z
     .object({
       captions: z.enum(["manual-then-auto", "manual-only", "never"]).default("manual-then-auto"),
@@ -95,6 +103,7 @@ export const DEFAULT_SETTINGS: PersistedSettings = {
     chunkSeconds: 300,
     overlapSeconds: 5,
   },
+  sports: { enabled: false, trackSpreads: true },
   youtube: { captions: "manual-then-auto", allowAudioDownload: true, captionLanguage: "auto" },
   search: { provider: "none" },
   limits: { concurrency: 2, maxSearchesPerRun: 8, maxSourcesPerRun: 12, requestsPerMinute: 30, modelTimeoutSeconds: 120 },

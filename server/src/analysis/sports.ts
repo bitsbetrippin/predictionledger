@@ -16,9 +16,33 @@ import type { PlanOutput } from "./schemas.js";
 
 export const SPORTS_RESEARCH_BUDGET = { searches: 3, sources: 3 } as const;
 
+/**
+ * Trusted final-score sources. "Validate scores" prefers results from these hosts and, when any are
+ * present, fetches only those — a box score from a league or major outlet is enough to settle a pick.
+ */
+export const TRUSTED_SCORE_HOSTS = [
+  "espn.com", "nfl.com", "nba.com", "nhl.com", "mlb.com", "ncaa.com", "mlssoccer.com", "premierleague.com", "uefa.com", "fifa.com",
+  "cbssports.com", "foxsports.com", "sports.yahoo.com", "nbcsports.com", "apnews.com", "reuters.com", "bbc.co.uk", "bbc.com", "skysports.com",
+  "theathletic.com", "si.com", "pro-football-reference.com", "basketball-reference.com", "hockey-reference.com", "baseball-reference.com", "fbref.com", "flashscore.com", "sofascore.com",
+];
+
+export function isTrustedScoreHost(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return TRUSTED_SCORE_HOSTS.some((h) => host === h || host.endsWith("." + h));
+  } catch {
+    return false;
+  }
+}
+
 /** Extraction output → SportsPick, or undefined when the pick is not settleable as stated. */
-export function normalizeSportsPick(raw: { sport: string; league?: string | null; teams: string[]; event_date?: string | null; pick_type: "moneyline" | "spread" | "total"; team?: string | null; line?: number | null; side?: "over" | "under" | null }): { pick?: SportsPick; problems: string[] } {
+export function normalizeSportsPick(raw: { sport: string; league?: string | null; teams: string[]; event_date?: string | null; event_time?: string | null; pick_type: "moneyline" | "spread" | "total"; team?: string | null; line?: number | null; side?: "over" | "under" | null }, opts: { trackSpreads?: boolean } = {}): { pick?: SportsPick; problems: string[] } {
   const problems: string[] = [];
+  if (raw.pick_type === "spread" && opts.trackSpreads === false) {
+    // Setup → Sports Mode → "Track point spreads" off: the pick is recorded as win/loss on the named team.
+    problems.push(`Spread ${raw.line ?? ""} ignored (Setup → Sports Mode → track point spreads is off); recorded as a win/loss pick.`);
+    raw = { ...raw, pick_type: "moneyline", line: null };
+  }
   const teams: [string, string] = [(raw.teams[0] ?? "").trim(), (raw.teams[1] ?? "").trim()];
   if (!teams[0] || !teams[1]) problems.push("Both teams must be named.");
   const eventDate = raw.event_date && /^\d{4}-\d{2}-\d{2}$/.test(raw.event_date) ? raw.event_date : undefined;
@@ -40,7 +64,7 @@ export function normalizeSportsPick(raw: { sport: string; league?: string | null
       pick.line = raw.line ?? undefined;
     }
   }
-  return { pick: { sport: raw.sport.trim(), league: raw.league ?? undefined, teams, eventDate, pick }, problems };
+  return { pick: { sport: raw.sport.trim(), league: raw.league ?? undefined, teams, eventDate, eventTime: raw.event_time?.trim() || undefined, pick }, problems };
 }
 
 function sameTeam(a: string, b: string): boolean {

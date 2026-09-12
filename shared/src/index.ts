@@ -74,6 +74,12 @@ export interface AppSettings {
     chunkSeconds: number;
     overlapSeconds: number;
   };
+  sports: {
+    /** Sports Mode: videos are game-pick content; extraction targets team-vs-team picks with the game as the deadline. */
+    enabled: boolean;
+    /** Track point spreads (cover/no cover). Off = every pick is win/loss on the named team. */
+    trackSpreads: boolean;
+  };
   youtube: {
     /** Which captions to accept before falling back to audio: creator-uploaded only, or auto-generated too, or none. */
     captions: "manual-then-auto" | "manual-only" | "never";
@@ -322,6 +328,8 @@ export interface SportsPick {
   teams: [string, string];
   /** Game date (YYYY-MM-DD) when stated or inferable from the transcript; never guessed. */
   eventDate?: string;
+  /** Kick-off / tip-off time as spoken (e.g. "8:20 PM ET"), informational. */
+  eventTime?: string;
   pick: {
     type: PickType;
     /** Winner (moneyline) or covering team (spread). */

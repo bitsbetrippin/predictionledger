@@ -110,6 +110,14 @@ Provider calls made by every job now go through a resilience wrapper: 120 s per-
 
 `limits.modelTimeoutSeconds` (30–900, default 120) is the per-try timeout applied to every model call.
 
+## Release 1.3
+
+| Method | Path | Body / notes |
+|---|---|---|
+| POST | `/api/predictions/:id/validate-score` | Sports picks only. Chains the code-written settlement plan (if none), a capped trusted-source box-score search, and the settlement verdict → `202 { jobId, stage: "plan"\|"research" }`. `409 not_sports_pick`, `409 game_pending` (game date in the future), `409 game_date_unknown`, plus the usual `no_search_provider` / `offline`. |
+
+Settings gain `sports: { enabled, trackSpreads }`.
+
 ## Release 1.2
 
 `GET /api/predictions` accepts `kind=general|sports_pick`. `Prediction` gains `kind` and, for picks, `sportsPick: { sport, league?, teams: [a, b], eventDate?, pick: { type: "moneyline"|"spread"|"total", team?, line?, side? } }`. Plans for picks report `provider: "app"`, `templateVersion: "plan.sports.v1"`; their assessments report `templateVersion: "sports_assessment.v1"`. A fifth template name, `sports_assessment`, is available on `/api/templates`.

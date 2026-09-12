@@ -307,6 +307,19 @@ export function SetupPage() {
         <small className="muted">Checks the saved settings — click Save first if you changed the engine. "Download model now" fetches the Whisper model into the data directory ahead of your first import (needs internet once).</small>
       </fieldset>
 
+      <h2>Sports Mode</h2>
+      <fieldset className="card">
+        <label className="row">
+          <input type="checkbox" checked={settings.sports.enabled} onChange={(e) => update((s) => ((s.sports.enabled = e.target.checked), s))} />
+          <span><strong>Sports Mode</strong> — treat videos as game-pick content. Extraction returns each pick as <em>team vs team</em> with the game as the deadline (win, spread, or total). Picks are settled with <strong>Validate scores</strong> (a trusted box-score look-up) instead of the full research loop.</span>
+        </label>
+        <label className="row">
+          <input type="checkbox" checked={settings.sports.trackSpreads} onChange={(e) => update((s) => ((s.sports.trackSpreads = e.target.checked), s))} />
+          <span>Track point spreads (cover / no cover). When off, a spread pick is recorded as a plain win/loss pick on the named team.</span>
+        </label>
+        <small className="muted">Game picks are detected even with Sports Mode off; the switch tells the extractor to look for them and ignore analysis chatter. Trusted score sources: league sites, ESPN, AP, CBS/Fox/NBC/Yahoo Sports, BBC/Sky, the Reference sites.</small>
+      </fieldset>
+
       <h2>YouTube</h2>
       <fieldset className="card">
         <p className="muted">Pasting a link sends the video id to YouTube (via yt-dlp) to read its title, date, captions, and — when needed — the audio. Nothing else leaves this computer. yt-dlp scrapes YouTube, so it can break when YouTube changes; updating it usually fixes that.</p>

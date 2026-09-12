@@ -25,6 +25,30 @@ export function registerResearchRoutes(app: FastifyInstance, ctx: AppContext): v
    * research cannot run (no search provider, offline, no plan in review mode) — nothing is enqueued
    * in those cases, so the processing status stays "not researched" rather than "failed".
    */
+  /**
+   * Validate scores (1.3): one click for a sports pick — settlement plan (code) → trusted box-score search
+   * (capped) → settlement verdict. Refused before the game date, since there is nothing to settle yet.
+   */
+  app.post<{ Params: { id: string } }>("/api/predictions/:id/validate-score", async (req, reply) => {
+    const p = ctx.predictions.get(req.params.id);
+    if (!p) return reply.code(404).send({ error: "not_found" });
+    if (p.kind !== "sports_pick" || !p.sportsPick) return reply.code(409).send({ error: "not_sports_pick", message: "Validate scores only applies to sports picks. Use Research for other predictions." });
+    const s = ctx.settings.getPersisted();
+    if (s.search.provider === "none") return reply.code(409).send({ error: "no_search_provider", message: "Choose a web search provider in Setup → Web search; the box score is looked up online." });
+    if (!s.privacy.allowInternet) return reply.code(409).send({ error: "offline", message: "Internet access is disabled in Setup → Privacy; the box score cannot be looked up." });
+    const today = new Date().toISOString().slice(0, 10);
+    if (p.deadlineDate && p.deadlineDate > today) return reply.code(409).send({ error: "game_pending", message: `The game is on ${p.deadlineDate}; there is no final score to validate yet.` });
+    if (!p.deadlineDate) return reply.code(409).send({ error: "game_date_unknown", message: "The game date is unknown. Edit the prediction to set the deadline to the game date, then validate." });
+    // Plan is code-generated for picks, so chain plan → research → assessment without a review stop.
+    const plan = ctx.plans.latest(p.id);
+    if (!plan) {
+      const planJob = ctx.jobs.enqueue({ kind: "plan.generate", subjectType: "prediction", subjectId: p.id, payload: { predictionId: p.id, thenResearch: true }, dedupeKey: `plan.generate:${p.id}`, maxAttempts: 2 });
+      return reply.code(202).send({ jobId: planJob, stage: "plan" });
+    }
+    const jobId = ctx.jobs.enqueue({ kind: "research.run", subjectType: "prediction", subjectId: p.id, payload: { predictionId: p.id, planId: plan.id }, dedupeKey: `research.run:${p.id}`, maxAttempts: 1 });
+    return reply.code(202).send({ jobId, stage: "research" });
+  });
+
   app.post<{ Params: { id: string } }>("/api/predictions/:id/research", async (req, reply) => {
     const parsed = researchSchema.safeParse(req.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", issues: parsed.error.issues });

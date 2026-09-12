@@ -16,6 +16,7 @@ export function PredictionDetail(props: {
   researchJob?: JobSummary;
   onGeneratePlan: () => void;
   onResearch: () => void;
+  onValidateScore: () => void;
   onChanged: () => Promise<void> | void;
   onClose: () => void;
 }) {
@@ -56,7 +57,7 @@ export function PredictionDetail(props: {
               <>
                 <dt>Sports pick</dt>
                 <dd>
-                  <strong>{p.sportsPick.teams[0]} vs {p.sportsPick.teams[1]}</strong> · {p.sportsPick.sport}{p.sportsPick.league ? ` (${p.sportsPick.league})` : ""}{p.sportsPick.eventDate ? ` · game ${p.sportsPick.eventDate}` : " · game date unknown"}
+                  <strong>{p.sportsPick.teams[0]} vs {p.sportsPick.teams[1]}</strong> · {p.sportsPick.sport}{p.sportsPick.league ? ` (${p.sportsPick.league})` : ""}{p.sportsPick.eventDate ? ` · game ${p.sportsPick.eventDate}${p.sportsPick.eventTime ? ` ${p.sportsPick.eventTime}` : ""}` : " · game date unknown"}
                   <div className="muted small">
                     {p.sportsPick.pick.type === "moneyline" && <>Moneyline: <strong>{p.sportsPick.pick.team}</strong> to win</>}
                     {p.sportsPick.pick.type === "spread" && <>Spread: <strong>{p.sportsPick.pick.team}</strong> {p.sportsPick.pick.line !== undefined ? (p.sportsPick.pick.line > 0 ? `+${p.sportsPick.pick.line}` : p.sportsPick.pick.line) : "(no line)"}</>}
@@ -110,9 +111,15 @@ export function PredictionDetail(props: {
         <button type="button" className="primary" onClick={props.onGeneratePlan} disabled={!!planRunning}>
           {planRunning ? props.planJob?.stage ?? "Generating…" : p.plans.length ? "Regenerate plan" : "Generate validation plan"}
         </button>
-        <button type="button" className="primary" onClick={props.onResearch} disabled={!!researchRunning || !!planRunning} title={p.plans.length ? "Run web research against the latest plan version" : "Generates a plan first, then researches"}>
-          {researchRunning ? props.researchJob?.stage ?? "Researching…" : latest ? "Recheck" : "Research"}
-        </button>
+        {p.kind === "sports_pick" ? (
+          <button type="button" className="primary" onClick={props.onValidateScore} disabled={!!researchRunning || !!planRunning} title="Looks up the final score from trusted sources and settles the pick — no deep research">
+            {researchRunning ? props.researchJob?.stage ?? "Validating…" : latest ? "Re-validate scores" : "Validate scores"}
+          </button>
+        ) : (
+          <button type="button" className="primary" onClick={props.onResearch} disabled={!!researchRunning || !!planRunning} title={p.plans.length ? "Run web research against the latest plan version" : "Generates a plan first, then researches"}>
+            {researchRunning ? props.researchJob?.stage ?? "Researching…" : latest ? "Recheck" : "Research"}
+          </button>
+        )}
       </div>
       {props.planJob?.status === "failed" && <div className="banner error">{props.planJob.error}</div>}
       {props.researchJob?.status === "failed" && <div className="banner error">{props.researchJob.error}</div>}

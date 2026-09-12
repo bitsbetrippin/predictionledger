@@ -15,7 +15,7 @@
 import type { QueryGroup, SearchResult, ValidationPlan } from "@prediction-ledger/shared";
 import type { JobContext } from "../queue.js";
 import type { AppContext } from "../../context.js";
-import { SPORTS_RESEARCH_BUDGET } from "../../analysis/sports.js";
+import { isTrustedScoreHost, SPORTS_RESEARCH_BUDGET } from "../../analysis/sports.js";
 import { render } from "../../analysis/prompts.js";
 import { evidenceOutputSchema, EVIDENCE_JSON_SCHEMA, type EvidenceOutput } from "../../analysis/schemas.js";
 import { completeStructured, MalformedOutputError } from "../../analysis/structured.js";
@@ -98,7 +98,17 @@ export function makeResearchHandler(ctx: AppContext) {
       if (order.length > budget) coverage.push(`Search budget: ${budget} of ${order.length} planned queries were run (Setup → Limits).`);
 
       // ---- 2. fetch top distinct sources (interleave groups for balance) ----
-      const ordered = [...candidates.values()].sort((a, b) => a.rank - b.rank || groups.indexOf(a.group) - groups.indexOf(b.group));
+      let ordered = [...candidates.values()].sort((a, b) => a.rank - b.rank || groups.indexOf(a.group) - groups.indexOf(b.group));
+      if (sports) {
+        // Validate scores (1.3): trusted score sources first; when any exist, fetch only those.
+        const trusted = ordered.filter((c) => isTrustedScoreHost(c.result.url));
+        if (trusted.length > 0) {
+          coverage.push(`Sports pick: ${trusted.length} trusted score source(s) found; untrusted results (${ordered.length - trusted.length}) were not fetched.`);
+          ordered = trusted;
+        } else {
+          coverage.push("Sports pick: no result from a trusted score source (league site, ESPN, AP, …); settled from general results — verify the box score.");
+        }
+      }
       const toFetch = ordered.slice(0, sports ? Math.min(settings.limits.maxSourcesPerRun, SPORTS_RESEARCH_BUDGET.sources) : settings.limits.maxSourcesPerRun);
       if (ordered.length > toFetch.length) coverage.push(`Source budget: fetched ${toFetch.length} of ${ordered.length} distinct results (Setup → Limits).`);
       const fetched: { sourceId: string; text: string; title?: string; publishedAt?: string; url: string }[] = [];

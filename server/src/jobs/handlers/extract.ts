@@ -80,7 +80,9 @@ export function makeExtractHandler(ctx: AppContext) {
               role: "user",
               content: render(template.user, {
                 videoTitle: video.title,
-                madeOnDateLine,
+                madeOnDateLine: settings.sports.enabled
+                  ? `${madeOnDateLine}\nSPORTS MODE IS ON: treat this video as game-pick content. Every prediction about a specific game must be returned as a sports_pick (team vs team, pick type, line, game date/time when stated). Do not extract analysis, injuries, or stats as predictions.`
+                  : madeOnDateLine,
                 windowId: w.id,
                 windowRange: `${fmt(w.startS)}–${fmt(w.endS)}`,
                 window: w.rendered,
@@ -144,7 +146,7 @@ export function makeExtractHandler(ctx: AppContext) {
             notes: c.notes ?? undefined,
           }));
           if (p.sports_pick) {
-            const norm = normalizeSportsPick(p.sports_pick);
+            const norm = normalizeSportsPick(p.sports_pick, { trackSpreads: settings.sports.trackSpreads });
             ambiguities.push(...norm.problems);
             if (norm.pick) {
               kind = "sports_pick";

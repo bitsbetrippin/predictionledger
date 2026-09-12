@@ -75,6 +75,7 @@ export function toPayload(s: AppSettings): SettingsPayload {
     },
     stages: s.stages,
     transcription: s.transcription,
+    sports: s.sports,
     youtube: s.youtube,
     search: { provider: s.search.provider, baseUrl: s.search.baseUrl },
     limits: s.limits,
@@ -134,6 +135,7 @@ export const content = {
 
   listPredictions: (f: PredictionFilters & { result?: string } = {}) =>
     request<PredictionRow[]>("GET", `/api/predictions${qs({ videoId: f.videoId, kind: f.kind, topic: f.topic, userStatus: f.userStatus, deadlineBefore: f.deadlineBefore, deadlineAfter: f.deadlineAfter, includeDismissed: f.includeDismissed, result: f.result })}`),
+  validateScore: (id: string) => request<{ jobId: string; stage: "plan" | "research" }>("POST", `/api/predictions/${id}/validate-score`),
   research: (id: string, planId?: string) => request<{ jobId: string; stage: "plan" | "research"; planVersion?: number }>("POST", `/api/predictions/${id}/research`, { planId, autoPlan: true }),
   run: (id: string) => request<RunDetail>("GET", `/api/runs/${id}`),
   topics: () => request<string[]>("GET", "/api/predictions/topics"),

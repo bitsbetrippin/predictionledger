@@ -134,6 +134,12 @@ Costs: each research run uses up to *Searches per research run* searches and *So
 4. Progress shows as *Extracting audio…* then *Transcribing k/n chunks*. Long recordings are cut into 300-second chunks with 5 seconds of overlap (Setup → Transcription); each finished chunk is saved immediately, so you can close the browser or even stop the server and the job resumes at the next chunk.
 5. A video that fails shows the reason and a **Retry** button (resumes) — for example *silent audio* or *engine not installed*. **Re-transcribe** on a ready video starts from scratch (it replaces the transcript and any corrections).
 
+## 4.7b Sports Mode (Release 1.3)
+
+Setup → **Sports Mode** tells the extractor that a video is game-pick content: each prediction about a specific game comes back as *team vs team* with the pick (win, spread, or total) and the game as its deadline; analysis, injuries and stats are not extracted. **Track point spreads** decides whether a spread pick is settled as a cover (default) or simplified to win/loss on the named team.
+
+Sports picks are settled with the **Validate scores** button (Predictions → detail panel), which looks up the final score from trusted sources — league sites, ESPN, AP, CBS/Fox/NBC/Yahoo Sports, BBC/Sky, the Reference sites — and records Hit / Miss / Push, or *No final score yet* if the game has not been played or reported. It is refused before the game date. No validation plan review or deep research is involved; the plan is written by the app.
+
 ## 4.8 YouTube links (Release 0.5)
 
 1. Setup → YouTube → **Install yt-dlp** and confirm the download (~30 MB from the official GitHub release; SHA-256 verified). When YouTube changes and imports start failing, come back and click **Update yt-dlp** — that is the normal fix.

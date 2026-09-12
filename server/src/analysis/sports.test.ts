@@ -19,7 +19,7 @@ import { setLlmProviderForTests } from "../providers/llm/registry.js";
 import { setSearchProviderFactoryForTests } from "../research/search.js";
 import type { FetchOutcome, SourceFetcher } from "../research/fetcher.js";
 import { extractHtml } from "../research/htmlExtract.js";
-import { buildSportsPlan, describePick, normalizeSportsPick, pickLabel, SPORTS_RESEARCH_BUDGET } from "./sports.js";
+import { buildSportsPlan, describePick, isTrustedScoreHost, normalizeSportsPick, pickLabel, SPORTS_RESEARCH_BUDGET } from "./sports.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixtures = path.resolve(here, "..", "..", "..", "fixtures");
@@ -47,6 +47,17 @@ test("normalizeSportsPick: team matching, missing lines, bad dates", () => {
 
   const wrongTeam = normalizeSportsPick({ sport: "NHL", teams: ["Bruins", "Rangers"], pick_type: "moneyline", team: "Blackhawks" });
   assert.ok(wrongTeam.problems.some((p) => /not one of the two teams/.test(p)));
+
+  // Setup → Sports Mode → track point spreads OFF: a spread pick becomes win/loss on the named team
+  const simplified = normalizeSportsPick({ sport: "NFL", teams: ["Kansas City Chiefs", "Buffalo Bills"], event_date: "2026-01-11", event_time: "4:25 PM ET", pick_type: "spread", team: "Chiefs", line: -3.5 }, { trackSpreads: false });
+  assert.equal(simplified.pick?.pick.type, "moneyline");
+  assert.equal(simplified.pick?.pick.line, undefined);
+  assert.equal(simplified.pick?.eventTime, "4:25 PM ET");
+  assert.ok(simplified.problems.some((x) => /Spread -3.5 ignored/.test(x)));
+
+  assert.equal(isTrustedScoreHost("https://www.espn.com/nfl/game/_/gameId/1"), true);
+  assert.equal(isTrustedScoreHost("https://random-blog.example/recap"), false);
+  assert.equal(isTrustedScoreHost("not a url"), false);
 
   const total = normalizeSportsPick({ sport: "NFL", teams: ["Detroit Lions", "Green Bay Packers"], pick_type: "total", line: 48.5, side: "over" });
   assert.deepEqual(total.problems, []);
@@ -121,7 +132,10 @@ before(() => {
     isLocal: true,
     async search(query: string): Promise<SearchResult[]> {
       searches.push(query);
-      return [{ url: `https://scores.example/${searches.length}`, title: "Chiefs 27, Bills 20 — Box score", snippet: "Final score 27-20" }];
+      return [
+        { url: `https://random-blog.example/recap-${searches.length}`, title: "Recap", snippet: "…" },
+        { url: `https://www.espn.com/nfl/boxscore/${searches.length}`, title: "Chiefs 27, Bills 20 — Box score", snippet: "Final score 27-20" },
+      ];
     },
   }));
 });
@@ -138,6 +152,7 @@ test("sports pipeline: picks extracted with game-date deadlines; plan is determi
   s.search.provider = "searxng";
   s.search.baseUrl = "http://127.0.0.1:8080";
   s.privacy.allowInternet = true;
+  s.sports.enabled = true;
   s.limits.maxSearchesPerRun = 8;
   s.limits.maxSourcesPerRun = 12;
   ctx.settings.savePersisted(s);
@@ -155,6 +170,7 @@ test("sports pipeline: picks extracted with game-date deadlines; plan is determi
     const { video } = ctx.videos.importTranscript({ title: "Week 18 picks", content: srt, format: "srt", publishedAt: expected.publishedAt });
     const ej = await waitFor(ctx.jobs.enqueue({ kind: "prediction.extract", subjectType: "video", subjectId: video.id, payload: { videoId: video.id } }));
     assert.equal(ej.status, "completed", ej.error);
+    assert.match(fake.requests[0].messages[1].content, /SPORTS MODE IS ON/, "Sports Mode steers the extraction prompt");
     const preds = ctx.predictions.list({ videoId: video.id });
     assert.equal(preds.length, 4);
     for (const exp of expected.mustExtract) {
@@ -197,6 +213,9 @@ test("sports pipeline: picks extracted with game-date deadlines; plan is determi
     assert.equal(rj.status, "completed", rj.error);
     assert.ok(searches.length <= SPORTS_RESEARCH_BUDGET.searches, `searches ${searches.length}`);
     assert.ok(fetcher.fetched.length <= SPORTS_RESEARCH_BUDGET.sources, `sources ${fetcher.fetched.length}`);
+    assert.ok(fetcher.fetched.every((u) => u.includes("espn.com")), `only trusted score sources fetched: ${fetcher.fetched.join(", ")}`);
+    const run = ctx.research.runsForPrediction(spread.id)[0];
+    assert.ok(run.coverageNotes.some((n) => /trusted score source/.test(n)), JSON.stringify(run.coverageNotes));
 
     // assessment (chained by research.run): the sports settlement template was used and the verdict stored
     const t0 = Date.now();

@@ -14,6 +14,9 @@ import { PredictionDetail } from "../components/PredictionDetail";
 
 const TIME_LABEL: Record<PredictionRow["timeStatus"], string> = { pending: "Deadline pending", reached: "Deadline reached", unknown: "Deadline unknown" };
 
+/** Sports picks read as bets settle: hit / miss / push. Same underlying two-field verdict. */
+const SPORTS_RESULT_LABEL: Partial<Record<string, string>> = { supported: "Hit ✓", contradicted: "Miss ✗", partially_supported: "Push", insufficient: "No final score yet", not_assessable: "Not settleable" };
+
 function pickLabel(sp: NonNullable<import("@prediction-ledger/shared").Prediction["sportsPick"]>): string {
   const line = (l?: number) => (l === undefined ? "" : l > 0 ? ` +${l}` : ` ${l}`);
   if (sp.pick.type === "moneyline") return `${sp.sport} · ML ${sp.pick.team ?? "?"}`;
@@ -78,9 +81,9 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
   };
 
   /** Research (or recheck). Follows the chain plan → research → assessment by polling each job. */
-  const research = async (id: string) => {
+  const research = async (id: string, mode: "research" | "validate" = "research") => {
     try {
-      const { jobId } = await content.research(id);
+      const { jobId } = mode === "validate" ? await content.validateScore(id) : await content.research(id);
       let done = await pollJob(jobId, (j) => setResearchJobs((m) => ({ ...m, [id]: j })));
       // Chained jobs (research after plan, assessment after research) show up in the job list for this subject.
       for (let hops = 0; hops < 3 && done.status === "completed"; hops++) {
@@ -148,7 +151,7 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
                         </td>
                         <td>{p.deadlineDate ?? <span className="muted">unknown</span>}</td>
                         <td>
-                          {r ? <span className={`verdict v-${r.evidenceAssessment}`}>{EVIDENCE_ASSESSMENT_LABEL[r.evidenceAssessment]}</span> : p.processingStatus === "running" ? <span className="muted">researching…</span> : p.processingStatus === "failed" ? <span className="result error">research failed</span> : <span className="muted">— not researched</span>}
+                          {r ? <span className={`verdict v-${r.evidenceAssessment}`}>{p.kind === "sports_pick" ? (SPORTS_RESULT_LABEL[r.evidenceAssessment] ?? EVIDENCE_ASSESSMENT_LABEL[r.evidenceAssessment]) : EVIDENCE_ASSESSMENT_LABEL[r.evidenceAssessment]}</span> : p.processingStatus === "running" ? <span className="muted">{p.kind === "sports_pick" ? "validating…" : "researching…"}</span> : p.processingStatus === "failed" ? <span className="result error">{p.kind === "sports_pick" ? "validation failed" : "research failed"}</span> : <span className="muted">{p.kind === "sports_pick" ? "— not validated" : "— not researched"}</span>}
                           {r && <div className="muted small">confidence {r.confidence} · v{r.version}</div>}
                         </td>
                         <td>{TIME_LABEL[p.timeStatus]}</td>
@@ -169,6 +172,7 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
                 planJob={planJobs[selected.id]}
                 onGeneratePlan={() => generatePlan(selected.id)}
                 onResearch={() => research(selected.id)}
+                onValidateScore={() => research(selected.id, "validate")}
                 researchJob={researchJobs[selected.id]}
                 onChanged={async () => { await reload(); await loadSelected(selected.id); }}
                 onClose={() => setSelectedId(undefined)}

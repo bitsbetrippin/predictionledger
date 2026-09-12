@@ -4,6 +4,17 @@ All notable changes to Prediction Ledger. Format follows [Keep a Changelog](http
 
 Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
 
+## [1.3.0] — 2026-09-12 — Sports Mode and Validate scores
+Owner request: a Setup switch that treats videos as game-pick content, a one-click **Validate scores** action that settles a pick from a trusted box score, and a toggle for whether point spreads are tracked.
+### Added
+- Setup → **Sports Mode** (`sports.enabled`): extraction is told the video is game-pick content — every game prediction comes back as *team vs team* with the pick type and the game as the deadline; analysis chatter is ignored. Game time (`eventTime`) is captured when spoken.
+- Setup → **Track point spreads** (`sports.trackSpreads`, default on). Off = a spread pick is recorded as a win/loss pick on the named team (noted in the prediction's ambiguities).
+- **Validate scores** button on sports picks (replaces Research for that kind): `POST /api/predictions/:id/validate-score` chains code-written plan → capped search → settlement verdict in one click; refused before the game date (`409 game_pending`) or when the game date is unknown.
+- Trusted score sources: results from league sites, ESPN, AP, CBS/Fox/NBC/Yahoo Sports, BBC/Sky, the *-Reference sites, Flashscore/Sofascore are ranked first and, when present, are the only ones fetched; the run's coverage notes say which case applied.
+- Predictions table reads picks as bets settle: **Hit ✓ / Miss ✗ / Push / No final score yet**.
+### Changed
+- `normalizeSportsPick` accepts `trackSpreads`; tests extended (spread toggle, trusted-host filter, Sports Mode prompt steer). 52 tests.
+
 ## [1.2.0] — 2026-09-12 — Sports picks
 Product rule (owner): a prediction about a single game reduces to who wins, the spread, or the total, and validation is "did it happen after the game date" — no deep research.
 ### Added

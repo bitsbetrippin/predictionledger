@@ -27,7 +27,7 @@ gantt
   section Milestone 3
   0.4 Local video → timestamped transcription :done, r04, after r03, 2
   section Milestone 4
-  0.5 YouTube ingestion + recovery paths      :r05, after r04, 1
+  0.5 YouTube ingestion + recovery paths      :done, r05, after r04, 1
   section Milestone 5
   1.0 Cross-provider evals, hardening, docs   :r10, after r05, 1
 ```
@@ -289,23 +289,32 @@ IDs are stable; wording may be refined. "Rel." is the release that first satisfi
 
 ---
 
-## 7. Release 0.5 — Milestone 4: YouTube ingestion and recovery paths
+## 7. Release 0.5 — Milestone 4: YouTube ingestion and recovery paths (delivered)
 
-| Item | Req. | Agent | Depends on |
+| Item | Req. | Agent | Done |
 |---|---|---|---|
-| Spike S-4: yt-dlp download/self-update strategy using Node as the JS runtime; caption formats | IN-07 | AG-13 | — |
-| yt-dlp acquisition into `tools/` after explicit consent; version pin + "update yt-dlp" button | RT-05 | AG-05 | — |
-| `video.import` (YouTube): metadata → captions (manual > auto) → else audio download → transcription; every step reports what it will send off-machine | IN-05, IN-07 | AG-05 | 0.4 |
-| Unavailable/private/age-restricted/geo-blocked → clear message + "import transcript instead" path | IN-07 | AG-10 | — |
+| Spike S-4: yt-dlp acquisition + JS-runtime strategy; caption formats | IN-07 | AG-13 | **Designed, live run pending.** Official standalone binaries (no Python) per platform; SHA-256 verified against the release's `SHA2-256SUMS`; `--js-runtimes node:<this node>` so no Deno install is needed; captions requested as WebVTT. Confirming against a real YouTube video is the first-run task (ADR-017). |
+| yt-dlp acquisition into `tools/` after explicit consent; "Install / Update yt-dlp" in Setup and inline in the Library card; `PL_YTDLP_PATH` and PATH honoured | RT-05 | AG-05 | ✓ (`tool.install` job; download + checksum code statically reviewed — no network in the sandbox) |
+| `video.import` (YouTube): metadata → creator captions → auto captions (policy + language preference) → audio download (opt-out) → 0.4 `audio.extract`/`transcript.generate`; every stage named in progress; scratch removed; duplicate by video id | IN-05, IN-07 | AG-05 | ✓ (end-to-end against a fake yt-dlp) |
+| Line-aware VTT reader + YouTube caption cleaner (word-timing tags, rolling duplicates, entities, monotonic timestamps) | IN-03 | AG-05 | ✓ |
+| Unavailable / private / members-only / age-restricted / geo-blocked / live / bot-check / network / too-old-tool → distinct message, each naming the transcript-import fallback; video marked *failed* with Retry; no job left running | IN-07 | AG-10 + AG-13 | ✓ |
+| Up-front refusal when internet is off (privacy setting named) or yt-dlp missing (install offered) or URL invalid — nothing queued | IN-07, SC-05 | AG-15 | ✓ |
+| Migration 005: `youtube_id` (unique), `channel`, `transcript_source` | PS-01 | AG-11 | ✓ |
+| Settings → YouTube: captions policy, caption language, audio fallback switch, tools status/install; Library: YouTube card with inline install, live job stage per row, source chips (creator / auto captions / transcribed / imported), Retry (re-run import) / Re-transcribe (force audio) | UX-01, UX-06 | AG-10 | ✓ (statically checked) |
+| API: `POST /api/videos/import-youtube`, `GET /api/tools/status`, `POST /api/tools/ytdlp/install`; `/transcribe` extended for caption-based imports | PS-02 | AG-13 | ✓ (`docs/API.md`) |
+| Fixture B2 (`no-predictions.srt`) | — | AG-14 | ✓ (B1, the 30-minute labelled transcript, moves to 1.0 evals) |
+| Tests: URL forms (1), VTT cleaning (1), track choice (1), info parsing (1), checksum/asset names (1), error classes (1), end-to-end fake-yt-dlp run covering E1–E4 + duplicate + audio-disabled + invalid URL + missing tool (1) | — | AG-14 | ✓ 37/37 total |
 
-**Acceptance criteria for 0.5**
+**Acceptance criteria for 0.5 — status**
 
-| # | Criterion |
-|---|---|
-| E1 | A public video with captions imports without downloading audio; publish date and title are captured. |
-| E2 | A public video without captions falls back to audio + transcription with visible stages. |
-| E3 | A private or removed video yields "unavailable" with the transcript-import fallback offered; no job is left *running*. |
-| E4 | With internet disabled, pasting a URL is refused up front with the privacy setting named. |
+| # | Criterion | Status |
+|---|---|---|
+| E1 | A public video with captions imports without downloading audio; publish date and title are captured. | **Verified** with the fake yt-dlp: creator captions → *ready*, title/channel/duration/upload date applied, no `-f` (download) invocation; user-supplied date overrides YouTube's. Real-YouTube confirmation pending (S-4). |
+| E2 | A public video without captions falls back to audio + transcription with visible stages. | **Verified**: no captions → audio downloaded → stored under its hash → `audio.extract` → `transcript.generate` → *ready* with `transcript_source = transcribed`; stages "Reading video information" → "Downloading audio n%" → "Extracting audio" → "Transcribing chunk k of n". |
+| E3 | A private or removed video yields "unavailable" with the transcript-import fallback offered; no job is left *running*. | **Verified** for private and removed; age-restricted / geo / bot-check / network classes unit-tested; zero running or queued jobs afterwards. |
+| E4 | With internet disabled, pasting a URL is refused up front with the privacy setting named. | **Verified**: precheck throws `offline` naming "Setup → Privacy"; the route returns 409 and the Library card is disabled with a banner; job count unchanged. |
+
+**Verification status (2026-09-12).** Executed in the cloud sandbox on Node 22.22 with ffmpeg 6.1.1: 37/37 tests, YouTube flows against a fake yt-dlp executable. Not executed: any real yt-dlp invocation (binary not installable here — GitHub downloads blocked), the installer's network path, the `--js-runtimes node` option against a current yt-dlp, real Whisper, `npm install`/`build`/`start`, the React build, browser interaction, Windows/macOS. The fake-yt-dlp test is skipped on Windows (POSIX shell wrapper).
 
 ---
 

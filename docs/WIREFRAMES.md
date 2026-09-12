@@ -41,6 +41,8 @@ These are the agreed screen shapes. The Setup tab (§5) is implemented in Releas
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
+As built in 0.5: the YouTube card carries an inline **Install yt-dlp** prompt when the tool is missing (disabled entirely when internet is off), the Source column links to the video and shows a chip for how the transcript was obtained (creator captions / auto captions / transcribed / imported) plus the channel, and importing rows show the live job stage ("Reading video information", "Fetching creator captions (en)", "Downloading audio 42%"). Retry re-runs the whole import; Re-transcribe on a caption-based import downloads the audio for your own engine.
+
 As built in 0.4: a banner above the import cards appears only when `GET /api/media/status` reports a missing ffmpeg or an engine that is not ready (with a link to Setup); the upload button is disabled without ffmpeg. Rows in *importing*/*transcribing* refresh every 1.5 s and show chunk progress; *failed* rows show the stored reason with **Retry** (resume); *ready* rows imported from media get **Re-transcribe** (start over, confirmed). Extract and Delete are disabled while media processing runs.
 
 ## 3. Video detail (Release 0.2 / 0.4)

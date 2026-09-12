@@ -33,7 +33,7 @@ This file is maintained by hand. **Rule:** a dependency is added to `package.jso
 | onnx-community/whisper-* model weights | Apache-2.0 / MIT (per model card) | OpenAI (original Whisper, MIT) converted by the ONNX community | 0.4 | Downloaded at runtime into the data directory, not shipped in this repo |
 | ffmpeg / ffprobe | LGPL-2.1+ or GPL-2+ depending on build | FFmpeg developers | 0.4 | Invoked as a separate process; not linked. If `ffmpeg-static` is enabled it downloads GPL-licensed binaries — the GPL applies to those binaries, not to this project's code. |
 | ffmpeg-static (optional) | MIT (wrapper) + GPL (binaries) | Eugene Ware et al. | 0.4 | Optional convenience |
-| yt-dlp | Unlicense (public domain) | yt-dlp contributors | 0.5 | Downloaded at runtime after consent; invoked as a separate process |
+| yt-dlp (adopted 0.5) | Unlicense (public domain) | yt-dlp contributors | 0.5 | Downloaded at runtime **only after the user clicks Install** (official GitHub release, SHA-256 verified); invoked as a separate process with argument arrays; never bundled in this repository. The standalone binary embeds Python and its own dependencies under their respective licenses — see the yt-dlp release notes. |
 | @mozilla/readability | Apache-2.0 | Mozilla | 0.3 | Article extraction |
 | linkedom | ISC | Andrea Giammarchi | 0.3 | DOM for Readability in Node |
 | promptfoo | MIT | Promptfoo, Inc. | 1.0 | Dev-time prompt evaluation |

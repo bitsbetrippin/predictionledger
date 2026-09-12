@@ -9,8 +9,8 @@
  * sends an empty string, which deletes it.
  */
 import { useEffect, useState } from "react";
-import type { AnalysisStage, AppSettings, LlmProviderId, MediaStatus, ModelInfo, ProviderTestResult } from "@prediction-ledger/shared";
-import { api, content, media, toPayload, type SecretUpdates } from "../api";
+import type { AnalysisStage, AppSettings, JobSummary, LlmProviderId, MediaStatus, ModelInfo, ProviderTestResult, ToolsStatus } from "@prediction-ledger/shared";
+import { api, content, media, pollJob, toPayload, youtube, type SecretUpdates } from "../api";
 import type { PromptTemplateInfo } from "@prediction-ledger/shared";
 
 const PROVIDER_LABELS: Record<LlmProviderId, string> = {
@@ -34,6 +34,25 @@ export function SetupPage() {
   const [saving, setSaving] = useState(false);
   const [mediaStatus, setMediaStatus] = useState<MediaStatus | null | "checking">(null);
   const checkMedia = () => { setMediaStatus("checking"); media.status().then(setMediaStatus).catch(() => setMediaStatus(null)); };
+  const [tools, setTools] = useState<ToolsStatus | null>(null);
+  const [installing, setInstalling] = useState<JobSummary | null>(null);
+  const [toolMsg, setToolMsg] = useState<string | null>(null);
+  const loadTools = () => youtube.toolsStatus().then(setTools).catch(() => setTools(null));
+  useEffect(() => { void loadTools(); }, []);
+  const installYtDlp = async () => {
+    setToolMsg(null);
+    if (!window.confirm("Download yt-dlp (about 30 MB) from its official GitHub release into your data folder? It is checksum-verified before use. Run this again later to update it.")) return;
+    try {
+      const { jobId } = await youtube.installYtDlp();
+      const done = await pollJob(jobId, setInstalling);
+      setInstalling(null);
+      setToolMsg(done.status === "failed" ? `Install failed: ${done.error}` : "yt-dlp installed.");
+      await loadTools();
+    } catch (e) {
+      setInstalling(null);
+      setToolMsg((e as Error).message);
+    }
+  };
 
   useEffect(() => {
     api.getSettings().then(setSettings).catch((e: Error) => setStatus({ kind: "error", text: e.message }));
@@ -252,6 +271,47 @@ export function SetupPage() {
           )}
         </div>
         <small className="muted">Checks the saved settings — click Save first if you changed the engine.</small>
+      </fieldset>
+
+      <h2>YouTube</h2>
+      <fieldset className="card">
+        <p className="muted">Pasting a link sends the video id to YouTube (via yt-dlp) to read its title, date, captions, and — when needed — the audio. Nothing else leaves this computer. yt-dlp scrapes YouTube, so it can break when YouTube changes; updating it usually fixes that.</p>
+        <div className="grid-3">
+          <label className="field">
+            <span>Captions to accept</span>
+            <select value={settings.youtube.captions} onChange={(e) => update((s) => ((s.youtube.captions = e.target.value as AppSettings["youtube"]["captions"]), s))}>
+              <option value="manual-then-auto">Creator captions, then auto-generated</option>
+              <option value="manual-only">Creator captions only</option>
+              <option value="never">Never — always transcribe the audio</option>
+            </select>
+            <small>Auto-generated captions are fast but can garble names and numbers; quotes are only as exact as the captions.</small>
+          </label>
+          <label className="field">
+            <span>Caption language</span>
+            <input value={settings.youtube.captionLanguage} placeholder="auto" onChange={(e) => update((s) => ((s.youtube.captionLanguage = e.target.value), s))} />
+            <small>auto = transcription language → the video's language → en.</small>
+          </label>
+          <div className="field">
+            <span>Audio fallback</span>
+            <label className="row"><input type="checkbox" checked={settings.youtube.allowAudioDownload} onChange={(e) => update((s) => ((s.youtube.allowAudioDownload = e.target.checked), s))} /><span>Download the audio and transcribe it when no acceptable captions exist</span></label>
+          </div>
+        </div>
+        <div className="row">
+          <button type="button" onClick={installYtDlp} disabled={!!installing || (tools ? !tools.internet : false)}>
+            {installing ? `Installing… ${installing.progress}%` : tools?.ytdlp.ok ? "Update yt-dlp" : "Install yt-dlp"}
+          </button>
+          <button type="button" onClick={() => void loadTools()}>Re-check</button>
+          {tools && (
+            <span className="small">
+              <span className={tools.ytdlp.ok ? "result ok" : "result error"}>{tools.ytdlp.message}</span>
+              {tools.ytdlp.installedAt && <span className="muted"> · installed {tools.ytdlp.installedAt.slice(0, 10)}</span>}
+              {!tools.internet && <span className="muted"> · internet is off (Privacy) — installs and imports disabled</span>}
+            </span>
+          )}
+          {installing?.stage && <small className="muted">{installing.stage}</small>}
+        </div>
+        {toolMsg && <div className="banner" role="status">{toolMsg}</div>}
+        <small className="muted">The binary is downloaded from github.com/yt-dlp/yt-dlp (official release), verified against its SHA-256 list, and stored in your data directory's <code>tools/</code> folder. Set <code>PL_YTDLP_PATH</code> to use your own copy instead.</small>
       </fieldset>
 
       <h2>Web search (for outcome research)</h2>

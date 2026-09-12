@@ -32,6 +32,9 @@ interface VideoRow {
   transcription_engine: string | null;
   transcription_model: string | null;
   error: string | null;
+  youtube_id: string | null;
+  channel: string | null;
+  transcript_source: VideoSummary["transcriptSource"] | null;
   segment_count: number;
   prediction_count: number;
   pending_count: number;
@@ -73,8 +76,8 @@ export class VideoService {
 
     this.db.transaction(() => {
       this.db.run(
-        `INSERT INTO videos (id, title, source_kind, source_ref, duration_s, published_at, language, status, notes)
-         VALUES (?, ?, 'transcript', ?, ?, ?, ?, 'ready', ?)`,
+        `INSERT INTO videos (id, title, source_kind, source_ref, duration_s, published_at, language, status, notes, transcript_source)
+         VALUES (?, ?, 'transcript', ?, ?, ?, ?, 'ready', ?, 'imported')`,
         id,
         req.title.trim() || req.filename || "Imported transcript",
         req.filename ?? null,
@@ -110,6 +113,69 @@ export class VideoService {
       id, input.title, input.mediaHash, input.durationS, input.publishedAt ?? null, input.language ?? null, input.notes ?? null, input.mediaPath, input.mediaHash, input.mediaSize,
     );
     return this.get(id)!;
+  }
+
+  // ---- YouTube (Release 0.5) ----
+
+  /** Register a YouTube import before anything is fetched; the video.import job fills in the rest. */
+  createFromYouTube(input: { youtubeId: string; url: string; title?: string; publishedAt?: string; language?: string }): VideoDetail {
+    const id = crypto.randomUUID();
+    this.db.run(
+      `INSERT INTO videos (id, title, source_kind, source_ref, published_at, language, status, youtube_id)
+       VALUES (?, ?, 'youtube', ?, ?, ?, 'importing', ?)`,
+      id, input.title?.trim() || `YouTube ${input.youtubeId}`, input.url, input.publishedAt ?? null, input.language ?? null, input.youtubeId,
+    );
+    return this.get(id)!;
+  }
+
+  findByYouTubeId(youtubeId: string): VideoSummary | undefined {
+    const row = this.db.get<VideoRow>(`${SUMMARY_SQL} WHERE v.youtube_id = ?`, youtubeId);
+    return row ? toSummary(row) : undefined;
+  }
+
+  /** Apply metadata reported by YouTube without overwriting values the user supplied. */
+  applyYouTubeInfo(id: string, info: { title?: string; channel?: string; durationS?: number; publishedAt?: string; language?: string }, userSupplied: { title?: boolean; publishedAt?: boolean; language?: boolean } = {}): void {
+    const cur = this.db.get<VideoRow>("SELECT * FROM videos WHERE id = ?", id);
+    if (!cur) return;
+    this.db.run(
+      "UPDATE videos SET title = ?, channel = ?, duration_s = COALESCE(?, duration_s), published_at = ?, language = ? WHERE id = ?",
+      userSupplied.title ? cur.title : info.title?.trim() || cur.title,
+      info.channel ?? cur.channel,
+      info.durationS ?? null,
+      userSupplied.publishedAt || !info.publishedAt ? cur.published_at : info.publishedAt,
+      userSupplied.language || !info.language ? cur.language : info.language,
+      id,
+    );
+  }
+
+  /** Attach a downloaded media file (YouTube audio) so the 0.4 audio/transcription jobs can run. */
+  setMedia(id: string, media: { mediaPath: string; mediaHash: string; mediaSize: number; durationS?: number }): void {
+    this.db.run("UPDATE videos SET media_path = ?, media_hash = ?, media_size = ?, duration_s = COALESCE(?, duration_s), audio_path = NULL WHERE id = ?", media.mediaPath, media.mediaHash, media.mediaSize, media.durationS ?? null, id);
+  }
+
+  setNotes(id: string, notes: string | null): void {
+    this.db.run("UPDATE videos SET notes = ? WHERE id = ?", notes, id);
+  }
+
+  setTranscriptSource(id: string, source: NonNullable<VideoSummary["transcriptSource"]>): void {
+    this.db.run("UPDATE videos SET transcript_source = ? WHERE id = ?", source, id);
+  }
+
+  /** Replace all segments (captions import). Original text only; corrections are dropped with the old segments. */
+  replaceSegments(id: string, engine: string, segments: { startS: number; endS: number; text: string }[]): number {
+    this.db.transaction(() => {
+      this.db.run("DELETE FROM transcript_segments WHERE video_id = ?", id);
+      this.db.run("DELETE FROM transcription_chunks WHERE video_id = ?", id);
+      segments.forEach((s, i) => {
+        this.db.run(
+          "INSERT INTO transcript_segments (id, video_id, seq, start_s, end_s, text_original, engine) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          crypto.randomUUID(), id, i, s.startS, s.endS, s.text, engine,
+        );
+      });
+      const last = segments[segments.length - 1];
+      if (last) this.db.run("UPDATE videos SET duration_s = COALESCE(duration_s, ?) WHERE id = ?", last.endS, id);
+    });
+    return segments.length;
   }
 
   findByMediaHash(hash: string): VideoSummary | undefined {
@@ -250,6 +316,9 @@ function toSummary(r: VideoRow): VideoSummary {
     error: r.error ?? undefined,
     chunksDone: Number(r.chunks_done),
     chunksTotal: Number(r.chunks_total),
+    youtubeId: r.youtube_id ?? undefined,
+    channel: r.channel ?? undefined,
+    transcriptSource: r.transcript_source ?? undefined,
   };
 }
 

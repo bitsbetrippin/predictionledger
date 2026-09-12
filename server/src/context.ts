@@ -24,6 +24,7 @@ import { GuardedFetcher, type SourceFetcher } from "./research/fetcher.js";
 import { makeAudioExtractHandler, makeTranscribeHandler } from "./jobs/handlers/media.js";
 import { LocalWhisperProvider, OpenAiTranscriptionProvider, type TranscriptionProvider } from "./media/transcription.js";
 import { SECRET_NAMES } from "./settings.js";
+import { makeToolInstallHandler, makeYouTubeImportHandler } from "./youtube/importer.js";
 
 export interface AppContext {
   paths: DataPaths;
@@ -83,6 +84,8 @@ export function createContext(overrides: Partial<Pick<AppContext, "fetcher" | "t
   jobs.register("assessment.run", makeAssessHandler(ctx));
   jobs.register("audio.extract", makeAudioExtractHandler(ctx));
   jobs.register("transcript.generate", makeTranscribeHandler(ctx));
+  jobs.register("video.import", makeYouTubeImportHandler(ctx));
+  jobs.register("tool.install", makeToolInstallHandler(ctx));
 
   // Research runs interrupted by a crash: the job queue re-runs the job, which creates a new run.
   const orphaned = ctx.research.failOrphanedRuns();

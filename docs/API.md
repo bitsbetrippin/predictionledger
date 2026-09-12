@@ -80,6 +80,18 @@ Base URL `http://127.0.0.1:7317`. JSON in/out. Every `POST`/`PUT`/`PATCH`/`DELET
 
 `VideoSummary`/`VideoDetail` gain `mediaSize`, `transcriptionEngine`, `transcriptionModel`, `error`, `chunksDone`, `chunksTotal`. Video `status` moves `importing` → `transcribing` → `ready` (or `failed` with `error` set; Retry re-enqueues without restart).
 
+## Release 0.5
+
+### YouTube import and helper tools
+| Method | Path | Body / notes |
+|---|---|---|
+| POST | `/api/videos/import-youtube` | `{ url, publishedAt?, language?, title? }`. Accepts `youtube.com/watch?v=`, `youtu.be/`, `/shorts/`, `/live/`, `/embed/`, or a bare 11-character id; anything else → `400 invalid_url`. Refused **before anything is queued** with `409 offline` when internet is off in Setup → Privacy, or `409 tool_missing` when yt-dlp is not installed (message names Setup → YouTube → Install). → `202 { video, duplicate: false, jobId }` (a `video.import` job runs) or `200 { video, duplicate: true }` when that video id was imported before. `publishedAt` overrides YouTube's upload date; `title`/`language` likewise. |
+| POST | `/api/videos/:id/transcribe` | (0.4 route) for a YouTube video whose transcript came from captions: `{ restart: false }` re-runs the whole import (Retry); `{ restart: true }` skips captions and downloads the audio for your own engine (Re-transcribe). Same 409s as above. → `202 { jobId, stage: "video.import" }`. |
+| GET | `/api/tools/status` | `ToolsStatus`: `{ ffmpeg: { ok, message, source? }, ytdlp: { ok, message, version?, source?, installedAt? }, internet }`. |
+| POST | `/api/tools/ytdlp/install` | User-initiated download of the official yt-dlp standalone binary into `<data>/tools/` (also "update"). `409 offline` when internet is off. → `202 { jobId }` (`tool.install` job; progress shows download MB and "Verifying checksum"). The binary is verified against the release's `SHA2-256SUMS` before it is moved into place; a mismatch installs nothing. |
+
+`VideoSummary` gains `youtubeId`, `channel`, `transcriptSource` (`captions-manual | captions-auto | transcribed | imported`). Segment `engine` for captions is `youtube-captions:<manual|auto>:<lang>`.
+
 ## Job kinds and payloads
 
 | Kind | Payload | Subject | Result |
@@ -88,10 +100,12 @@ Base URL `http://127.0.0.1:7317`. JSON in/out. Every `POST`/`PUT`/`PATCH`/`DELET
 | `plan.generate` | `{ predictionId, thenResearch? }` | `prediction` | `{ planId, version, attempts }` — with `thenResearch` it enqueues `research.run` |
 | `research.run` | `{ predictionId, planId }` | `prediction` | `{ runId, searches, sources, evidence, rejected, coverage[] }` — enqueues `assessment.run` on completion |
 | `assessment.run` | `{ predictionId, runId }` | `prediction` | `{ assessmentId, version, guardNotes[] }` or `{ …, deterministic: true }` for zero-evidence runs |
+| `video.import` | `{ videoId, userSupplied: { title?, publishedAt?, language? }, forceAudio? }` | `video` | `{ source: "captions-manual"\|"captions-auto", lang, segments }` or `{ source: "audio", bytes, ext }` — the latter enqueues `audio.extract`. `maxAttempts` 1: failures are explained, not retried blindly. |
+| `tool.install` | `{ tool: "yt-dlp" }` | `tool` | `{ path, version, bytes }` |
 | `audio.extract` | `{ videoId }` | `video` | `{ audioPath, meanVolumeDb }` — enqueues `transcript.generate`; fails with "audio track is silent" below −60 dB |
 | `transcript.generate` | `{ videoId }` | `video` | `{ chunks, newSegments, segmentCount }` — resumable per chunk; progress reads "Transcribing chunk k of n" |
 
-Failure messages users will see: `Stage "extraction" is routed to … which is disabled in Setup`, `… has no API key saved`, `Internet access is disabled in Setup → Privacy …`, `Model returned output that did not match the … schema after a repair attempt.`, plus the provider's own HTTP error text. Media failures: `ffmpeg/ffprobe were not found …`, `The file has no audio track …`, `The audio track is silent …`, `Local Whisper engine is not installed …`, `Whisper model … is not downloaded and internet access is disabled …`.
+Failure messages users will see: `Stage "extraction" is routed to … which is disabled in Setup`, `… has no API key saved`, `Internet access is disabled in Setup → Privacy …`, `Model returned output that did not match the … schema after a repair attempt.`, plus the provider's own HTTP error text. Media failures: `ffmpeg/ffprobe were not found …`, `The file has no audio track …`, `The audio track is silent …`, `Local Whisper engine is not installed …`, `Whisper model … is not downloaded and internet access is disabled …`. YouTube failures (each ends with the transcript-import fallback): `This video is private …`, `This video is unavailable …`, `… age-restricted …`, `… not available in your region`, `Live streams and premieres are not supported yet …`, `YouTube is rate-limiting or bot-checking this computer …`, `Could not reach YouTube …`, `The installed yt-dlp is too old …`, `This video has no captions, and audio download is turned off …`.
 
 ## Error shape
 

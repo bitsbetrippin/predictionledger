@@ -1,0 +1,11 @@
+{
+  "_comment": "Human-reviewed expectations for fixtures/transcripts/no-predictions.srt (acceptance criterion B2 / 'no predictions found'). Every statement is a past event, a refusal to guess, background history, or an invitation to comment. Extraction must produce zero predictions and the dashboard must show the 'No predictions found in this transcript' empty state rather than an error.",
+  "publishedAt": "2026-02-10",
+  "mustExtract": [],
+  "mustNotExtract": [
+    { "reason": "past event", "quoteContains": "voted seven to two to table" },
+    { "reason": "explicit refusal to predict", "quoteContains": "I have no idea, and I'm not going to guess" },
+    { "reason": "historical background", "quoteContains": "was a soybean field until 2019" },
+    { "reason": "request to the audience, not a claim", "quoteContains": "drop it in the comments" }
+  ]
+}

@@ -74,6 +74,14 @@ export interface AppSettings {
     chunkSeconds: number;
     overlapSeconds: number;
   };
+  youtube: {
+    /** Which captions to accept before falling back to audio: creator-uploaded only, or auto-generated too, or none. */
+    captions: "manual-then-auto" | "manual-only" | "never";
+    /** Download the audio track (via yt-dlp) when no acceptable captions exist. */
+    allowAudioDownload: boolean;
+    /** Preferred caption language ("auto" = transcription language → video language → en). */
+    captionLanguage: string;
+  };
   search: {
     provider: SearchProviderId;
     hasSecret: boolean;
@@ -146,7 +154,8 @@ export type JobKind =
   | "prediction.extract"
   | "plan.generate"
   | "research.run"
-  | "assessment.run";
+  | "assessment.run"
+  | "tool.install";
 
 export type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 
@@ -216,6 +225,30 @@ export interface VideoSummary {
   /** Chunk progress for resumable transcription. */
   chunksDone?: number;
   chunksTotal?: number;
+  /** YouTube imports (0.5+). */
+  youtubeId?: string;
+  channel?: string;
+  /** How the transcript was obtained. */
+  transcriptSource?: TranscriptSource;
+}
+
+export type TranscriptSource = "captions-manual" | "captions-auto" | "transcribed" | "imported";
+
+/** Body for POST /api/videos/import-youtube */
+export interface YouTubeImportRequest {
+  url: string;
+  /** Overrides the upload date reported by YouTube (YYYY-MM-DD). */
+  publishedAt?: string;
+  language?: string;
+  title?: string;
+}
+
+/** GET /api/tools/status */
+export interface ToolsStatus {
+  ffmpeg: { ok: boolean; message: string; source?: string };
+  ytdlp: { ok: boolean; message: string; version?: string; source?: string; installedAt?: string };
+  /** False when the privacy switch is off — installs and YouTube imports are refused. */
+  internet: boolean;
 }
 
 /** Status of media tooling and transcription engines (Setup → Transcription, Library banner). */

@@ -1,13 +1,13 @@
 /**
  * Prediction Ledger — Video Library: transcript import (0.2), local media upload + transcription (0.4),
- * video list with progress, extraction trigger.
+ * YouTube URL import (0.5), video list with live progress, extraction trigger.
  *
  * Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
  * Licensed under the Apache License 2.0 — see LICENSE and NOTICE in the repository root.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { JobSummary, MediaStatus, VideoSummary } from "@prediction-ledger/shared";
-import { content, fmtClock, media, pollJob, ApiError } from "../api";
+import type { JobSummary, MediaStatus, ToolsStatus, VideoSummary } from "@prediction-ledger/shared";
+import { api, content, fmtClock, media, pollJob, youtube, ApiError } from "../api";
 import { navigate } from "../App";
 
 export function LibraryPage() {
@@ -15,21 +15,36 @@ export function LibraryPage() {
   const [error, setError] = useState<string | null>(null);
   const [jobs, setJobs] = useState<Record<string, JobSummary>>({});
   const [mediaStatus, setMediaStatus] = useState<MediaStatus | null>(null);
+  const [tools, setTools] = useState<ToolsStatus | null>(null);
+  const [liveJobs, setLiveJobs] = useState<Record<string, JobSummary>>({});
 
   const reload = useCallback(() => content.listVideos().then(setVideos).catch((e: Error) => setError(e.message)), []);
   useEffect(() => void reload(), [reload]);
   useEffect(() => { media.status().then(setMediaStatus).catch(() => setMediaStatus(null)); }, []);
+  const reloadTools = useCallback(() => youtube.toolsStatus().then(setTools).catch(() => setTools(null)), []);
+  useEffect(() => void reloadTools(), [reloadTools]);
 
-  // While any video is importing/transcribing, refresh the list so chunk progress stays live.
+  // While any video is importing/transcribing, refresh the list (and the latest job stage per video) so progress stays live.
   const busyCount = videos?.filter((v) => v.status === "importing" || v.status === "transcribing").length ?? 0;
   useEffect(() => {
     if (!busyCount) return;
-    const t = setInterval(() => void reload(), 1500);
+    const tick = async () => {
+      await reload();
+      try {
+        const js = await api.listJobs();
+        const byVideo: Record<string, JobSummary> = {};
+        for (const j of js) if (j.subjectType === "video" && j.subjectId && (j.status === "running" || j.status === "queued") && !byVideo[j.subjectId]) byVideo[j.subjectId] = j;
+        setLiveJobs(byVideo);
+      } catch { /* list refresh is best-effort */ }
+    };
+    void tick();
+    const t = setInterval(() => void tick(), 1500);
     return () => clearInterval(t);
   }, [busyCount, reload]);
 
   const transcribe = async (v: VideoSummary, restart: boolean) => {
-    if (restart && !window.confirm(`Re-transcribe "${v.title}" from scratch? The current transcript (and any corrections) will be replaced.`)) return;
+    const viaAudio = v.sourceKind === "youtube" && v.mediaSize === undefined;
+    if (restart && !window.confirm(`Re-transcribe "${v.title}" from scratch?${viaAudio ? " The audio will be downloaded from YouTube and" : ""} the current transcript (and any corrections) will be replaced.`)) return;
     try {
       await media.transcribe(v.id, restart);
       await reload();
@@ -70,12 +85,9 @@ export function LibraryPage() {
       )}
 
       <div className="import-grid">
+        <ImportYouTubeCard onImported={reload} tools={tools} onToolsChanged={reloadTools} />
         <UploadMediaCard onImported={reload} disabled={mediaStatus ? !mediaStatus.ffmpeg.ok : false} />
         <ImportTranscriptCard onImported={reload} />
-        <div className="card muted-card">
-          <strong>YouTube URL</strong>
-          <p className="muted">Caption and audio acquisition arrives in Release 0.5. Until then, download the captions and import them as a transcript, or import the downloaded file above.</p>
-        </div>
       </div>
 
       {videos === null ? (
@@ -83,7 +95,7 @@ export function LibraryPage() {
       ) : videos.length === 0 ? (
         <div className="empty-state">
           <p>No videos yet.</p>
-          <p className="muted">Drop a video or audio file to transcribe it locally, or import a transcript (SRT, VTT, TXT, or JSON). YouTube import follows in Release 0.5.</p>
+          <p className="muted">Paste a YouTube link, drop a video or audio file to transcribe it locally, or import a transcript (SRT, VTT, TXT, or JSON).</p>
         </div>
       ) : (
         <div className="table-wrap">
@@ -100,7 +112,11 @@ export function LibraryPage() {
                 return (
                   <tr key={v.id}>
                     <td><a href={`#/videos/${v.id}`}>{v.title}</a></td>
-                    <td>{v.sourceKind}{v.transcriptionEngine ? <small className="muted"> · {v.transcriptionEngine}</small> : null}</td>
+                    <td>
+                      {v.sourceKind === "youtube" && v.sourceRef ? <a href={v.sourceRef} target="_blank" rel="noreferrer noopener">YouTube ↗</a> : v.sourceKind}
+                      {v.transcriptSource && <small className="muted"> · {SOURCE_LABEL[v.transcriptSource]}</small>}
+                      {v.channel && <small className="muted"> · {v.channel}</small>}
+                    </td>
                     <td>{fmtClock(v.durationS)}</td>
                     <td>{v.publishedAt ?? <span className="muted">unknown</span>}</td>
                     <td>
@@ -112,7 +128,7 @@ export function LibraryPage() {
                     </td>
                     <td>
                       {v.status === "importing" ? (
-                        <span className="progress"><span className="bar" style={{ width: "10%" }} /> Extracting audio…</span>
+                        <span className="progress"><span className="bar" style={{ width: `${Math.max(5, liveJobs[v.id]?.progress ?? 5)}%` }} /> {liveJobs[v.id]?.stage ?? (v.sourceKind === "youtube" ? "Contacting YouTube…" : "Extracting audio…")}</span>
                       ) : v.status === "transcribing" ? (
                         <span className="progress">
                           <span className="bar" style={{ width: `${v.chunksTotal ? Math.round(((v.chunksDone ?? 0) / v.chunksTotal) * 100) : 5}%` }} />
@@ -129,11 +145,11 @@ export function LibraryPage() {
                       )}
                     </td>
                     <td className="row-actions">
-                      {v.mediaSize !== undefined && v.status === "failed" && (
+                      {(v.mediaSize !== undefined || v.sourceKind === "youtube") && v.status === "failed" && (
                         <button type="button" onClick={() => transcribe(v, false)}>Retry</button>
                       )}
-                      {v.mediaSize !== undefined && v.status === "ready" && (
-                        <button type="button" onClick={() => transcribe(v, true)} disabled={!!running}>Re-transcribe</button>
+                      {(v.mediaSize !== undefined || v.sourceKind === "youtube") && v.status === "ready" && (
+                        <button type="button" onClick={() => transcribe(v, true)} disabled={!!running} title={v.sourceKind === "youtube" && v.mediaSize === undefined ? "Downloads the audio and transcribes it with your engine instead of using YouTube captions" : undefined}>Re-transcribe</button>
                       )}
                       <button type="button" onClick={() => extract(v)} disabled={!!running || v.segmentCount === 0 || v.status === "importing" || v.status === "transcribing"}>
                         {v.predictionCount ? "Re-extract" : "Extract predictions"}
@@ -217,6 +233,94 @@ function ImportTranscriptCard({ onImported }: { onImported: () => void }) {
       {msg && <div className={`banner ${msg.kind}`} role="status">{msg.text}</div>}
       <div className="row">
         <button type="button" className="primary" onClick={submit} disabled={busy}>{busy ? "Importing…" : "Import transcript"}</button>
+      </div>
+    </div>
+  );
+}
+
+const SOURCE_LABEL: Record<NonNullable<VideoSummary["transcriptSource"]>, string> = {
+  "captions-manual": "creator captions",
+  "captions-auto": "auto captions",
+  transcribed: "transcribed",
+  imported: "imported transcript",
+};
+
+function ImportYouTubeCard({ onImported, tools, onToolsChanged }: { onImported: () => void; tools: ToolsStatus | null; onToolsChanged: () => void }) {
+  const [url, setUrl] = useState("");
+  const [title, setTitle] = useState("");
+  const [publishedAt, setPublishedAt] = useState("");
+  const [language, setLanguage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  const [installing, setInstalling] = useState<JobSummary | null>(null);
+
+  const submit = async () => {
+    setMsg(null);
+    if (!url.trim()) return setMsg({ kind: "error", text: "Paste a YouTube link first." });
+    setBusy(true);
+    try {
+      const res = await youtube.import({ url: url.trim(), title: title || undefined, publishedAt: publishedAt || undefined, language: language || undefined });
+      setMsg(res.duplicate
+        ? { kind: "ok", text: `Already imported as "${res.video.title}".` }
+        : { kind: "ok", text: "Import started — captions are used when available; otherwise the audio is downloaded and transcribed. Progress shows in the list below." });
+      setUrl(""); setTitle("");
+      onImported();
+    } catch (e) {
+      setMsg({ kind: "error", text: e instanceof ApiError ? e.message : (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const install = async () => {
+    setMsg(null);
+    if (!window.confirm("Download yt-dlp (about 30 MB) from its official GitHub release into your Prediction Ledger data folder? The file is checksum-verified before it is used.")) return;
+    try {
+      const { jobId } = await youtube.installYtDlp();
+      const done = await pollJob(jobId, setInstalling);
+      setInstalling(null);
+      if (done.status === "failed") setMsg({ kind: "error", text: done.error ?? "Install failed." });
+      else setMsg({ kind: "ok", text: "yt-dlp installed. Paste a link to import." });
+      onToolsChanged();
+    } catch (e) {
+      setInstalling(null);
+      setMsg({ kind: "error", text: (e as Error).message });
+    }
+  };
+
+  const offline = tools ? !tools.internet : false;
+  const needsTool = tools ? !tools.ytdlp.ok : false;
+
+  return (
+    <div className="card">
+      <strong>Import from a YouTube link</strong>
+      <p className="muted">Creator captions are used first, then auto-generated captions, then the audio is downloaded and transcribed with your engine (Setup → YouTube). Everything fetched is stored locally. Private, members-only, and removed videos cannot be fetched — import a transcript for those.</p>
+      {offline && <div className="banner warn">Internet access is off in Setup → Privacy, so YouTube import is disabled.</div>}
+      {!offline && needsTool && (
+        <div className="banner warn">
+          <div><strong>yt-dlp is needed for YouTube import.</strong> {tools?.ytdlp.message}</div>
+          <div className="row">
+            <button type="button" className="primary" onClick={install} disabled={!!installing}>{installing ? `Installing… ${installing.progress}%` : "Install yt-dlp"}</button>
+            {installing?.stage && <small className="muted">{installing.stage}</small>}
+          </div>
+        </div>
+      )}
+      <label className="field">
+        <span>Video link</span>
+        <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://www.youtube.com/watch?v=… or https://youtu.be/…" disabled={offline} />
+      </label>
+      <div className="grid-3">
+        <label className="field"><span>Title</span><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Defaults to the YouTube title" /></label>
+        <label className="field">
+          <span>Recorded on</span>
+          <input type="date" value={publishedAt} onChange={(e) => setPublishedAt(e.target.value)} />
+          <small>Defaults to YouTube's upload date. Set it when the talk was recorded earlier than it was posted.</small>
+        </label>
+        <label className="field"><span>Language</span><input value={language} onChange={(e) => setLanguage(e.target.value)} placeholder="auto" /></label>
+      </div>
+      {msg && <div className={`banner ${msg.kind}`} role="status">{msg.text}</div>}
+      <div className="row">
+        <button type="button" className="primary" onClick={submit} disabled={busy || offline || needsTool || !url.trim()}>{busy ? "Starting…" : "Import from YouTube"}</button>
       </div>
     </div>
   );

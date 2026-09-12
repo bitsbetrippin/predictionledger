@@ -14,7 +14,7 @@ This guide covers everything that is *not* just `npm run setup` + `npm start`. T
 | **Git** (or GitHub Desktop) | GitHub Desktop bundles Git | GitHub Desktop bundles Git | Only needed to clone/update. |
 | **ffmpeg + ffprobe** *(for local video/audio import)* | `winget install Gyan.FFmpeg` then reopen the terminal | `brew install ffmpeg` | Needed for local video import only. Setup → Transcription → *Check media tools* reports whether it is found. Alternative: `npm install ffmpeg-static -w server` bundles a binary; or set `PL_FFMPEG_PATH` to a folder containing both binaries. |
 | Local Whisper engine *(optional)* | `npm install @huggingface/transformers -w server` | same | Only for on-device transcription. The first transcription downloads the model (~75 MB for whisper-base) into the data directory's `models/`. Requires internet for that one download. |
-| yt-dlp *(Release 0.5+)* | downloaded by the app into the data directory after you approve it | same | Nothing to install manually. |
+| **yt-dlp** *(for YouTube links)* | Setup → YouTube → **Install yt-dlp** (downloads the official `yt-dlp.exe` into the data directory after you approve it) | same (`yt-dlp_macos`; first run may need Gatekeeper approval — see Troubleshooting) | Nothing to install by hand. Alternatives: a `yt-dlp` already on PATH, or `PL_YTDLP_PATH`. Needs internet, obviously. |
 | LM Studio *(optional)* | lmstudio.ai | lmstudio.ai | Only if you want a fully local model. |
 
 No administrator rights, Docker, or Python are required.
@@ -134,6 +134,16 @@ Costs: each research run uses up to *Searches per research run* searches and *So
 4. Progress shows as *Extracting audio…* then *Transcribing k/n chunks*. Long recordings are cut into 300-second chunks with 5 seconds of overlap (Setup → Transcription); each finished chunk is saved immediately, so you can close the browser or even stop the server and the job resumes at the next chunk.
 5. A video that fails shows the reason and a **Retry** button (resumes) — for example *silent audio* or *engine not installed*. **Re-transcribe** on a ready video starts from scratch (it replaces the transcript and any corrections).
 
+## 4.8 YouTube links (Release 0.5)
+
+1. Setup → YouTube → **Install yt-dlp** and confirm the download (~30 MB from the official GitHub release; SHA-256 verified). When YouTube changes and imports start failing, come back and click **Update yt-dlp** — that is the normal fix.
+2. Choose which captions to accept: *creator captions, then auto-generated* (default), *creator only*, or *never* (always transcribe the audio with your engine). Auto-generated captions are quick but can mangle names and figures, and the quotes in your ledger are only as exact as the captions.
+3. Leave **audio fallback** on if you want videos without captions transcribed (the audio is downloaded into `media/` and goes through the same chunked transcription as a local file). Turn it off to keep imports captions-only.
+4. In the Library, paste a link (`youtube.com/watch?v=…`, `youtu.be/…`, Shorts, or a live replay), optionally set the recorded date (defaults to the upload date), and click **Import from YouTube**. Progress: *Reading video information* → *Fetching captions* (or *Downloading audio n%* → *Extracting audio* → *Transcribing chunk k of n*).
+5. What can't be fetched: private, members-only, age-restricted, geo-blocked videos, live streams in progress, and anything YouTube bot-checks. Each shows a distinct message and the same fallback: download the captions or transcript yourself and use **Import a transcript**.
+
+What leaves your computer: the video id goes to YouTube (via yt-dlp) and the yt-dlp installer contacts github.com. Nothing else. With *Allow internet access* off, the YouTube card is disabled and the API refuses the import up front.
+
 ## 5. Data directory
 
 | OS | Path |
@@ -170,7 +180,12 @@ Other environment variables: `PL_PORT` (default 7317), `PL_NO_OPEN=1` (don't ope
 | `Ports 7317-7326 are all in use` | Set `PL_PORT=<free port>`. |
 | Browser opens but shows "Cannot reach the local server" | The server exited — check the terminal for the error. |
 | Windows Firewall prompt on first start | Should not appear (loopback only). If it does, deny it; the app does not need network permissions. |
-| macOS: "yt-dlp cannot be opened because the developer cannot be verified" *(0.5+)* | System Settings → Privacy & Security → *Allow anyway*, or `xattr -d com.apple.quarantine <path>` for the file under the data directory's `tools/`. |
+| macOS: "yt-dlp cannot be opened because the developer cannot be verified" | System Settings → Privacy & Security → *Allow anyway*, or `xattr -d com.apple.quarantine "<data directory>/tools/yt-dlp"`, then Retry the import. |
+| YouTube import fails with `Sign in to confirm you're not a bot` or `HTTP Error 429` | YouTube is challenging this network. Wait, then Retry; **Update yt-dlp** (Setup → YouTube) fixes most cases. Import a transcript if it persists. |
+| `The installed yt-dlp is too old for this app` | A yt-dlp on PATH predates the `--js-runtimes` option. Update it, or install the app-managed copy (Setup → YouTube) which takes precedence over PATH. |
+| YouTube import worked yesterday, fails today with an odd error | YouTube changed something. **Update yt-dlp** first; check github.com/yt-dlp/yt-dlp/issues if it still fails. |
+| Imported YouTube transcript has garbled names or numbers | It came from auto-generated captions (source chip *auto captions*). Click **Re-transcribe** to download the audio and use your own engine, or set *Captions to accept* to *creator only*. |
+| `yt-dlp` install fails with `Checksum mismatch` | The download was corrupted or tampered with; nothing was installed. Retry; if it repeats, download `yt-dlp` manually from the official release and set `PL_YTDLP_PATH`. |
 | `Secret key file … is corrupt` | `secret.key` was altered. Delete it; re-enter API keys in Setup. |
 | Dashboard shows old UI after upgrading | Run `npm run build` again; hard-refresh the browser. |
 | LM Studio test hangs | Very large model still loading; wait for LM Studio to show *Loaded*, then retry. |

@@ -39,7 +39,8 @@ export function VideoPage({ id }: { id: string }) {
   }, [busy, reload]);
 
   const transcribe = async (restart: boolean) => {
-    if (restart && !window.confirm("Re-transcribe from scratch? The current transcript and any corrections will be replaced.")) return;
+    const viaAudio = video?.sourceKind === "youtube" && video.mediaSize === undefined;
+    if (restart && !window.confirm(`Re-transcribe from scratch?${viaAudio ? " The audio will be downloaded from YouTube and" : ""} the current transcript and any corrections will be replaced.`)) return;
     setError(null);
     try {
       await media.transcribe(id, restart);
@@ -84,14 +85,14 @@ export function VideoPage({ id }: { id: string }) {
         <>
           <h1>{video.title}</h1>
           <p className="muted">
-            {video.sourceKind}{video.sourceRef ? ` · ${video.sourceRef}` : ""} · {fmtClock(video.durationS)} · published {video.publishedAt ?? "unknown"} · {video.language ?? "language unknown"} · imported {video.importedAt.slice(0, 10)}
+            {video.sourceKind === "youtube" && video.sourceRef ? <a href={video.sourceRef} target="_blank" rel="noreferrer noopener">YouTube ↗</a> : video.sourceKind}{video.channel ? ` · ${video.channel}` : video.sourceRef && video.sourceKind !== "youtube" ? ` · ${video.sourceRef}` : ""} · {fmtClock(video.durationS)} · published {video.publishedAt ?? "unknown"} · {video.language ?? "language unknown"} · imported {video.importedAt.slice(0, 10)}
             {" "}<button type="button" className="link" onClick={() => setEditingMeta(true)}>edit</button>
           </p>
         </>
       )}
       {video.notes && <div className="banner">{video.notes}{video.transcriptionEngine ? ` · transcribed by ${video.transcriptionEngine}${video.transcriptionModel ? ` (${video.transcriptionModel})` : ""}` : ""}</div>}
       {error && <div className="banner error" role="alert">{error}</div>}
-      {video.status === "importing" && <div className="banner" role="status"><span className="progress"><span className="bar" style={{ width: "10%" }} /> Extracting audio…</span></div>}
+      {video.status === "importing" && <div className="banner" role="status"><span className="progress"><span className="bar" style={{ width: "10%" }} /> {video.sourceKind === "youtube" ? "Fetching from YouTube (captions first, audio if needed)…" : "Extracting audio…"}</span></div>}
       {video.status === "transcribing" && (
         <div className="banner" role="status">
           <span className="progress">
@@ -104,7 +105,7 @@ export function VideoPage({ id }: { id: string }) {
       {video.status === "failed" && (
         <div className="banner error" role="alert">
           {video.error ?? "Processing failed."}{" "}
-          {video.mediaSize !== undefined && <button type="button" onClick={() => transcribe(false)}>Retry</button>}
+          {(video.mediaSize !== undefined || video.sourceKind === "youtube") && <button type="button" onClick={() => transcribe(false)}>Retry</button>}
         </div>
       )}
 
@@ -113,7 +114,7 @@ export function VideoPage({ id }: { id: string }) {
         {running && <span className="progress"><span className="bar" style={{ width: `${job!.progress}%` }} /> {job!.stage ?? job!.status}</span>}
         {job?.status === "completed" && <span className="result ok">✓ {job.stage}</span>}
         {preds.length > 0 && <a href={`#/predictions?videoId=${video.id}`}>Open in Predictions →</a>}
-        {video.mediaSize !== undefined && video.status === "ready" && <button type="button" onClick={() => transcribe(true)} disabled={!!running}>Re-transcribe</button>}
+        {(video.mediaSize !== undefined || video.sourceKind === "youtube") && video.status === "ready" && <button type="button" onClick={() => transcribe(true)} disabled={!!running}>Re-transcribe</button>}
       </div>
 
       <div className="two-col">

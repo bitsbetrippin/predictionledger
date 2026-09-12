@@ -16,6 +16,7 @@ import type { MediaStatus } from "@prediction-ledger/shared";
 import type { AppContext } from "../context.js";
 import { importMediaStream, MAX_UPLOAD_BYTES, removeMediaFiles, UploadError } from "../media/importer.js";
 import { locateTools } from "../media/ffmpeg.js";
+import { enqueueImport, precheckYouTubeImport, YouTubeImportError } from "../youtube/importer.js";
 
 export function registerMediaRoutes(app: FastifyInstance, ctx: AppContext): void {
   // Raw stream parser for uploads only; JSON routes are unaffected.
@@ -46,7 +47,21 @@ export function registerMediaRoutes(app: FastifyInstance, ctx: AppContext): void
   app.post<{ Params: { id: string }; Body: { restart?: boolean } }>("/api/videos/:id/transcribe", async (req, reply) => {
     const v = ctx.videos.get(req.params.id);
     const info = ctx.videos.mediaInfo(req.params.id);
-    if (!v || !info?.mediaPath) return reply.code(404).send({ error: "not_found", message: "No local media for this video." });
+    if (!v) return reply.code(404).send({ error: "not_found" });
+    if (!info?.mediaPath) {
+      // YouTube import whose transcript came from captions: re-transcribing means fetching the audio first (0.5).
+      if (!v.youtubeId || !v.sourceRef) return reply.code(404).send({ error: "not_found", message: "No local media for this video." });
+      try {
+        await precheckYouTubeImport(ctx, v.sourceRef);
+      } catch (err) {
+        if (err instanceof YouTubeImportError) return reply.code(err.status).send({ error: err.code, message: err.message });
+        throw err;
+      }
+      // restart=true → skip captions and transcribe the audio; restart=false (Retry) → re-run the whole import.
+      const forceAudio = !!(req.body as { restart?: boolean } | undefined)?.restart;
+      const jobId = enqueueImport(ctx, v.id, { title: true, publishedAt: true, language: true }, forceAudio);
+      return reply.code(202).send({ jobId, stage: "video.import" });
+    }
     if ((req.body as { restart?: boolean } | undefined)?.restart) {
       ctx.db.transaction(() => {
         ctx.db.run("DELETE FROM transcript_segments WHERE video_id = ?", v.id);

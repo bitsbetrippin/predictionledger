@@ -122,6 +122,7 @@ export function makeTranscribeHandler(ctx: AppContext) {
       const finalStates = ctx.videos.chunkStates(videoId);
       const segmentCount = ctx.videos.get(videoId)?.segmentCount ?? 0;
       ctx.videos.setStatus(videoId, "ready");
+      ctx.videos.setTranscriptSource(videoId, "transcribed");
       if (segmentCount === 0) ctx.videos.setError(videoId, "Transcription produced no text. The audio may be music, noise, or in an unsupported language.");
       job.progress(100, segmentCount === 0 ? "No speech recognised" : `${segmentCount} segments`);
       return { chunks: finalStates.length, newSegments: transcribed, segmentCount };

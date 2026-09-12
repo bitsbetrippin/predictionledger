@@ -75,6 +75,7 @@ export function toPayload(s: AppSettings): SettingsPayload {
     },
     stages: s.stages,
     transcription: s.transcription,
+    youtube: s.youtube,
     search: { provider: s.search.provider, baseUrl: s.search.baseUrl },
     limits: s.limits,
     privacy: s.privacy,
@@ -180,7 +181,19 @@ export const media = {
     }
     return json as { video: VideoDetail; duplicate: boolean; jobId?: string };
   },
-  transcribe: (videoId: string, restart = false) => request<{ jobId: string; stage: "audio.extract" | "transcript.generate" }>("POST", `/api/videos/${videoId}/transcribe`, { restart }),
+  transcribe: (videoId: string, restart = false) => request<{ jobId: string; stage: "audio.extract" | "transcript.generate" | "video.import" }>("POST", `/api/videos/${videoId}/transcribe`, { restart }),
+};
+
+// ---------------------------------------------------------------------------
+// Release 0.5 — YouTube import and helper tools
+// ---------------------------------------------------------------------------
+
+import type { ToolsStatus, YouTubeImportRequest } from "@prediction-ledger/shared";
+
+export const youtube = {
+  import: (body: YouTubeImportRequest) => request<{ video: VideoDetail; duplicate: boolean; jobId?: string }>("POST", "/api/videos/import-youtube", body),
+  toolsStatus: () => request<ToolsStatus>("GET", "/api/tools/status"),
+  installYtDlp: () => request<{ jobId: string }>("POST", "/api/tools/ytdlp/install"),
 };
 
 /** Poll a job until it reaches a terminal state; calls onTick with each snapshot. */

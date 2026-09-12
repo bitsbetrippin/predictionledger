@@ -45,6 +45,13 @@ export const persistedSettingsSchema = z.object({
     chunkSeconds: z.number().int().min(60).max(1800).default(300),
     overlapSeconds: z.number().int().min(0).max(30).default(5),
   }),
+  youtube: z
+    .object({
+      captions: z.enum(["manual-then-auto", "manual-only", "never"]).default("manual-then-auto"),
+      allowAudioDownload: z.boolean().default(true),
+      captionLanguage: z.string().max(10).default("auto"),
+    })
+    .default({ captions: "manual-then-auto", allowAudioDownload: true, captionLanguage: "auto" }),
   search: z.object({
     provider: z.enum(["brave", "tavily", "searxng", "anthropic-native", "openai-native", "none"]),
     baseUrl: z.string().url().max(500).optional(),
@@ -87,6 +94,7 @@ export const DEFAULT_SETTINGS: PersistedSettings = {
     chunkSeconds: 300,
     overlapSeconds: 5,
   },
+  youtube: { captions: "manual-then-auto", allowAudioDownload: true, captionLanguage: "auto" },
   search: { provider: "none" },
   limits: { concurrency: 2, maxSearchesPerRun: 8, maxSourcesPerRun: 12, requestsPerMinute: 30 },
   privacy: { allowInternet: true },

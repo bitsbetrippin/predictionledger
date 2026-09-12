@@ -25,6 +25,7 @@ import { registerRoutes } from "./routes/index.js";
 import { registerContentRoutes } from "./routes/content.js";
 import { registerResearchRoutes } from "./routes/research.js";
 import { registerMediaRoutes } from "./routes/media.js";
+import { registerYouTubeRoutes } from "./routes/youtube.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const webDist = path.resolve(here, "..", "..", "web", "dist");
@@ -59,6 +60,7 @@ async function main(): Promise<void> {
   registerContentRoutes(app, ctx);
   registerResearchRoutes(app, ctx);
   registerMediaRoutes(app, ctx);
+  registerYouTubeRoutes(app, ctx);
 
   if (fs.existsSync(webDist)) {
     await app.register(fastifyStatic, { root: webDist, prefix: "/", wildcard: false });

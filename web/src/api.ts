@@ -151,6 +151,17 @@ export const content = {
   setTemplate: (name: "extraction" | "plan", body: string | null) => request<PromptTemplateInfo>("PUT", `/api/templates/${name}`, { body }),
   job: (id: string) => request<import("@prediction-ledger/shared").JobSummary>("GET", `/api/jobs/${id}`),
   cancelJob: (id: string) => request<import("@prediction-ledger/shared").JobSummary>("POST", `/api/jobs/${id}/cancel`),
+  retryJob: (id: string) => request<import("@prediction-ledger/shared").JobSummary>("POST", `/api/jobs/${id}/retry`),
+};
+
+// ---------------------------------------------------------------------------
+// Release 0.6 — backups
+// ---------------------------------------------------------------------------
+
+export interface BackupInfo { file: string; bytes: number; createdAt: string; kind: "manual" | "pre-migration"; hasSecretKey: boolean }
+export const backups = {
+  list: () => request<BackupInfo[]>("GET", "/api/backups"),
+  create: () => request<BackupInfo>("POST", "/api/backups"),
 };
 
 // ---------------------------------------------------------------------------

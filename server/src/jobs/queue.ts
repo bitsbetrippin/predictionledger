@@ -38,6 +38,7 @@ interface JobRow {
   subject_type: string | null;
   subject_id: string | null;
   payload_json: string;
+  dedupe_key: string | null;
   progress: number;
   stage: string | null;
   attempts: number;
@@ -110,6 +111,20 @@ export class JobQueue {
       id,
     );
     return Number(result.changes) > 0;
+  }
+
+  /** Re-run a failed or cancelled job as a new job with the same kind, subject, payload and dedupe key (Release 0.6). */
+  retry(id: string): string | undefined {
+    const row = this.db.get<JobRow>("SELECT * FROM jobs WHERE id = ? AND status IN ('failed','cancelled')", id);
+    if (!row) return undefined;
+    return this.enqueue({
+      kind: row.kind,
+      payload: JSON.parse(row.payload_json ?? "{}") as Record<string, unknown>,
+      subjectType: row.subject_type ?? undefined,
+      subjectId: row.subject_id ?? undefined,
+      dedupeKey: row.dedupe_key ?? undefined,
+      maxAttempts: row.max_attempts,
+    });
   }
 
   get(id: string): JobSummary | undefined {

@@ -1,0 +1,72 @@
+{
+  "_comment": "Human-reviewed expectations for fixtures/transcripts/energy-outlook-30min.srt (acceptance criterion B1: a 30-minute transcript). Statement date for this fixture is 2026-03-10. Windows: w1 0\u2013720 s, w2 604\u20131330 s, w3 1210\u20131800 s. Used by pipeline-30min.test.ts with canned replies and by evals/ with real models.",
+  "publishedAt": "2026-03-10",
+  "durationS": 1800,
+  "expectedWindowCount": 3,
+  "mustExtract": [
+    {
+      "id": "P1",
+      "quoteContains": "Illinois regulators will approve at least two new gigawatt-scale",
+      "startS": 95,
+      "endS": 107,
+      "timeExpression": "by the end of next year",
+      "deadlineDate": "2027-12-31",
+      "deadlineBasis": "rule:relative",
+      "occurrences": 2,
+      "note": "Repeated verbatim at 1700 s \u2014 one prediction, two occurrences, never two rows."
+    },
+    {
+      "id": "P2",
+      "quoteContains": "Hashprice might recover to eighty dollars",
+      "modality": "might",
+      "deadlineDate": "2026-09-10",
+      "note": "Hedge must be preserved: 'might' never becomes 'will'."
+    },
+    {
+      "id": "P3",
+      "quoteContains": "moratorium on new crypto-mining interconnects above ten megawatts",
+      "startS": 714,
+      "endS": 726,
+      "deadlineDate": "2027-09-10",
+      "minComponents": 2,
+      "note": "Spans the w1/w2 window boundary at 720 s; must be stored once with the full quote located across both cues."
+    },
+    {
+      "id": "P4",
+      "quoteContains": "raise industrial rates by double digits",
+      "deadlineDate": "2028-03-10",
+      "minComponents": 3,
+      "note": "Compound: two future claims plus a causal link."
+    },
+    {
+      "id": "P5",
+      "quoteContains": "water-use disclosures",
+      "deadlineBasis": "unresolved",
+      "note": "'Eventually' \u2192 deadline unknown; must not be invented."
+    },
+    {
+      "id": "P7",
+      "quoteContains": "exceed one thousand exahash before the next halving",
+      "deadlineBasis": "unresolved",
+      "note": "Halving date not stated; app must not guess."
+    }
+  ],
+  "mustNotExtract": [
+    {
+      "reason": "quotation of someone else's forecast",
+      "quoteContains": "The governor said last week that he expects"
+    },
+    {
+      "reason": "past event",
+      "quoteContains": "energized the first forty megawatts in January"
+    },
+    {
+      "reason": "explicit refusal to predict",
+      "quoteContains": "I don't know, and I'm not going to pretend I do"
+    },
+    {
+      "reason": "stated intention to cover later, not a claim",
+      "quoteContains": "speculating now isn't useful"
+    }
+  ]
+}

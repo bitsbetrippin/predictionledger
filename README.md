@@ -6,7 +6,7 @@ Prediction Ledger is an open-source, localhost-only application. It takes a loca
 
 Everything lives on your computer in a SQLite database. Cloud AI providers and web research are opt-in and clearly labelled; a fully local workflow (LM Studio + local Whisper + transcript import) is supported.
 
-> **Status:** Release 0.5 — Milestone 4. Every import path is in: paste a **YouTube link** (creator captions → auto captions → audio download, via a consent-installed, checksum-verified yt-dlp), drop a **local MP4/MPEG or audio file** (ffmpeg + resumable chunked Whisper/OpenAI transcription), or **import a transcript**. The analysis loop then runs on the result: extract predictions → versioned validation plan → real web research → verified evidence → two-field verdict with citations, recheck history, JSON/CSV export. Release 1.0 (cross-provider evals, hardening, Windows/macOS verification) is next. See [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) and the [worked example](docs/WORKED_EXAMPLE.md).
+> **Status:** Release 0.6 — evaluation harness and hardening. A labelled 30-minute fixture and a Promptfoo suite (`npm run eval`) check the real prompts across providers; provider calls have timeouts and backoff; jobs can be retried; backups run while the app is live. Every import path is in: paste a **YouTube link** (creator captions → auto captions → audio download, via a consent-installed, checksum-verified yt-dlp), drop a **local MP4/MPEG or audio file** (ffmpeg + resumable chunked Whisper/OpenAI transcription), or **import a transcript**. The analysis loop then runs on the result: extract predictions → versioned validation plan → real web research → verified evidence → two-field verdict with citations, recheck history, JSON/CSV export. Release 1.0 (first real run, evals executed with thresholds, Windows/macOS verification) is next. See [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) and the [worked example](docs/WORKED_EXAMPLE.md).
 
 ---
 
@@ -244,7 +244,8 @@ Turning **Privacy → Allow internet access** off restricts the app to explicitl
 | **0.3** ✓ | Web research, stored evidence, two-field verdicts with citations, app-enforced verdict rules, recheck history, JSON/CSV export. |
 | **0.4** ✓ | Local MP4/MPEG import, ffmpeg audio extraction, chunked + resumable local Whisper / OpenAI transcription with live progress. |
 | **0.5** ✓ | YouTube: consent-installed yt-dlp, captions → audio → transcript-import fallback, distinct unavailable-video messages, up-front privacy refusal. |
-| **1.0** | Cross-provider prompt evaluations (Promptfoo), hardening, Windows + macOS verification, MVP. |
+| **0.6** ✓ | 30-minute labelled fixture + acceptance tests, Promptfoo suite, provider timeouts/backoff, job retry, backups, release scaffolding. |
+| **1.0** | First real run, evals executed with recorded thresholds, security pass, Windows + macOS verification matrix, MVP tag. |
 
 Full backlog with acceptance criteria: [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md).
 

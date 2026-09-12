@@ -1,0 +1,99 @@
+{
+  "_comment": "SYNTHETIC canned reply of the extraction model for fixtures/transcripts/energy-outlook-30min.srt window w1. Used by pipeline-30min.test.ts with a fake provider. Not a real model output.",
+  "predictions": [
+    {
+      "quote": "by the end of next year, Illinois regulators will approve at least two new gigawatt-scale data center campuses",
+      "speaker": "Host",
+      "normalized_statement": "By the end of the year after the statement, Illinois regulators will have approved at least two new gigawatt-scale data center campuses.",
+      "modality": "will",
+      "entities": [
+        "Illinois regulators",
+        "data center campuses"
+      ],
+      "topic": "data center permitting",
+      "geography": "Illinois",
+      "scope": "gigawatt-scale campuses in Illinois",
+      "conditions": [],
+      "thresholds": [
+        "approved gigawatt-scale campuses >= 2 campuses"
+      ],
+      "time_expression": "by the end of next year",
+      "proposed_deadline": "2027-12-31",
+      "ambiguities": [
+        "\"Regulators\" is unspecified (ICC? counties? state siting board?)",
+        "\"Gigawatt-scale\" has no stated threshold"
+      ],
+      "confidence": 0.9,
+      "components": [
+        {
+          "kind": "future_claim",
+          "statement": "At least two new gigawatt-scale data center campuses will be approved in Illinois by the end of next year.",
+          "deadline": "2027-12-31",
+          "notes": null
+        }
+      ]
+    },
+    {
+      "quote": "Hashprice might recover to eighty dollars a petahash within six months, if difficulty stalls",
+      "speaker": "Host",
+      "normalized_statement": "Hashprice might recover to $80 per PH/s per day within six months, conditional on mining difficulty stalling.",
+      "modality": "might",
+      "entities": [
+        "hashprice",
+        "mining difficulty"
+      ],
+      "topic": "bitcoin mining economics",
+      "geography": null,
+      "scope": "bitcoin mining",
+      "conditions": [
+        "difficulty stalls"
+      ],
+      "thresholds": [
+        "hashprice >= 80 USD/PH/day"
+      ],
+      "time_expression": "within six months",
+      "proposed_deadline": "2026-09-10",
+      "ambiguities": [
+        "\"Stalls\" is undefined"
+      ],
+      "confidence": 0.8,
+      "components": [
+        {
+          "kind": "future_claim",
+          "statement": "Hashprice might reach $80/PH/day within six months.",
+          "deadline": "2026-09-10",
+          "notes": null
+        }
+      ]
+    },
+    {
+      "quote": "within eighteen months the state legislature will pass",
+      "speaker": "Host",
+      "normalized_statement": "Within eighteen months the state legislature will pass something (statement cut off at the window edge).",
+      "modality": "will",
+      "entities": [
+        "state legislature"
+      ],
+      "topic": "state legislation",
+      "geography": null,
+      "scope": "unclear",
+      "conditions": [],
+      "thresholds": [],
+      "time_expression": "within eighteen months",
+      "proposed_deadline": "2027-09-10",
+      "ambiguities": [
+        "Statement is cut off; the object of 'pass' is outside this window"
+      ],
+      "confidence": 0.4,
+      "components": [
+        {
+          "kind": "future_claim",
+          "statement": "The state legislature will pass an unspecified measure within eighteen months.",
+          "deadline": "2027-09-10",
+          "notes": null
+        }
+      ]
+    }
+  ],
+  "notes": "Mostly a quarterly recap; the final statement is cut off at the window edge."
+}

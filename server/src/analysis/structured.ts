@@ -15,6 +15,7 @@
 import type { z } from "zod";
 import type { AnalysisStage, LlmProviderId } from "@prediction-ledger/shared";
 import type { ChatMessage, CompletionResult, LanguageModelProvider, ProviderCredentials } from "../providers/llm/types.js";
+import { ProviderHttpError } from "../providers/llm/types.js";
 
 export class MalformedOutputError extends Error {
   constructor(
@@ -50,6 +51,10 @@ export interface StructuredRequest<T> {
   schemaName: string;
   maxTokens?: number;
   signal?: AbortSignal;
+  /** Per-request timeout (default 120 s); the job's own signal still cancels earlier. */
+  timeoutMs?: number;
+  /** Bounded retries for 429/5xx/network failures (default 3 tries total). Invalid credentials never retry. */
+  maxTries?: number;
   allowInternet: boolean;
   rateLimiter?: RateLimiter;
 }
@@ -72,14 +77,18 @@ export async function completeStructured<T>(req: StructuredRequest<T>): Promise<
 
   for (let attempt = 1; attempt <= 2; attempt++) {
     if (req.rateLimiter) await req.rateLimiter.acquire(req.signal);
-    const result = await target.provider.complete(target.credentials, {
-      model: target.model,
-      messages,
-      jsonSchema: { name: req.schemaName, schema: req.jsonSchema },
-      maxTokens: req.maxTokens ?? 8192,
-      temperature: 0.1,
-      signal: req.signal,
-    });
+    const result = await withResilience(
+      (signal) =>
+        target.provider.complete(target.credentials, {
+          model: target.model,
+          messages,
+          jsonSchema: { name: req.schemaName, schema: req.jsonSchema },
+          maxTokens: req.maxTokens ?? 8192,
+          temperature: 0.1,
+          signal,
+        }),
+      { signal: req.signal, timeoutMs: req.timeoutMs, maxTries: req.maxTries },
+    );
     lastRaw = result.text ?? "";
     const parsed = tryParseJson(lastRaw);
     if (parsed.ok) {
@@ -104,6 +113,52 @@ export async function completeStructured<T>(req: StructuredRequest<T>): Promise<
     ];
   }
   throw new MalformedOutputError(`Model returned output that did not match the ${req.schemaName} schema after a repair attempt.`, lastRaw, lastIssues);
+}
+
+export class ProviderTimeoutError extends Error {
+  constructor(ms: number) {
+    super(`The model did not answer within ${Math.round(ms / 1000)} s. Try a smaller model, a shorter window, or raise the timeout.`);
+    this.name = "ProviderTimeoutError";
+  }
+}
+
+/**
+ * Timeout + bounded retry around one provider call (PS-03/PS-04 hardening, Release 0.6):
+ *  - each try gets its own timeout (default 120 s) combined with the caller's cancel signal;
+ *  - 401/403 fail immediately with the provider's message (invalid credentials are never retried);
+ *  - 408/429/5xx and network errors retry with exponential backoff (1 s, 4 s, 9 s… capped at 30 s),
+ *    honouring Retry-After when the provider sends one; other errors (malformed JSON etc.) are not retried here.
+ */
+export async function withResilience<T>(call: (signal: AbortSignal) => Promise<T>, opts: { signal?: AbortSignal; timeoutMs?: number; maxTries?: number; sleep?: (ms: number) => Promise<void> } = {}): Promise<T> {
+  const timeoutMs = opts.timeoutMs ?? 120_000;
+  const maxTries = Math.max(1, opts.maxTries ?? 3);
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  let lastErr: unknown;
+  for (let t = 1; t <= maxTries; t++) {
+    if (opts.signal?.aborted) throw new Error("Cancelled");
+    // A ref'd timer (AbortSignal.timeout's is unref'd and would let a bare process exit mid-call).
+    const timeoutCtl = new AbortController();
+    const timer = setTimeout(() => timeoutCtl.abort(new Error(`timeout after ${timeoutMs} ms`)), timeoutMs);
+    const signal = opts.signal ? AbortSignal.any([opts.signal, timeoutCtl.signal]) : timeoutCtl.signal;
+    try {
+      return await call(signal);
+    } catch (err) {
+      lastErr = err;
+      if (opts.signal?.aborted) throw err;
+      const timedOut = timeoutCtl.signal.aborted || (err as Error)?.name === "TimeoutError";
+      if (timedOut) lastErr = new ProviderTimeoutError(timeoutMs);
+      const http = err instanceof ProviderHttpError ? err : undefined;
+      if (http?.invalidCredentials) throw err;
+      const network = !http && !timedOut && /fetch failed|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|socket hang up/i.test((err as Error)?.message ?? "");
+      const retryable = timedOut || network || (http?.retryable ?? false);
+      if (!retryable || t === maxTries) throw lastErr;
+      const backoff = Math.min(30_000, 1000 * t * t);
+      await sleep(http?.retryAfterMs ?? backoff);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastErr;
 }
 
 /** Pull a JSON object out of a reply that may contain code fences or leading text. */

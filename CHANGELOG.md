@@ -1,0 +1,33 @@
+# Changelog
+
+All notable changes to Prediction Ledger. Format follows [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer once 1.0 ships.
+
+Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
+
+## [0.6.0] — 2026-09-12 — Evaluation harness and hardening, part 1
+### Added
+- Fixture B1: synthetic, labelled 30-minute transcript (`fixtures/transcripts/energy-outlook-30min.*`) with canned per-window model replies; pipeline test covering three overlapping windows, a prediction spanning the 720 s window boundary, a repeated statement (one row, two occurrences), the no-predictions transcript (B2), invalid credentials at extraction, and job retry.
+- Promptfoo evaluation suite (`evals/`) that renders the app's *built* extraction prompt for each fixture window and scores real-model replies against `expected.json` (`npm run eval`).
+- Provider-call resilience: per-request timeout (120 s), bounded retries with backoff for 429/5xx/network errors honouring `Retry-After`; 401/403 fail immediately with the provider's message.
+- Job retry: `POST /api/jobs/:id/retry` and a Retry button on the Jobs tab for failed/cancelled jobs.
+- Backups: `POST /api/backups` (consistent `VACUUM INTO` copy + secret key), `GET /api/backups`, Setup → Backups, and `npm run backup`.
+- `docs/VERIFICATION.md` (platform matrix skeleton), `CHANGELOG.md`, GitHub issue/PR templates.
+### Changed
+- Deduplication merges a quote truncated at a window edge into the fuller quote from the next window (token containment ≥ 0.9 on overlapping spans).
+- Date resolver: "by the end of next year/month" → last day of that period (was statement date + 1 year).
+- `npm run setup` messaging for ffmpeg/ffprobe, yt-dlp, and the optional Whisper package.
+
+## [0.5.0] — 2026-09-12 — YouTube ingestion
+- YouTube link import via a consent-installed, checksum-verified yt-dlp: creator captions → auto captions → audio download → local transcription; distinct unavailable-video messages with the transcript-import fallback; up-front refusal when internet is off. Migration 005.
+
+## [0.4.0] — 2026-09-11 — Local video
+- Raw-stream media upload with hash storage and ffprobe validation; ffmpeg audio extraction with silence detection; resumable chunked transcription (local Whisper via optional Transformers.js, or OpenAI). Migration 004.
+
+## [0.3.0] — 2026-09-11 — Research and verdicts
+- Search providers, SSRF-guarded fetcher, evidence extraction with excerpt verification, two-field verdicts with app-enforced guard rules, recheck history, JSON/CSV export. Migration 003.
+
+## [0.2.0] — 2026-09-11 — Analysis core
+- Transcript import, prediction extraction with rule-based deadlines and dedupe, editing/merge/split, versioned validation plans. Migration 002.
+
+## [0.1.0] — 2026-09-11 — Foundation
+- Localhost Fastify server, Setup tab, encrypted credentials, provider tests, durable SQLite job queue, documentation set.

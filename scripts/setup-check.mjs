@@ -26,8 +26,9 @@ if (major < 24) {
 }
 
 for (const tool of [
-  { cmd: "ffmpeg", args: ["-version"], why: "audio extraction (Release 0.2). Not needed yet." },
-  { cmd: "yt-dlp", args: ["--version"], why: "YouTube acquisition (Release 0.3). The app can download it for you later." },
+  { cmd: "ffmpeg", args: ["-version"], why: "importing local video/audio files and YouTube audio. Install it if you want those (docs/SETUP.md §1)." },
+  { cmd: "ffprobe", args: ["-version"], why: "the same (ships with ffmpeg)." },
+  { cmd: "yt-dlp", args: ["--version"], why: "YouTube links. Not needed on PATH — Setup → YouTube → Install yt-dlp fetches it into the data directory." },
 ]) {
   try {
     const out = execFileSync(tool.cmd, tool.args, { stdio: ["ignore", "pipe", "ignore"] }).toString().split("\n")[0];
@@ -36,4 +37,5 @@ for (const tool of [
     console.log(`${tool.cmd}: not on PATH — used for ${tool.why}`);
   }
 }
+console.log("Optional: `npm install @huggingface/transformers -w server` enables on-device Whisper transcription (docs/SETUP.md §4.7).");
 console.log("Environment check complete.\n");

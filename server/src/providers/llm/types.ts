@@ -39,6 +39,39 @@ export interface CompletionResult {
   raw?: unknown;
 }
 
+/**
+ * HTTP failure from a provider, classified so the caller can decide: 401/403 → fail now with the
+ * provider's own message (invalid credentials are never retried); 408/429/5xx/network → bounded
+ * retry with backoff (honouring Retry-After when present).
+ */
+export class ProviderHttpError extends Error {
+  constructor(
+    providerName: string,
+    public readonly status: number,
+    body: string,
+    public readonly retryAfterMs?: number,
+  ) {
+    super(`${providerName} request failed: HTTP ${status} ${body.slice(0, 300)}`.trim());
+    this.name = "ProviderHttpError";
+  }
+  get retryable(): boolean {
+    return this.status === 408 || this.status === 409 || this.status === 425 || this.status === 429 || this.status >= 500;
+  }
+  get invalidCredentials(): boolean {
+    return this.status === 401 || this.status === 403;
+  }
+}
+
+/** Pure: Retry-After header (seconds or HTTP date) → milliseconds, capped. */
+export function parseRetryAfter(value: string | null, capMs = 60_000): number | undefined {
+  if (!value) return undefined;
+  const secs = Number(value);
+  if (Number.isFinite(secs)) return Math.min(capMs, Math.max(0, secs * 1000));
+  const at = Date.parse(value);
+  if (Number.isFinite(at)) return Math.min(capMs, Math.max(0, at - Date.now()));
+  return undefined;
+}
+
 export interface ProviderCredentials {
   apiKey?: string;
   baseUrl?: string;

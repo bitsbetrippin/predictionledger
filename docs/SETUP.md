@@ -163,7 +163,7 @@ $env:PL_DATA_DIR = "D:\PredictionLedgerData"; npm start
 PL_DATA_DIR=/Volumes/Data/PredictionLedger npm start
 ```
 
-**Back up** by copying the whole directory while the app is stopped. **Reset** by deleting it (you lose all imports, predictions, and saved keys).
+**Back up** with Setup → Backups → *Back up now* or `npm run backup` (works while the app runs; writes `backups/manual-<timestamp>.db` plus a copy of `secret.key`). Copying the whole directory while the app is stopped also works and includes media. **Restore**: stop the app, copy the backup `.db` over `prediction-ledger.db` and the `.secret.key` over `secret.key`, start again — the app migrates an older backup forward automatically (and takes a pre-migration backup first). **Reset** by deleting the directory (you lose all imports, predictions, and saved keys).
 
 Other environment variables: `PL_PORT` (default 7317), `PL_NO_OPEN=1` (don't open a browser), `PL_LOG_LEVEL` (`debug` for troubleshooting).
 
@@ -185,6 +185,8 @@ Other environment variables: `PL_PORT` (default 7317), `PL_NO_OPEN=1` (don't ope
 | `The installed yt-dlp is too old for this app` | A yt-dlp on PATH predates the `--js-runtimes` option. Update it, or install the app-managed copy (Setup → YouTube) which takes precedence over PATH. |
 | YouTube import worked yesterday, fails today with an odd error | YouTube changed something. **Update yt-dlp** first; check github.com/yt-dlp/yt-dlp/issues if it still fails. |
 | Imported YouTube transcript has garbled names or numbers | It came from auto-generated captions (source chip *auto captions*). Click **Re-transcribe** to download the audio and use your own engine, or set *Captions to accept* to *creator only*. |
+| A job fails with `The model did not answer within 120 s` | The provider or local model is overloaded or the window is too long for it. Retry from the Jobs tab; for LM Studio use a smaller model or wait for it to finish loading. |
+| A job fails with `HTTP 429` after several tries | The provider's rate limit. Lower *Requests per minute* in Setup → Limits and retry; the app already waits for `Retry-After`. |
 | `yt-dlp` install fails with `Checksum mismatch` | The download was corrupted or tampered with; nothing was installed. Retry; if it repeats, download `yt-dlp` manually from the official release and set `PL_YTDLP_PATH`. |
 | `Secret key file … is corrupt` | `secret.key` was altered. Delete it; re-enter API keys in Setup. |
 | Dashboard shows old UI after upgrading | Run `npm run build` again; hard-refresh the browser. |

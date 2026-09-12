@@ -131,7 +131,7 @@ As built in 0.4: a banner above the import cards appears only when `GET /api/med
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 6. Jobs (Release 0.4)
+## 6. Jobs (Release 0.4; Retry added in 0.6 for failed/cancelled rows; Setup gains a Backups section with "Back up now" and the ten most recent backups)
 
 ```
 ┌─ Background Jobs ─────────────────────────────────────────────────────────────┐

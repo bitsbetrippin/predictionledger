@@ -10,7 +10,7 @@
  */
 import { useEffect, useState } from "react";
 import type { AnalysisStage, AppSettings, JobSummary, LlmProviderId, MediaStatus, ModelInfo, ProviderTestResult, ToolsStatus } from "@prediction-ledger/shared";
-import { api, content, media, pollJob, toPayload, youtube, type SecretUpdates } from "../api";
+import { api, backups, content, media, pollJob, toPayload, youtube, type BackupInfo, type SecretUpdates } from "../api";
 import type { PromptTemplateInfo } from "@prediction-ledger/shared";
 
 const PROVIDER_LABELS: Record<LlmProviderId, string> = {
@@ -34,6 +34,20 @@ export function SetupPage() {
   const [saving, setSaving] = useState(false);
   const [mediaStatus, setMediaStatus] = useState<MediaStatus | null | "checking">(null);
   const checkMedia = () => { setMediaStatus("checking"); media.status().then(setMediaStatus).catch(() => setMediaStatus(null)); };
+  const [backupList, setBackupList] = useState<BackupInfo[] | null>(null);
+  const [backupMsg, setBackupMsg] = useState<string | null>(null);
+  const loadBackups = () => backups.list().then(setBackupList).catch(() => setBackupList(null));
+  useEffect(() => { void loadBackups(); }, []);
+  const backupNow = async () => {
+    setBackupMsg(null);
+    try {
+      const b = await backups.create();
+      setBackupMsg(`Backup written: ${b.file} (${(b.bytes / 1024).toFixed(0)} KB${b.hasSecretKey ? ", secret key copied alongside" : ""}).`);
+      await loadBackups();
+    } catch (e) {
+      setBackupMsg((e as Error).message);
+    }
+  };
   const [tools, setTools] = useState<ToolsStatus | null>(null);
   const [installing, setInstalling] = useState<JobSummary | null>(null);
   const [toolMsg, setToolMsg] = useState<string | null>(null);
@@ -312,6 +326,28 @@ export function SetupPage() {
         </div>
         {toolMsg && <div className="banner" role="status">{toolMsg}</div>}
         <small className="muted">The binary is downloaded from github.com/yt-dlp/yt-dlp (official release), verified against its SHA-256 list, and stored in your data directory's <code>tools/</code> folder. Set <code>PL_YTDLP_PATH</code> to use your own copy instead.</small>
+      </fieldset>
+
+      <h2>Backups</h2>
+      <fieldset className="card">
+        <p className="muted">Writes a consistent copy of the database (videos, transcripts, predictions, plans, evidence, verdicts, settings) and the secret key into the data directory's <code>backups/</code> folder while the app runs. Media files are not included — they can be re-imported. To restore: stop Prediction Ledger, copy the <code>.db</code> over <code>prediction-ledger.db</code> (and the <code>.secret.key</code> over <code>secret.key</code>), start again.</p>
+        <div className="row">
+          <button type="button" onClick={backupNow}>Back up now</button>
+          <small className="muted">Also: <code>npm run backup</code> from a terminal. Backups are also taken automatically before every database migration.</small>
+        </div>
+        {backupMsg && <div className="banner" role="status">{backupMsg}</div>}
+        {backupList && backupList.length > 0 && (
+          <div className="table-wrap">
+            <table className="table">
+              <thead><tr><th>File</th><th>Kind</th><th>Size</th><th>Created</th><th>Key</th></tr></thead>
+              <tbody>
+                {backupList.slice(0, 10).map((b) => (
+                  <tr key={b.file}><td><code>{b.file}</code></td><td>{b.kind}</td><td>{(b.bytes / 1024).toFixed(0)} KB</td><td>{b.createdAt.slice(0, 19).replace("T", " ")}</td><td>{b.hasSecretKey ? "✓" : "—"}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </fieldset>
 
       <h2>Web search (for outcome research)</h2>

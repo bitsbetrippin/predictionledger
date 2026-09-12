@@ -1,0 +1,53 @@
+# Prediction Ledger — cross-provider prompt evaluation suite (Release 0.6; executed with thresholds in 1.0).
+# Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
+# Licensed under the Apache License 2.0 — see LICENSE and NOTICE in the repository root.
+#
+# Run (needs `npm run build` first so evals can import the built prompt templates and windowing code):
+#   ANTHROPIC_API_KEY=… OPENAI_API_KEY=… npm run eval
+# Select providers with --filter-providers, e.g. `npx promptfoo eval -c evals/promptfooconfig.yaml --filter-providers anthropic`.
+# The LM Studio provider expects a model loaded at http://127.0.0.1:1234/v1 (set LMSTUDIO_MODEL).
+#
+# What this measures: does the EXTRACTION prompt, on a real model, produce the predictions the labelled
+# fixtures say it must (quote verbatim, modality preserved, no invented deadlines) and none it must not.
+# Plan-generation and assessment cases follow the same pattern once the fixture set grows (see evals/README.md).
+
+description: "Prediction Ledger — extraction prompt across providers on labelled fixtures"
+
+prompts:
+  - file://prompts/extraction.mjs
+
+providers:
+  - id: anthropic:messages:claude-sonnet-5
+    label: anthropic
+    config:
+      temperature: 0.1
+      max_tokens: 8192
+  - id: openai:chat:gpt-5.6-terra
+    label: openai
+    config:
+      temperature: 0.1
+      response_format: { type: json_object }
+  - id: openai:chat:${LMSTUDIO_MODEL:-local-model}
+    label: lmstudio
+    config:
+      apiBaseUrl: http://127.0.0.1:1234/v1
+      apiKey: lm-studio
+      temperature: 0.1
+
+defaultTest:
+  assert:
+    - type: is-json
+    - type: javascript
+      value: file://assertions/extraction.mjs
+
+tests:
+  - description: "worked example (53 s, one window)"
+    vars: { fixture: data-center-approvals, window: 0 }
+  - description: "no predictions (35 s)"
+    vars: { fixture: no-predictions, window: 0 }
+  - description: "30-minute outlook, window 1 (0–720 s: P1, P2, truncated P3)"
+    vars: { fixture: energy-outlook-30min, window: 0 }
+  - description: "30-minute outlook, window 2 (604–1330 s: P3 complete, P4, P5)"
+    vars: { fixture: energy-outlook-30min, window: 1 }
+  - description: "30-minute outlook, window 3 (1210–1800 s: P7, repeated P1; governor quote must NOT be extracted)"
+    vars: { fixture: energy-outlook-30min, window: 2 }

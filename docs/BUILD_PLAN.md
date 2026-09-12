@@ -29,7 +29,8 @@ gantt
   section Milestone 4
   0.5 YouTube ingestion + recovery paths      :done, r05, after r04, 1
   section Milestone 5
-  1.0 Cross-provider evals, hardening, docs   :r10, after r05, 1
+  0.6 Eval harness + hardening part 1         :done, r06, after r05, 1
+  1.0 Verification, evals executed, MVP       :r10, after r06, 1
 ```
 
 | Release | Theme | User can… | Depends on |
@@ -39,6 +40,7 @@ gantt
 | **0.3** | Milestone 2 — Research & verdicts | Run real web research against a plan, see stored evidence with citations, get a two-field verdict (evidence assessment + time status), recheck to create a new version, export JSON/CSV. | 0.2 |
 | **0.4** | Milestone 3 — Local video | Drag-drop an MP4/MPEG, get audio extracted and transcribed locally (Whisper) or via OpenAI, watch chunked progress, read a timestamped transcript on the video page. | 0.1 (+0.2 to analyse it) |
 | **0.5** | Milestone 4 — YouTube | Paste a URL: captions first, audio download + transcription second, transcript import as the documented fallback; clear errors for unavailable content. | 0.4 |
+| **0.6** | Milestone 5a — Evals + hardening | 30-minute labelled fixture and pipeline tests, Promptfoo suite, provider timeouts/backoff, job retry, backups, release scaffolding. | 0.5 |
 | **1.0** | Milestone 5 — MVP | Promptfoo regression suite over labeled fixtures, restart/cancel/rate-limit hardening, Windows and macOS verified, troubleshooting docs, tagged release. | 0.5 |
 
 Post-MVP candidates (not scheduled): whisper.cpp engine, OS-keychain secrets, SSE live progress, desktop shell (Tauri), live broadcast ingestion, multi-language UI.
@@ -318,17 +320,41 @@ IDs are stable; wording may be refined. "Rel." is the release that first satisfi
 
 ---
 
-## 8. Release 1.0 — Milestone 5: cross-provider evaluation, hardening, MVP
+## 8. Release 0.6 — Milestone 5a: evaluation harness and hardening, part 1 (delivered)
+
+The 1.0 backlog split in two: 0.6 is everything that could be built and verified without a machine that has network and Windows/macOS; 1.0 (§9) is what needs your machine.
+
+| Item | Req. | Agent | Done |
+|---|---|---|---|
+| Fixture B1: synthetic, labelled 30-minute transcript with 6 planted predictions (repeat, hedge, boundary-spanning, compound, no-deadline, quotation-of-another) + canned per-window replies | — | AG-14 | ✓ (`fixtures/transcripts/energy-outlook-30min.*`) |
+| Pipeline test for B1/B2: 3 windows, boundary quote stored once with the full text, repeated statement = one row + two occurrences, empty result is not a failure, 401 fails with the provider's message and is not retried, retry re-runs the job | PX-*, MVP acceptance | AG-14 | ✓ |
+| Dedupe: containment merge for quotes truncated at a window edge | PX-07 | AG-05 | ✓ |
+| Date resolver: "by the end of next year/month" → period end | PX-05 | AG-05 | ✓ |
+| Provider-call resilience: 120 s per-try timeout, 3 tries with backoff for 429/5xx/network honouring `Retry-After`, 401/403 never retried | PS-03, PS-04 | AG-13 | ✓ (unit-tested; every model call goes through it) |
+| Job retry (API + Jobs tab) | PS-03 | AG-05 + AG-10 | ✓ |
+| Backups: `VACUUM INTO` copy + secret key; API, Setup section, `npm run backup`; restore documented | PS-03 | AG-11 | ✓ |
+| Promptfoo suite rendering the app's built prompts; assertion scoring against `expected.json`; `npm run eval` | — | AG-14 | ✓ authored — **not executed** (needs provider keys + network) |
+| Release scaffolding: `CHANGELOG.md`, issue/PR templates, `docs/VERIFICATION.md` matrix | — | AG-16 | ✓ |
+| `npm run setup` messaging for external tools | RT-05 | AG-06 | ✓ |
+
+**Verification status (2026-09-12).** 43/43 tests in the cloud sandbox (Node 22.22). Not executed: Promptfoo with any real provider, `npm install`/`build`/`start`, Windows/macOS — see `docs/VERIFICATION.md`.
+
+---
+
+## 9. Release 1.0 — Milestone 5b: verification, evals executed, MVP
 
 | Item | Req. | Agent |
 |---|---|---|
-| Promptfoo suite: extraction, plan generation, assessment over labeled fixtures across Anthropic, OpenAI, and one local model; thresholds recorded | — | AG-14 |
-| Hardening: rate-limit backoff, provider timeouts, cancellation everywhere, log rotation, backup/restore commands | PS-03, PS-04 | AG-05 |
-| Security pass: dependency audit, fetch guard tests, upload fuzzing, secrets-in-logs scan | SC-* | AG-15 |
-| Windows and macOS verification matrix executed and recorded (`docs/VERIFICATION.md`) | RT-01 | AG-08, AG-09, AG-14 |
+| First real run on Carter's machine: `npm run setup` / `test` / `start`; fix whatever the first compile of Fastify/Zod/React code surfaces | RT-01 | AG-05, AG-06 |
+| Spikes S-3 (Whisper throughput, default model) and S-4 (real yt-dlp, `--js-runtimes node`, installer path) | IN-03, IN-07 | AG-13 |
+| Promptfoo suite executed on Anthropic, OpenAI, and one LM Studio model; scores recorded in `docs/VERIFICATION.md`; defaults adjusted; plan/assessment eval cases added | — | AG-14 |
+| Security pass: `npm audit`, upload fuzzing, secrets-in-logs scan on a real run, fetch-guard re-review | SC-* | AG-15 |
+| Readability spike (ADR-014) and optional Drizzle/AI SDK spikes (ADR-012) — adopt only if they reduce code | RS-03 | AG-11/AG-13 |
+| Whisper model download progress UI | RT-05 | AG-10 |
+| Windows and macOS verification matrix executed and recorded | RT-01 | AG-08, AG-09, AG-14 |
 | README/SETUP/TROUBLESHOOTING final pass; release notes; `v1.0.0` tag | — | AG-16 |
 
-**MVP acceptance (cumulative).** All 0.1–0.5 criteria plus: invalid-credential handling at every stage (job fails with the provider's message, never silent); local-model-only operation for extraction, plans, and assessment; malformed output handling at every model call; restart recovery for every job kind.
+**MVP acceptance (cumulative).** All 0.1–0.6 criteria plus: invalid-credential handling at every stage (verified at extraction in 0.6; plan/research/assessment share the same call path), local-model-only operation for extraction, plans, and assessment (verified with the fake local provider), malformed output handling at every model call, restart recovery for every job kind, and the eval thresholds met by at least one cloud and one local model.
 
 ---
 

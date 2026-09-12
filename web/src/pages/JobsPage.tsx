@@ -22,7 +22,7 @@ export function JobsPage() {
   return (
     <section className="page">
       <h1>Background Jobs</h1>
-      <p className="muted">Durable queue: jobs survive restarts; interrupted ones resume automatically. Newest first.</p>
+      <p className="muted">Durable queue: jobs survive restarts; interrupted ones resume automatically. Failed or cancelled jobs can be retried as a new run. Newest first.</p>
       {error && <div className="banner error">{error}</div>}
       {jobs === null ? <p className="muted">Loading…</p> : jobs.length === 0 ? (
         <div className="empty-state"><p className="muted">No jobs yet. Extraction and plan generation will appear here.</p></div>
@@ -39,7 +39,10 @@ export function JobsPage() {
                   <td className={j.status === "failed" ? "result error" : j.status === "completed" ? "result ok" : ""}>{j.status}{j.error ? <div className="small" title={j.error}>{j.error.slice(0, 140)}</div> : null}</td>
                   <td>{j.attempts}/{j.maxAttempts}</td>
                   <td className="small">{(j.startedAt ?? j.createdAt).slice(0, 19).replace("T", " ")}</td>
-                  <td>{(j.status === "queued" || j.status === "running") && <button type="button" onClick={() => content.cancelJob(j.id)}>Cancel</button>}</td>
+                  <td className="row-actions">
+                    {(j.status === "queued" || j.status === "running") && <button type="button" onClick={() => content.cancelJob(j.id).catch((e: Error) => setError(e.message))}>Cancel</button>}
+                    {(j.status === "failed" || j.status === "cancelled") && <button type="button" onClick={() => content.retryJob(j.id).catch((e: Error) => setError(e.message))}>Retry</button>}
+                  </td>
                 </tr>
               ))}
             </tbody>

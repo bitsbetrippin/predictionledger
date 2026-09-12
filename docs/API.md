@@ -92,6 +92,16 @@ Base URL `http://127.0.0.1:7317`. JSON in/out. Every `POST`/`PUT`/`PATCH`/`DELET
 
 `VideoSummary` gains `youtubeId`, `channel`, `transcriptSource` (`captions-manual | captions-auto | transcribed | imported`). Segment `engine` for captions is `youtube-captions:<manual|auto>:<lang>`.
 
+## Release 0.6
+
+| Method | Path | Body / notes |
+|---|---|---|
+| POST | `/api/jobs/:id/retry` | Re-runs a **failed or cancelled** job as a new job with the same kind, subject, payload, and dedupe key → `202 JobSummary` (the new job). `409 not_retryable` otherwise. |
+| GET | `/api/backups` | `BackupInfo[]` newest first: `{ file, bytes, createdAt, kind: "manual"\|"pre-migration", hasSecretKey }`. |
+| POST | `/api/backups` | Writes `<data>/backups/manual-<timestamp>.db` with `VACUUM INTO` (consistent while running) and copies `secret.key` alongside → `201 BackupInfo`. |
+
+Provider calls made by every job now go through a resilience wrapper: 120 s per-try timeout, up to 3 tries with backoff (1 s, 4 s, capped 30 s; `Retry-After` honoured) for HTTP 408/429/5xx and network errors; HTTP 401/403 fail at once with the provider's message. Job errors read e.g. `Anthropic request failed: HTTP 401 …` or `The model did not answer within 120 s …`.
+
 ## Job kinds and payloads
 
 | Kind | Payload | Subject | Result |

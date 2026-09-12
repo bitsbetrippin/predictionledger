@@ -13,6 +13,8 @@ import type { ModelInfo, ProviderTestResult } from "@prediction-ledger/shared";
 import {
   describeHttpFailure,
   describeNetworkFailure,
+  ProviderHttpError,
+  parseRetryAfter,
   type CompletionRequest,
   type CompletionResult,
   type LanguageModelProvider,
@@ -96,7 +98,7 @@ export class AnthropicProvider implements LanguageModelProvider {
       signal: req.signal,
     });
     if (!res.ok) {
-      throw new Error(`Anthropic request failed: HTTP ${res.status} ${(await res.text()).slice(0, 300)}`);
+      throw new ProviderHttpError("Anthropic", res.status, await res.text(), parseRetryAfter(res.headers.get("retry-after")));
     }
     const json = (await res.json()) as {
       model?: string;

@@ -41,7 +41,7 @@ export function resolveDeadline(timeExpression: string | undefined, madeOnDate: 
     if (!madeOnDate) {
       return { basis: "unresolved", note: `Relative expression "${timeExpression}" needs the statement date, which is unknown.` };
     }
-    return { deadlineDate: addPeriod(madeOnDate, rel.amount, rel.unit), basis: "rule:relative" };
+    return { deadlineDate: addPeriod(madeOnDate, rel.amount, rel.unit, rel.endOf), basis: "rule:relative" };
   }
 
   if (modelDeadline && isIso(modelDeadline)) return { deadlineDate: modelDeadline, basis: "model", note: "Rule-based parser could not resolve the expression; using the model's proposed date." };
@@ -52,7 +52,10 @@ export function resolveDeadline(timeExpression: string | undefined, madeOnDate: 
 
 type Unit = "day" | "week" | "month" | "year" | "decade";
 
-function parseRelative(expr: string): { amount: number; unit: Unit } | undefined {
+function parseRelative(expr: string): { amount: number; unit: Unit; endOf?: boolean } | undefined {
+  // "by the end of next year" / "end of next month" → last day of that period (not statement date + 1 year)
+  const endNext = /\bend of (?:the )?next (year|month)\b/.exec(expr);
+  if (endNext) return { amount: 1, unit: endNext[1] as Unit, endOf: true };
   // "within two years", "in 18 months", "over the next 5 years", "in the next couple of years", "a year from now"
   const m = /(?:within|in|over|during|inside|next|coming)?(?: the)?(?: next| coming)? ?(a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|couple(?: of)?|few|half a|\d+(?:\.\d+)?) ?(day|week|month|year|decade)s?/.exec(expr);
   if (m) {
@@ -67,11 +70,16 @@ function parseRelative(expr: string): { amount: number; unit: Unit } | undefined
   return undefined;
 }
 
-/** madeOn + amount units. amount 0 with year/month = end of that period. */
-function addPeriod(madeOn: string, amount: number, unit: Unit): string {
+/** madeOn + amount units. amount 0 (or endOf) with year/month = end of that period. */
+function addPeriod(madeOn: string, amount: number, unit: Unit, endOf = false): string {
   const d = parseIso(madeOn);
-  if (amount === 0 && unit === "year") return `${d.y}-12-31`;
-  if (amount === 0 && unit === "month") return endOfMonth(d.y, d.m);
+  if ((amount === 0 || endOf) && unit === "year") return `${d.y + amount}-12-31`;
+  if ((amount === 0 || endOf) && unit === "month") {
+    let y = d.y;
+    let mo = d.m + amount;
+    while (mo > 12) { mo -= 12; y++; }
+    return endOfMonth(y, mo);
+  }
   const months = unit === "year" ? amount * 12 : unit === "decade" ? amount * 120 : unit === "month" ? amount : 0;
   const days = unit === "week" ? amount * 7 : unit === "day" ? amount : 0;
   let y = d.y;

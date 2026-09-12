@@ -1,0 +1,620 @@
+1
+00:00:00,000 --> 00:00:12,000
+Welcome back to the channel, this is the Q1 energy and infrastructure outlook.
+
+2
+00:00:12,000 --> 00:00:24,000
+Before we get into it, a quick reminder that none of this is financial advice.
+
+3
+00:00:24,000 --> 00:00:36,000
+Last quarter we talked about interconnect queues and I got a lot of questions about that.
+
+4
+00:00:36,000 --> 00:00:48,000
+So let's start with what actually happened, then I'll get into where I think it goes.
+
+5
+00:00:48,000 --> 00:01:00,000
+The utility published its integrated resource plan in February and it runs to four hundred pages.
+
+6
+00:01:00,000 --> 00:01:12,000
+I read the whole thing so you don't have to, and the short version is: more gas, later coal retirements.
+
+7
+00:01:12,000 --> 00:01:24,000
+The interesting part is the load forecast, which they revised up for the third year running.
+
+8
+00:01:24,000 --> 00:01:35,000
+Most of that revision is attributed to large loads, which is their polite term for data centers.
+
+9
+00:01:35,000 --> 00:01:47,000
+Here's my first call for the year: by the end of next year, Illinois regulators will approve at least two new gigawatt-scale data center campuses.
+
+10
+00:01:47,000 --> 00:01:59,000
+Now, the county side. Three rezoning cases came up in the winter and two of them were tabled.
+
+11
+00:01:59,000 --> 00:02:11,000
+One of them was in the same township we covered in the November episode.
+
+12
+00:02:11,000 --> 00:02:23,000
+Neighbors showed up with the noise study from the site two counties over, and that carried the room.
+
+13
+00:02:23,000 --> 00:02:35,000
+I'm not going to relitigate that here; you can watch the November episode if you want the detail.
+
+14
+00:02:35,000 --> 00:02:47,000
+Let's look at the mining side, because hashprice has been ugly for six months.
+
+15
+00:02:47,000 --> 00:02:59,000
+Difficulty adjusted up again, and the miners with the oldest fleets are the ones feeling it.
+
+16
+00:02:59,000 --> 00:03:11,000
+I talked to two operators last week and both are running curtailment programs they didn't have last year.
+
+17
+00:03:11,000 --> 00:03:23,000
+Curtailment revenue is real money now, and that changes the math on where you site a facility.
+
+18
+00:03:23,000 --> 00:03:35,000
+Okay, the transmission piece. The regional operator approved the capacity auction results in December.
+
+19
+00:03:35,000 --> 00:03:47,000
+Prices cleared much higher than the previous auction, which everyone expected after last year's numbers.
+
+20
+00:03:47,000 --> 00:03:59,000
+The part that surprised me was how much of that is being passed straight through to industrial customers.
+
+21
+00:03:59,000 --> 00:04:11,000
+If you're an industrial customer on a demand charge, your bill looks very different than it did two years ago.
+
+22
+00:04:11,000 --> 00:04:23,000
+Let me pull up the chart. This is the capacity price series going back a decade.
+
+23
+00:04:23,000 --> 00:04:35,000
+You can see the step change; that's not a trend line, that's a regime change.
+
+24
+00:04:35,000 --> 00:04:47,000
+A viewer asked whether I think the auction rules get reformed. I don't know, and I'm not going to pretend I do.
+
+25
+00:04:47,000 --> 00:04:59,000
+What I can tell you is that the stakeholder process is scheduled to run through the summer.
+
+26
+00:04:59,000 --> 00:05:11,000
+Now, water. This came up in three of the county hearings and it did not come up at all two years ago.
+
+27
+00:05:11,000 --> 00:05:23,000
+The proposals I've seen are mostly about disclosure, not limits, at least so far.
+
+28
+00:05:23,000 --> 00:05:35,000
+Moving to the state house. There were four bills filed this session that touch large loads.
+
+29
+00:05:35,000 --> 00:05:47,000
+Two of them are essentially the same bill filed in both chambers, so call it three real proposals.
+
+30
+00:05:47,000 --> 00:05:59,000
+One of them would create a separate rate class for facilities above a certain size.
+
+31
+00:05:59,000 --> 00:06:11,000
+Another would require a study before any new interconnect above a size threshold is approved.
+
+32
+00:06:11,000 --> 00:06:23,000
+None of them have had a committee hearing yet, and the session calendar is short this year.
+
+33
+00:06:23,000 --> 00:06:35,000
+For background, this is the same committee that killed a similar bill in 2024 without a vote.
+
+34
+00:06:35,000 --> 00:06:40,000
+Alright, the federal piece is short because not much moved this quarter.
+
+35
+00:06:40,000 --> 00:06:52,000
+I'll be careful with this one. Hashprice might recover to eighty dollars a petahash within six months, if difficulty stalls.
+
+36
+00:06:52,000 --> 00:07:04,000
+There was an executive order in January about siting on federal land, and agencies are still writing guidance.
+
+37
+00:07:04,000 --> 00:07:16,000
+I'll cover that in detail when the guidance actually drops; speculating now isn't useful.
+
+38
+00:07:16,000 --> 00:07:28,000
+Back to the mining economics for a minute, because this is where most of you live.
+
+39
+00:07:28,000 --> 00:07:40,000
+Fleet efficiency is the whole game right now; if you're above thirty joules per terahash you're in trouble.
+
+40
+00:07:40,000 --> 00:07:52,000
+The secondary market for last-generation machines is flooded, and prices reflect that.
+
+41
+00:07:52,000 --> 00:08:04,000
+I've seen units go for less than the shipping cost, which tells you where the market is.
+
+42
+00:08:04,000 --> 00:08:16,000
+Somebody in the comments asked about immersion. Yes, it helps, but it doesn't fix an old fleet.
+
+43
+00:08:16,000 --> 00:08:28,000
+Let's talk about the campus we toured in the fall, because there's an update.
+
+44
+00:08:28,000 --> 00:08:40,000
+They finished the substation work and energized the first forty megawatts in January.
+
+45
+00:08:40,000 --> 00:08:52,000
+The second phase is waiting on transformers, which is the same story everywhere.
+
+46
+00:08:52,000 --> 00:09:04,000
+Transformer lead times are still measured in years, and that's the real bottleneck, not permits.
+
+47
+00:09:04,000 --> 00:09:16,000
+Question from the live chat: do I think the tariff changes affect transformer pricing? Probably, but I haven't seen numbers.
+
+48
+00:09:16,000 --> 00:09:28,000
+Okay, let me wrap the quarter with what I'm watching.
+
+49
+00:09:28,000 --> 00:09:40,000
+First, the committee calendar; if any of the large-load bills get a hearing, that's a signal.
+
+50
+00:09:40,000 --> 00:09:52,000
+Second, the guidance on federal siting, which I expect to be thin on specifics.
+
+51
+00:09:52,000 --> 00:10:04,000
+Third, whether the operators I talked to actually expand or just keep curtailing.
+
+52
+00:10:04,000 --> 00:10:16,000
+That's the outlook. Links to the resource plan and the auction results are in the description.
+
+53
+00:10:16,000 --> 00:10:28,000
+If you made it this far, thanks; the long episodes are the ones that get the least views and the most email.
+
+54
+00:10:28,000 --> 00:10:40,000
+I'll be back next month with the county hearing recap and, hopefully, some transformer news.
+
+55
+00:10:40,000 --> 00:10:52,000
+Welcome back to the channel, this is the Q1 energy and infrastructure outlook.
+
+56
+00:10:52,000 --> 00:11:04,000
+Before we get into it, a quick reminder that none of this is financial advice.
+
+57
+00:11:04,000 --> 00:11:16,000
+Last quarter we talked about interconnect queues and I got a lot of questions about that.
+
+58
+00:11:16,000 --> 00:11:28,000
+So let's start with what actually happened, then I'll get into where I think it goes.
+
+59
+00:11:28,000 --> 00:11:40,000
+The utility published its integrated resource plan in February and it runs to four hundred pages.
+
+60
+00:11:40,000 --> 00:11:52,000
+I read the whole thing so you don't have to, and the short version is: more gas, later coal retirements.
+
+61
+00:11:52,000 --> 00:11:54,000
+The interesting part is the load forecast, which they revised up for the third year running.
+
+62
+00:11:54,000 --> 00:12:00,000
+I'll say it plainly: within eighteen months the state legislature will pass
+
+63
+00:12:00,000 --> 00:12:06,000
+a moratorium on new crypto-mining interconnects above ten megawatts, and I think the utility will back it.
+
+64
+00:12:06,000 --> 00:12:18,000
+Most of that revision is attributed to large loads, which is their polite term for data centers.
+
+65
+00:12:18,000 --> 00:12:30,000
+Now, the county side. Three rezoning cases came up in the winter and two of them were tabled.
+
+66
+00:12:30,000 --> 00:12:42,000
+One of them was in the same township we covered in the November episode.
+
+67
+00:12:42,000 --> 00:12:54,000
+Neighbors showed up with the noise study from the site two counties over, and that carried the room.
+
+68
+00:12:54,000 --> 00:13:06,000
+I'm not going to relitigate that here; you can watch the November episode if you want the detail.
+
+69
+00:13:06,000 --> 00:13:18,000
+Let's look at the mining side, because hashprice has been ugly for six months.
+
+70
+00:13:18,000 --> 00:13:30,000
+Difficulty adjusted up again, and the miners with the oldest fleets are the ones feeling it.
+
+71
+00:13:30,000 --> 00:13:42,000
+I talked to two operators last week and both are running curtailment programs they didn't have last year.
+
+72
+00:13:42,000 --> 00:13:54,000
+Curtailment revenue is real money now, and that changes the math on where you site a facility.
+
+73
+00:13:54,000 --> 00:14:06,000
+Okay, the transmission piece. The regional operator approved the capacity auction results in December.
+
+74
+00:14:06,000 --> 00:14:18,000
+Prices cleared much higher than the previous auction, which everyone expected after last year's numbers.
+
+75
+00:14:18,000 --> 00:14:30,000
+The part that surprised me was how much of that is being passed straight through to industrial customers.
+
+76
+00:14:30,000 --> 00:14:42,000
+If you're an industrial customer on a demand charge, your bill looks very different than it did two years ago.
+
+77
+00:14:42,000 --> 00:14:54,000
+Let me pull up the chart. This is the capacity price series going back a decade.
+
+78
+00:14:54,000 --> 00:15:06,000
+You can see the step change; that's not a trend line, that's a regime change.
+
+79
+00:15:06,000 --> 00:15:18,000
+A viewer asked whether I think the auction rules get reformed. I don't know, and I'm not going to pretend I do.
+
+80
+00:15:18,000 --> 00:15:30,000
+What I can tell you is that the stakeholder process is scheduled to run through the summer.
+
+81
+00:15:30,000 --> 00:15:42,000
+Now, water. This came up in three of the county hearings and it did not come up at all two years ago.
+
+82
+00:15:42,000 --> 00:15:54,000
+The proposals I've seen are mostly about disclosure, not limits, at least so far.
+
+83
+00:15:54,000 --> 00:16:06,000
+Moving to the state house. There were four bills filed this session that touch large loads.
+
+84
+00:16:06,000 --> 00:16:18,000
+Two of them are essentially the same bill filed in both chambers, so call it three real proposals.
+
+85
+00:16:18,000 --> 00:16:30,000
+One of them would create a separate rate class for facilities above a certain size.
+
+86
+00:16:30,000 --> 00:16:40,000
+Another would require a study before any new interconnect above a size threshold is approved.
+
+87
+00:16:40,000 --> 00:16:52,000
+Over the next two years the utility will raise industrial rates by double digits and at least three large miners will leave the state because of it.
+
+88
+00:16:52,000 --> 00:17:04,000
+None of them have had a committee hearing yet, and the session calendar is short this year.
+
+89
+00:17:04,000 --> 00:17:16,000
+For background, this is the same committee that killed a similar bill in 2024 without a vote.
+
+90
+00:17:16,000 --> 00:17:28,000
+Alright, the federal piece is short because not much moved this quarter.
+
+91
+00:17:28,000 --> 00:17:40,000
+There was an executive order in January about siting on federal land, and agencies are still writing guidance.
+
+92
+00:17:40,000 --> 00:17:52,000
+I'll cover that in detail when the guidance actually drops; speculating now isn't useful.
+
+93
+00:17:52,000 --> 00:18:04,000
+Back to the mining economics for a minute, because this is where most of you live.
+
+94
+00:18:04,000 --> 00:18:16,000
+Fleet efficiency is the whole game right now; if you're above thirty joules per terahash you're in trouble.
+
+95
+00:18:16,000 --> 00:18:28,000
+The secondary market for last-generation machines is flooded, and prices reflect that.
+
+96
+00:18:28,000 --> 00:18:40,000
+I've seen units go for less than the shipping cost, which tells you where the market is.
+
+97
+00:18:40,000 --> 00:18:52,000
+Somebody in the comments asked about immersion. Yes, it helps, but it doesn't fix an old fleet.
+
+98
+00:18:52,000 --> 00:19:04,000
+Let's talk about the campus we toured in the fall, because there's an update.
+
+99
+00:19:04,000 --> 00:19:10,000
+They finished the substation work and energized the first forty megawatts in January.
+
+100
+00:19:10,000 --> 00:19:22,000
+Eventually, every county in the region will require water-use disclosures for any facility over five megawatts.
+
+101
+00:19:22,000 --> 00:19:34,000
+The second phase is waiting on transformers, which is the same story everywhere.
+
+102
+00:19:34,000 --> 00:19:46,000
+Transformer lead times are still measured in years, and that's the real bottleneck, not permits.
+
+103
+00:19:46,000 --> 00:19:58,000
+Question from the live chat: do I think the tariff changes affect transformer pricing? Probably, but I haven't seen numbers.
+
+104
+00:19:58,000 --> 00:20:10,000
+Okay, let me wrap the quarter with what I'm watching.
+
+105
+00:20:10,000 --> 00:20:22,000
+First, the committee calendar; if any of the large-load bills get a hearing, that's a signal.
+
+106
+00:20:22,000 --> 00:20:34,000
+Second, the guidance on federal siting, which I expect to be thin on specifics.
+
+107
+00:20:34,000 --> 00:20:46,000
+Third, whether the operators I talked to actually expand or just keep curtailing.
+
+108
+00:20:46,000 --> 00:20:58,000
+That's the outlook. Links to the resource plan and the auction results are in the description.
+
+109
+00:20:58,000 --> 00:21:10,000
+If you made it this far, thanks; the long episodes are the ones that get the least views and the most email.
+
+110
+00:21:10,000 --> 00:21:22,000
+I'll be back next month with the county hearing recap and, hopefully, some transformer news.
+
+111
+00:21:22,000 --> 00:21:34,000
+Welcome back to the channel, this is the Q1 energy and infrastructure outlook.
+
+112
+00:21:34,000 --> 00:21:46,000
+Before we get into it, a quick reminder that none of this is financial advice.
+
+113
+00:21:46,000 --> 00:21:58,000
+Last quarter we talked about interconnect queues and I got a lot of questions about that.
+
+114
+00:21:58,000 --> 00:22:10,000
+So let's start with what actually happened, then I'll get into where I think it goes.
+
+115
+00:22:10,000 --> 00:22:22,000
+The utility published its integrated resource plan in February and it runs to four hundred pages.
+
+116
+00:22:22,000 --> 00:22:34,000
+I read the whole thing so you don't have to, and the short version is: more gas, later coal retirements.
+
+117
+00:22:34,000 --> 00:22:46,000
+The interesting part is the load forecast, which they revised up for the third year running.
+
+118
+00:22:46,000 --> 00:22:58,000
+Most of that revision is attributed to large loads, which is their polite term for data centers.
+
+119
+00:22:58,000 --> 00:23:10,000
+Now, the county side. Three rezoning cases came up in the winter and two of them were tabled.
+
+120
+00:23:10,000 --> 00:23:20,000
+One of them was in the same township we covered in the November episode.
+
+121
+00:23:20,000 --> 00:23:32,000
+The governor said last week that he expects data center approvals to double, but that's his forecast, not mine.
+
+122
+00:23:32,000 --> 00:23:44,000
+Neighbors showed up with the noise study from the site two counties over, and that carried the room.
+
+123
+00:23:44,000 --> 00:23:56,000
+I'm not going to relitigate that here; you can watch the November episode if you want the detail.
+
+124
+00:23:56,000 --> 00:24:08,000
+Let's look at the mining side, because hashprice has been ugly for six months.
+
+125
+00:24:08,000 --> 00:24:20,000
+Difficulty adjusted up again, and the miners with the oldest fleets are the ones feeling it.
+
+126
+00:24:20,000 --> 00:24:32,000
+I talked to two operators last week and both are running curtailment programs they didn't have last year.
+
+127
+00:24:32,000 --> 00:24:44,000
+Curtailment revenue is real money now, and that changes the math on where you site a facility.
+
+128
+00:24:44,000 --> 00:24:56,000
+Okay, the transmission piece. The regional operator approved the capacity auction results in December.
+
+129
+00:24:56,000 --> 00:25:08,000
+Prices cleared much higher than the previous auction, which everyone expected after last year's numbers.
+
+130
+00:25:08,000 --> 00:25:20,000
+The part that surprised me was how much of that is being passed straight through to industrial customers.
+
+131
+00:25:20,000 --> 00:25:32,000
+If you're an industrial customer on a demand charge, your bill looks very different than it did two years ago.
+
+132
+00:25:32,000 --> 00:25:44,000
+Let me pull up the chart. This is the capacity price series going back a decade.
+
+133
+00:25:44,000 --> 00:25:56,000
+You can see the step change; that's not a trend line, that's a regime change.
+
+134
+00:25:56,000 --> 00:26:08,000
+A viewer asked whether I think the auction rules get reformed. I don't know, and I'm not going to pretend I do.
+
+135
+00:26:08,000 --> 00:26:20,000
+What I can tell you is that the stakeholder process is scheduled to run through the summer.
+
+136
+00:26:20,000 --> 00:26:32,000
+Now, water. This came up in three of the county hearings and it did not come up at all two years ago.
+
+137
+00:26:32,000 --> 00:26:40,000
+The proposals I've seen are mostly about disclosure, not limits, at least so far.
+
+138
+00:26:40,000 --> 00:26:52,000
+Bitcoin's network hashrate will exceed one thousand exahash before the next halving; the fleet math makes that almost mechanical.
+
+139
+00:26:52,000 --> 00:27:04,000
+Moving to the state house. There were four bills filed this session that touch large loads.
+
+140
+00:27:04,000 --> 00:27:16,000
+Two of them are essentially the same bill filed in both chambers, so call it three real proposals.
+
+141
+00:27:16,000 --> 00:27:28,000
+One of them would create a separate rate class for facilities above a certain size.
+
+142
+00:27:28,000 --> 00:27:40,000
+Another would require a study before any new interconnect above a size threshold is approved.
+
+143
+00:27:40,000 --> 00:27:52,000
+None of them have had a committee hearing yet, and the session calendar is short this year.
+
+144
+00:27:52,000 --> 00:28:04,000
+For background, this is the same committee that killed a similar bill in 2024 without a vote.
+
+145
+00:28:04,000 --> 00:28:16,000
+Alright, the federal piece is short because not much moved this quarter.
+
+146
+00:28:16,000 --> 00:28:20,000
+There was an executive order in January about siting on federal land, and agencies are still writing guidance.
+
+147
+00:28:20,000 --> 00:28:32,000
+And to repeat what I said at the top, because it matters: by the end of next year, Illinois regulators will approve at least two new gigawatt-scale data center campuses.
+
+148
+00:28:32,000 --> 00:28:44,000
+I'll cover that in detail when the guidance actually drops; speculating now isn't useful.
+
+149
+00:28:44,000 --> 00:28:56,000
+Back to the mining economics for a minute, because this is where most of you live.
+
+150
+00:28:56,000 --> 00:29:08,000
+Fleet efficiency is the whole game right now; if you're above thirty joules per terahash you're in trouble.
+
+151
+00:29:08,000 --> 00:29:20,000
+The secondary market for last-generation machines is flooded, and prices reflect that.
+
+152
+00:29:20,000 --> 00:29:32,000
+I've seen units go for less than the shipping cost, which tells you where the market is.
+
+153
+00:29:32,000 --> 00:29:44,000
+Somebody in the comments asked about immersion. Yes, it helps, but it doesn't fix an old fleet.
+
+154
+00:29:44,000 --> 00:29:56,000
+Let's talk about the campus we toured in the fall, because there's an update.
+
+155
+00:29:56,000 --> 00:30:00,000
+They finished the substation work and energized the first forty megawatts in January.
+

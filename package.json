@@ -1,10 +1,10 @@
 {
   "name": "prediction-ledger",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
-  "description": "Prediction Ledger — import a video, extract the predictions it makes, generate an inspectable validation plan, research what actually happened, and keep a ledger of the results. Runs entirely on localhost.",
+  "description": "Prediction Ledger \u2014 import a video, extract the predictions it makes, generate an inspectable validation plan, research what actually happened, and keep a ledger of the results. Runs entirely on localhost.",
   "license": "Apache-2.0",
-  "author": "Michael D. Carter (BitsBeTrippin) — original concept; built with Claude AI assistance",
+  "author": "Michael D. Carter (BitsBeTrippin) \u2014 original concept; built with Claude AI assistance",
   "repository": {
     "type": "git",
     "url": "https://github.com/bitsbetrippin/prediction-ledger"
@@ -25,7 +25,9 @@
     "dev": "node scripts/dev.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
-    "clean": "node scripts/clean.mjs"
+    "clean": "node scripts/clean.mjs",
+    "eval": "npx promptfoo@latest eval -c evals/promptfooconfig.yaml",
+    "backup": "node scripts/backup.mjs"
   },
   "devDependencies": {
     "typescript": "^5.6.0"

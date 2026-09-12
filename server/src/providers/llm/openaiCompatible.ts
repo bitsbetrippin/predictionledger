@@ -16,6 +16,8 @@ import type { LlmProviderId, ModelInfo, ProviderTestResult } from "@prediction-l
 import {
   describeHttpFailure,
   describeNetworkFailure,
+  ProviderHttpError,
+  parseRetryAfter,
   type CompletionRequest,
   type CompletionResult,
   type LanguageModelProvider,
@@ -105,7 +107,7 @@ export class OpenAiCompatibleProvider implements LanguageModelProvider {
       signal: req.signal,
     });
     if (!res.ok) {
-      throw new Error(`${this.displayName} chat request failed: HTTP ${res.status} ${(await res.text()).slice(0, 300)}`);
+      throw new ProviderHttpError(this.displayName, res.status, await res.text(), parseRetryAfter(res.headers.get("retry-after")));
     }
     const json = (await res.json()) as {
       model?: string;

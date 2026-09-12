@@ -1,0 +1,69 @@
+{
+  "_comment": "SYNTHETIC canned reply of the extraction model for fixtures/transcripts/energy-outlook-30min.srt window w3. Used by pipeline-30min.test.ts with a fake provider. Not a real model output.",
+  "predictions": [
+    {
+      "quote": "Bitcoin's network hashrate will exceed one thousand exahash before the next halving",
+      "speaker": "Host",
+      "normalized_statement": "Bitcoin's network hashrate will exceed 1,000 EH/s before the next halving.",
+      "modality": "will",
+      "entities": [
+        "Bitcoin network hashrate",
+        "Bitcoin halving"
+      ],
+      "topic": "bitcoin mining",
+      "geography": null,
+      "scope": "global Bitcoin network",
+      "conditions": [],
+      "thresholds": [
+        "network hashrate > 1000 EH/s"
+      ],
+      "time_expression": "before the next halving",
+      "proposed_deadline": null,
+      "ambiguities": [
+        "Halving date is not stated; approximately 2028 if the schedule holds"
+      ],
+      "confidence": 0.85,
+      "components": [
+        {
+          "kind": "future_claim",
+          "statement": "Network hashrate will exceed 1,000 EH/s before the next halving.",
+          "deadline": null,
+          "notes": null
+        }
+      ]
+    },
+    {
+      "quote": "by the end of next year, Illinois regulators will approve at least two new gigawatt-scale data center campuses",
+      "speaker": "Host",
+      "normalized_statement": "By the end of the year after the statement, Illinois regulators will have approved at least two new gigawatt-scale data center campuses.",
+      "modality": "will",
+      "entities": [
+        "Illinois regulators",
+        "data center campuses"
+      ],
+      "topic": "data center permitting",
+      "geography": "Illinois",
+      "scope": "gigawatt-scale campuses in Illinois",
+      "conditions": [],
+      "thresholds": [
+        "approved gigawatt-scale campuses >= 2 campuses"
+      ],
+      "time_expression": "by the end of next year",
+      "proposed_deadline": "2027-12-31",
+      "ambiguities": [
+        "\"Regulators\" is unspecified (ICC? counties? state siting board?)",
+        "\"Gigawatt-scale\" has no stated threshold"
+      ],
+      "confidence": 0.9,
+      "components": [
+        {
+          "kind": "future_claim",
+          "statement": "At least two new gigawatt-scale data center campuses will be approved in Illinois by the end of next year.",
+          "deadline": "2027-12-31",
+          "notes": null
+        }
+      ]
+    }
+  ],
+  "notes": "The governor's forecast at ~23:20 is a quotation of someone else's view and was not extracted. The closing statement repeats the opening call."
+}

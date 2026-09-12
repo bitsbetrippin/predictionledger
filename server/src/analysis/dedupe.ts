@@ -57,8 +57,21 @@ function score(c: DedupeCandidate<unknown>): number {
 }
 
 function isSame(a: DedupeCandidate<unknown>, b: DedupeCandidate<unknown>, threshold: number): boolean {
-  if (spansOverlap(a, b) && jaccard(a.quote, b.quote) >= 0.5) return true;
+  // Same place in the video and clearly the same words — including a quote cut short at a window edge
+  // whose tokens are all contained in the fuller quote from the next window (Release 0.6, fixture B1).
+  if (spansOverlap(a, b) && (jaccard(a.quote, b.quote) >= 0.5 || containment(a.quote, b.quote) >= 0.9)) return true;
   return jaccard(a.normalizedStatement, b.normalizedStatement) >= threshold || jaccard(a.quote, b.quote) >= 0.9;
+}
+
+/** Share of the shorter quote's tokens that also appear in the longer one. */
+export function containment(a: string, b: string): number {
+  const ta = tokens(a);
+  const tb = tokens(b);
+  const [small, big] = ta.size <= tb.size ? [ta, tb] : [tb, ta];
+  if (small.size < 4) return 0;
+  let inter = 0;
+  for (const t of small) if (big.has(t)) inter++;
+  return inter / small.size;
 }
 
 function spansOverlap(a: { startS?: number; endS?: number }, b: { startS?: number; endS?: number }): boolean {

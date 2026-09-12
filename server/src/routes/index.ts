@@ -13,6 +13,7 @@ import { z } from "zod";
 import type { HealthResponse, LlmProviderId, ProviderTestResult } from "@prediction-ledger/shared";
 import { APP_VERSION } from "../config.js";
 import type { AppContext } from "../context.js";
+import { createBackup, listBackups } from "../services/backup.js";
 import { getLlmProvider } from "../providers/llm/registry.js";
 import { persistedSettingsSchema, SECRET_NAMES } from "../settings.js";
 
@@ -111,12 +112,22 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   });
 
   // ---- Jobs ---------------------------------------------------------------
+  // Backups (Release 0.6): consistent copy of the live database + secret key into <data>/backups.
+  app.get("/api/backups", async () => listBackups(ctx.paths.backups));
+  app.post("/api/backups", async (_req, reply) => reply.code(201).send(createBackup(ctx.db, ctx.paths)));
+
   app.get("/api/jobs", async () => ctx.jobs.list());
 
   app.get<{ Params: { id: string } }>("/api/jobs/:id", async (req, reply) => {
     const job = ctx.jobs.get(req.params.id);
     if (!job) return reply.code(404).send({ error: "not_found" });
     return job;
+  });
+
+  app.post<{ Params: { id: string } }>("/api/jobs/:id/retry", async (req, reply) => {
+    const newId = ctx.jobs.retry(req.params.id);
+    if (!newId) return reply.code(409).send({ error: "not_retryable", message: "Only failed or cancelled jobs can be retried." });
+    return reply.code(202).send(ctx.jobs.get(newId));
   });
 
   app.post<{ Params: { id: string } }>("/api/jobs/:id/cancel", async (req, reply) => {

@@ -114,6 +114,8 @@ test("dates: relative expressions resolve from the statement date, never invente
   assert.equal(resolveDeadline("over the next couple of years", "2026-02-28").deadlineDate, "2028-02-28");
   assert.equal(resolveDeadline("by the end of the year", "2026-03-01").deadlineDate, "2026-12-31");
   assert.equal(resolveDeadline("next year", "2026-03-01").deadlineDate, "2027-03-01");
+  assert.equal(resolveDeadline("by the end of next year", "2026-03-10").deadlineDate, "2027-12-31");
+  assert.equal(resolveDeadline("by the end of next month", "2026-12-10").deadlineDate, "2027-01-31");
   const unknown = resolveDeadline("within two years", undefined);
   assert.equal(unknown.basis, "unresolved");
   assert.equal(unknown.deadlineDate, undefined);

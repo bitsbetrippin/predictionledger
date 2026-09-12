@@ -1,0 +1,123 @@
+{
+  "_comment": "SYNTHETIC canned reply of the extraction model for fixtures/transcripts/energy-outlook-30min.srt window w2. Used by pipeline-30min.test.ts with a fake provider. Not a real model output.",
+  "predictions": [
+    {
+      "quote": "within eighteen months the state legislature will pass a moratorium on new crypto-mining interconnects above ten megawatts, and I think the utility will back it",
+      "speaker": "Host",
+      "normalized_statement": "Within eighteen months, the state legislature will pass a moratorium on new crypto-mining interconnects above 10 MW; the speaker also thinks the utility will support it.",
+      "modality": "will",
+      "entities": [
+        "state legislature",
+        "crypto-mining interconnects",
+        "the utility"
+      ],
+      "topic": "state legislation",
+      "geography": "(state unnamed; Illinois implied by context)",
+      "scope": "crypto-mining interconnects above 10 MW",
+      "conditions": [],
+      "thresholds": [
+        "interconnect size > 10 MW"
+      ],
+      "time_expression": "within eighteen months",
+      "proposed_deadline": "2027-09-10",
+      "ambiguities": [
+        "State not named in the sentence (Illinois implied by earlier context)",
+        "\"Back it\" is a soft, secondary claim"
+      ],
+      "confidence": 0.85,
+      "components": [
+        {
+          "kind": "future_claim",
+          "statement": "The state legislature will pass a moratorium on new crypto-mining interconnects above 10 MW within eighteen months.",
+          "deadline": "2027-09-10",
+          "notes": null
+        },
+        {
+          "kind": "future_claim",
+          "statement": "The utility will support the moratorium.",
+          "deadline": null,
+          "notes": "Hedged with 'I think'."
+        }
+      ]
+    },
+    {
+      "quote": "Over the next two years the utility will raise industrial rates by double digits and at least three large miners will leave the state because of it",
+      "speaker": "Host",
+      "normalized_statement": "Within two years the utility will raise industrial rates by at least 10%, and at least three large miners will leave the state as a result.",
+      "modality": "will",
+      "entities": [
+        "the utility",
+        "industrial rates",
+        "large miners"
+      ],
+      "topic": "electricity rates",
+      "geography": null,
+      "scope": "industrial customers and large miners in the state",
+      "conditions": [],
+      "thresholds": [
+        "industrial rate increase >= 10 %",
+        "large miners leaving >= 3 companies"
+      ],
+      "time_expression": "over the next two years",
+      "proposed_deadline": "2028-03-10",
+      "ambiguities": [
+        "\"The utility\" and \"the state\" are implied by context, not named",
+        "\"Large\" miner is undefined"
+      ],
+      "confidence": 0.85,
+      "components": [
+        {
+          "kind": "future_claim",
+          "statement": "The utility will raise industrial rates by double digits within two years.",
+          "deadline": "2028-03-10",
+          "notes": null
+        },
+        {
+          "kind": "future_claim",
+          "statement": "At least three large miners will leave the state within two years.",
+          "deadline": "2028-03-10",
+          "notes": null
+        },
+        {
+          "kind": "causal_link",
+          "statement": "The rate increase causes the miners to leave.",
+          "deadline": null,
+          "notes": null
+        }
+      ]
+    },
+    {
+      "quote": "Eventually, every county in the region will require water-use disclosures for any facility over five megawatts",
+      "speaker": "Host",
+      "normalized_statement": "Eventually, every county in the region will require water-use disclosures for facilities over 5 MW.",
+      "modality": "will",
+      "entities": [
+        "counties",
+        "water-use disclosures"
+      ],
+      "topic": "water regulation",
+      "geography": "(region unnamed)",
+      "scope": "counties in the region",
+      "conditions": [],
+      "thresholds": [
+        "facility size > 5 MW"
+      ],
+      "time_expression": "eventually",
+      "proposed_deadline": null,
+      "ambiguities": [
+        "No deadline \u2014 \"eventually\"",
+        "\"The region\" is undefined"
+      ],
+      "confidence": 0.7,
+      "components": [
+        {
+          "kind": "future_claim",
+          "statement": "Every county in the region will require water-use disclosures for facilities over 5 MW.",
+          "deadline": null,
+          "notes": null
+        }
+      ]
+    }
+  ],
+  "notes": "Contains the completed legislature statement that was cut off in w1."
+}

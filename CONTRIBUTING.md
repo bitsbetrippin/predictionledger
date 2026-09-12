@@ -59,3 +59,7 @@ Open a GitHub issue titled "Security" without exploit details, or contact the ma
 ## License
 
 By contributing you agree that your contributions are licensed under the Apache License 2.0, and that the project may credit contributors in `NOTICE`.
+
+## Evaluations
+
+Prompt changes should be checked with the Promptfoo suite in `evals/` (`npm run build && npm run eval`, needs provider keys). Add a labelled fixture for any new behaviour you want the prompts to hold; see `fixtures/README.md`.

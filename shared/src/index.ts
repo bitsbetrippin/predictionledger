@@ -165,8 +165,8 @@ export type JobKind =
   | "assessment.run"
   | "tool.install"
   | "model.download"
-  /** 1.3.1: look up the game date/time of a sports pick from a published schedule. */
-  | "sports.resolve_date";
+  /** 1.4: find the game record (date, final score, winner) for a matchup and settle every pick on it. */
+  | "sports.resolve_game";
 
 export type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 
@@ -350,12 +350,41 @@ export interface SportsPick {
 }
 export type PredictionKind = "general" | "sports_pick";
 
+/**
+ * 1.4 — one record per real game. Every pick on the same matchup settles against the same record:
+ * "A and B played on <date>, final score X–Y" is looked up once, then each pick is checked by rule.
+ */
+export interface Game {
+  id: string;
+  sport: string;
+  league?: string;
+  matchupKey: string;
+  teams: [string, string];
+  eventDate?: string;
+  eventTime?: string;
+  status: "scheduled" | "final" | "postponed" | "unknown";
+  /** Final scores in `teams` order. */
+  scores?: [number, number];
+  overtime: boolean;
+  winner?: string | "tie";
+  sourceId?: string;
+  sourceUrl?: string;
+  /** The verbatim line the score was read from. */
+  excerpt?: string;
+  lookupVia?: string;
+  notes: string[];
+  retrievedAt?: string;
+  updatedAt: string;
+}
+
 export interface Prediction {
   id: string;
   videoId: string;
   /** "sports_pick" predictions use the simplified game-result validation path. */
   kind: PredictionKind;
   sportsPick?: SportsPick;
+  /** 1.4: the game record this pick settles against, once looked up. */
+  gameId?: string;
   videoTitle?: string;
   quoteExact: string;
   contextBefore?: string;
@@ -600,4 +629,6 @@ export interface ExportBundle {
   sources: SourceRecord[];
   evidence: EvidenceItem[];
   assessments: Assessment[];
+  /** 1.4 */
+  games?: Game[];
 }

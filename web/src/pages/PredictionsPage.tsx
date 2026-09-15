@@ -83,7 +83,7 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
   /** Research (or recheck). Follows the chain plan → research → assessment by polling each job. */
   const research = async (id: string, mode: "research" | "validate" = "research") => {
     try {
-      const { jobId } = mode === "validate" ? await content.validateScore(id) : await content.research(id);
+      const { jobId } = mode === "validate" ? await content.validateScore(id, !!rows?.find((r) => r.id === id)?.result) : await content.research(id);
       let done = await pollJob(jobId, (j) => setResearchJobs((m) => ({ ...m, [id]: j })));
       // Chained jobs (research after plan, assessment after research) show up in the job list for this subject.
       for (let hops = 0; hops < 4 && done.status === "completed"; hops++) {
@@ -97,6 +97,26 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
       await reload();
       await loadSelected(id);
     } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  /** 1.4: settle every sports pick of the selected video — one look-up per matchup, all picks reconciled. */
+  const [validatingAll, setValidatingAll] = useState<string | null>(null);
+  const validateAll = async () => {
+    if (!videoId) return;
+    try {
+      const { jobs, picks, skipped } = await content.validateVideoScores(videoId);
+      if (jobs.length === 0) { setError(picks === 0 && skipped > 0 ? "Every pick's game is still in the future." : "No sports picks to validate for this video."); return; }
+      setValidatingAll(`Validating ${jobs.length} game(s) for ${picks} pick(s)…`);
+      const results = await Promise.all(jobs.map((j) => pollJob(j.jobId)));
+      const failed = results.filter((r) => r.status === "failed");
+      if (failed.length) setError(`${failed.length} of ${results.length} game look-ups failed — ${failed[0].error ?? ""}`);
+      setValidatingAll(null);
+      await reload();
+      if (selectedId) await loadSelected(selectedId);
+    } catch (e) {
+      setValidatingAll(null);
       setError((e as Error).message);
     }
   };
@@ -125,6 +145,11 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
         <label>Deadline <select value={deadline} onChange={(e) => setDeadline(e.target.value as typeof deadline)}><option value="">Any</option><option value="pending">Pending</option><option value="reached">Reached</option><option value="unknown">Unknown</option></select></label>
         <label>Result <select value={result} onChange={(e) => setResult(e.target.value)}><option value="">Any</option><option value="not_researched">Not researched</option>{(Object.keys(EVIDENCE_ASSESSMENT_LABEL) as (keyof typeof EVIDENCE_ASSESSMENT_LABEL)[]).map((k) => <option key={k} value={k}>{EVIDENCE_ASSESSMENT_LABEL[k]}</option>)}</select></label>
         {checked.size >= 2 && <button type="button" onClick={mergeChecked}>Merge {checked.size} selected</button>}
+        {videoId && (visible.some((r) => r.kind === "sports_pick") || kind === "sports_pick") && (
+          <button type="button" className="primary" disabled={!!validatingAll} onClick={validateAll} title="Looks up each game once (winner, score, date) and settles every pick on it">
+            {validatingAll ?? "Validate all scores"}
+          </button>
+        )}
       </div>
 
       {rows === null ? <p className="muted">Loading…</p> : visible.length === 0 ? (

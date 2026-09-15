@@ -51,6 +51,7 @@ interface PredictionRow {
   video_id: string;
   kind: Prediction["kind"];
   sports_json: string | null;
+  game_id: string | null;
   video_title: string | null;
   quote_exact: string;
   context_before: string | null;
@@ -212,6 +213,16 @@ export class PredictionService {
     return this.get(id);
   }
 
+  /** 1.4 — link a pick to the game record it settles against. */
+  setGame(id: string, gameId: string | null): void {
+    this.db.run("UPDATE predictions SET game_id = ? WHERE id = ?", gameId, id);
+  }
+
+  /** 1.4 — every sports pick (not dismissed/merged) on a matchup, for reconciling against one game record. */
+  picksForMatchup(matchupKey: string, keyOf: (p: SportsPick) => string): Prediction[] {
+    return this.list({ kind: "sports_pick" }).filter((p) => p.sportsPick && keyOf(p.sportsPick) === matchupKey);
+  }
+
   setStatus(id: string, status: Exclude<PredictionUserStatus, "merged">): Prediction | undefined {
     const current = this.get(id);
     if (!current) return undefined;
@@ -339,6 +350,7 @@ export class PredictionService {
       id: r.id,
       videoId: r.video_id,
       kind: r.kind ?? "general",
+      gameId: r.game_id ?? undefined,
       sportsPick: r.sports_json ? (JSON.parse(r.sports_json) as SportsPick) : undefined,
       videoTitle: r.video_title ?? undefined,
       quoteExact: r.quote_exact,

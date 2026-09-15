@@ -114,9 +114,15 @@ Provider calls made by every job now go through a resilience wrapper: 120 s per-
 
 | Method | Path | Body / notes |
 |---|---|---|
-| POST | `/api/predictions/:id/validate-score` | Sports picks only. Chains the code-written settlement plan (if none), a capped trusted-source box-score search, and the settlement verdict → `202 { jobId, stage: "plan"\|"research" }`. `409 not_sports_pick`, `409 game_pending` (game date in the future), plus the usual `no_search_provider` / `offline`. **1.3.1:** when the game date is unknown the response is `202 { jobId, stage: "schedule" }` — a `sports.resolve_date` job looks the date up and chains into the rest when the game has been played. |
+| POST | `/api/predictions/:id/validate-score` | Sports picks only. Chains the code-written settlement plan (if none), a capped trusted-source box-score search, and the settlement verdict → `202 { jobId, stage: "plan"\|"research" }`. `409 not_sports_pick`, `409 game_pending` (game date in the future), plus the usual `no_search_provider` / `offline`. **1.4:** body `{ recheck?: boolean }`; the response is always `202 { jobId, stage: "game" }` — one `sports.resolve_game` job finds the game record (winner, score, date; an unknown date is resolved by the same look-up) and settles every pick on that matchup. |
+| POST | `/api/videos/:id/validate-scores` | 1.4. Body `{ recheck?: boolean }`. One `sports.resolve_game` job per distinct matchup among the video's sports picks whose game date is not in the future → `202 { jobs: [{ matchup, jobId }], picks, skipped }`. |
+| GET | `/api/games`, `/api/games/:id` | 1.4. Game records: `{ id, sport, league?, matchupKey, teams, eventDate?, eventTime?, status, scores?, overtime, winner?, sourceId?, sourceUrl?, excerpt?, lookupVia?, notes[], retrievedAt? }`. |
 
 Settings gain `sports: { enabled, trackSpreads }`.
+
+## Release 1.4
+
+`Prediction` gains `gameId?`. Assessments made by settlement report `provider: "app"`, `model: "rule"`, `templateVersion: "sports_settlement.v1"`; their run has `evidenceTemplate: "sports_settlement.v1"` and coverage note `Settled from game record <id>`. The JSON export includes `games`.
 
 ## Release 1.3.1
 
@@ -133,7 +139,7 @@ Settings gain `sports: { enabled, trackSpreads }`.
 | `prediction.extract` | `{ videoId }` | `video` | `{ windows, candidates, created, matchedExisting, notes[] }` |
 | `plan.generate` | `{ predictionId, thenResearch? }` | `prediction` | `{ planId, version, attempts }` — with `thenResearch` it enqueues `research.run` |
 | `research.run` | `{ predictionId, planId }` | `prediction` | `{ runId, searches, sources, evidence, rejected, coverage[] }` — enqueues `assessment.run` on completion |
-| `sports.resolve_date` | `{ predictionId, thenValidate? }` | `prediction` | `{ eventDate, eventTime?, via, sourceUrl?, hits, notes[], pending }` — with `thenValidate` it enqueues `plan.generate { thenResearch }` when the game date has passed. Fails with `Could not find the game date for A vs B …` when no page states it. |
+| `sports.resolve_game` | `{ predictionId, recheck? }` | `prediction` (the seed pick; dedupe key is the matchup) | `{ gameId, status, summary, picks, outcomes: { [predictionId]: "hit (assessment v1)" \| "miss …" \| "push …" \| "pending" }, notes[] }`. Progress: "Looking up A vs B (1/2)", "Reading espn.com (1/3)", "Settling pick k of n". Fails with `Could not find a final score for A vs B …` when no snippet or page states one. |
 | `assessment.run` | `{ predictionId, runId }` | `prediction` | `{ assessmentId, version, guardNotes[] }` or `{ …, deterministic: true }` for zero-evidence runs |
 | `video.import` | `{ videoId, userSupplied: { title?, publishedAt?, language? }, forceAudio? }` | `video` | `{ source: "captions-manual"\|"captions-auto", lang, segments }` or `{ source: "audio", bytes, ext }` — the latter enqueues `audio.extract`. `maxAttempts` 1: failures are explained, not retried blindly. |
 | `tool.install` | `{ tool: "yt-dlp" }` | `tool` | `{ path, version, bytes }` |

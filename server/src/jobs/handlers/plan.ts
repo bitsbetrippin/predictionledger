@@ -113,7 +113,7 @@ export function makePlanHandler(ctx: AppContext) {
 }
 
 /** Convert nullable model fields into the shared ValidationPlanBody shape. */
-function normalizePlan(b: Omit<PlanOutput, "researchPrompt">) {
+export function normalizePlan(b: Omit<PlanOutput, "researchPrompt">) {
   return {
     proposition: b.proposition,
     components: b.components.map((c) => ({ statement: c.statement, kind: c.kind, conditions: c.conditions ?? [] })),

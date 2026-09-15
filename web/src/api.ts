@@ -135,7 +135,10 @@ export const content = {
 
   listPredictions: (f: PredictionFilters & { result?: string } = {}) =>
     request<PredictionRow[]>("GET", `/api/predictions${qs({ videoId: f.videoId, kind: f.kind, topic: f.topic, userStatus: f.userStatus, deadlineBefore: f.deadlineBefore, deadlineAfter: f.deadlineAfter, includeDismissed: f.includeDismissed, result: f.result })}`),
-  validateScore: (id: string) => request<{ jobId: string; stage: "schedule" | "plan" | "research" }>("POST", `/api/predictions/${id}/validate-score`),
+  /** 1.4: one job looks the game up (winner, score, date) and settles every pick on that matchup. */
+  validateScore: (id: string, recheck = false) => request<{ jobId: string; stage: "game" }>("POST", `/api/predictions/${id}/validate-score`, { recheck }),
+  validateVideoScores: (videoId: string, recheck = false) => request<{ jobs: { matchup: string; jobId: string }[]; picks: number; skipped: number }>("POST", `/api/videos/${videoId}/validate-scores`, { recheck }),
+  game: (id: string) => request<import("@prediction-ledger/shared").Game>("GET", `/api/games/${id}`),
   research: (id: string, planId?: string) => request<{ jobId: string; stage: "plan" | "research"; planVersion?: number }>("POST", `/api/predictions/${id}/research`, { planId, autoPlan: true }),
   run: (id: string) => request<RunDetail>("GET", `/api/runs/${id}`),
   topics: () => request<string[]>("GET", "/api/predictions/topics"),

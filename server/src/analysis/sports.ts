@@ -272,3 +272,160 @@ export function findGameDate(text: string, p: SportsPick, opts: { anchor?: strin
   const ambiguous = ranked.length > 1 && ranked[1].hits === best.hits;
   return { ...best, ambiguous };
 }
+
+// ---------------------------------------------------------------------------
+// 1.4 — game records: identify the matchup, read the final score, settle each pick by rule.
+// ---------------------------------------------------------------------------
+
+export const GAME_LOOKUP_BUDGET = { searches: 2, sources: 3 } as const;
+
+/** Team nickname — the last word ("Kansas City Chiefs" → "chiefs"); the whole name for one-word teams. */
+export function teamNick(team: string): string {
+  const words = team.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+  return words[words.length - 1] ?? team.toLowerCase();
+}
+
+/** Stable key shared by every pick on the same game: sport + both nicknames, sorted. */
+export function matchupKey(p: Pick<SportsPick, "sport" | "teams">): string {
+  return `${p.sport.toLowerCase().replace(/[^a-z0-9]/g, "")}:${[teamNick(p.teams[0]), teamNick(p.teams[1])].sort().join("|")}`;
+}
+
+/** Queries for the final score; the date (or the spoken hint + season) narrows them to one game. */
+export function buildScoreQueries(p: SportsPick, anchor?: string): string[] {
+  const [a, b] = p.teams;
+  const year = anchor && /^\d{4}/.test(anchor) ? anchor.slice(0, 4) : new Date().toISOString().slice(0, 4);
+  const when = p.eventDate ?? `${p.eventHint ?? ""} ${year}`;
+  const q = (s: string) => s.replace(/\s+/g, " ").trim();
+  return [q(`${a} vs ${b} final score ${when}`), q(`${a} ${b} ${p.league ?? p.sport} box score ${when}`)];
+}
+
+export interface FinalScoreHit {
+  /** Scores in the pick's `teams` order. */
+  scores: [number, number];
+  weight: number;
+  /** Verbatim line the score was read from (substring of the input text). */
+  excerpt: string;
+  overtime: boolean;
+  ambiguous: boolean;
+}
+
+const NOISE_RE = /\b(predict|prediction|odds|preview|projected|projection|expected|moneyline|favou?rite|underdog|point spread|betting|parlay|prop bet|picks?\b|lines?\b)/i;
+const POSTPONED_RE = /\b(postponed|cancell?ed|suspended|abandoned)\b/i;
+const WIN_VERB_RE = /\b(beat|beats|defeat|defeats|defeated|def\.|top|tops|topped|over|down|downs|downed|rout|routs|routed|edge|edges|edged|upset|upsets|win|wins|won|held off|hold off|holds off|survive|survives|cruise past|blank|blanks|shut out)\b/i;
+
+function teamRe(team: string): RegExp {
+  const nick = teamNick(team).replace(/[^a-z0-9]/g, "");
+  const full = team.toLowerCase().replace(/[^a-z0-9\s]/g, "").trim().replace(/\s+/g, "\\s+");
+  return new RegExp(`\\b(?:${full}|${nick})\\b`, "i");
+}
+
+/**
+ * Deterministic final-score reader. Works line by line (extracted pages and search snippets keep
+ * their line structure): a line that names both teams and is not betting/preview chatter yields a
+ * candidate from "Team 27, Team 20" (weight 2) or "27-20" next to a win verb / in mention order
+ * (weight 1); "final" adds weight. The top candidate wins; a tie between different scores is
+ * flagged ambiguous. Postponed/cancelled wording is reported separately so nothing is settled.
+ */
+export function findFinalScore(text: string, p: SportsPick): { hit?: FinalScoreHit; postponed?: string } {
+  const [ta, tb] = p.teams;
+  const reA = teamRe(ta);
+  const reB = teamRe(tb);
+  const tally = new Map<string, FinalScoreHit & { excerptWeight: number }>();
+  let postponed: string | undefined;
+  for (const raw of text.split(/\n+/)) {
+    const line = raw.trim();
+    if (line.length < 8 || !reA.test(line) || !reB.test(line)) continue;
+    if (POSTPONED_RE.test(line) && !postponed) postponed = line.slice(0, 240);
+    if (NOISE_RE.test(line)) continue;
+    const bonus = /\bfinal\b/i.test(line) ? 1 : 0;
+    const overtime = /\b(OT|overtime|extra time|shoot-?out|penalties)\b/i.test(line);
+    const add = (scores: [number, number], weight: number) => {
+      if (scores[0] > 250 || scores[1] > 250) return;
+      const key = scores.join("-");
+      const c = tally.get(key) ?? { scores, weight: 0, excerpt: line.slice(0, 240), overtime, ambiguous: false, excerptWeight: 0 };
+      c.weight += weight + bonus;
+      c.overtime = c.overtime || overtime;
+      if (weight + bonus > c.excerptWeight) {
+        c.excerpt = line.slice(0, 240); // quote the most explicit line ("Final: A 27, B 20"), not the first one
+        c.excerptWeight = weight + bonus;
+      }
+      tally.set(key, c);
+    };
+    // "Chiefs 27, Bills 20" / "Kansas City Chiefs 27 – Buffalo Bills 20"
+    const after = (re: RegExp): number | undefined => {
+      // Only punctuation/space may sit between the name and its score, and "27" must not be a record ("2-0").
+      const m = new RegExp(`${re.source}[\\s:,.\\-–—]{0,6}(\\d{1,3})(?![-–]\\d)\\b`, "i").exec(line);
+      return m ? Number(m[1]) : undefined;
+    };
+    const sa = after(reA);
+    const sb = after(reB);
+    if (sa !== undefined && sb !== undefined) add([sa, sb], 2);
+    else {
+      // "Chiefs beat Bills 27-20" / "Bills fall to Chiefs, 20-27"
+      const m = /(?<!\()\b(\d{1,3})\s*[-–—]\s*(\d{1,3})\b(?!\))/.exec(line);
+      if (m) {
+        const n1 = Number(m[1]);
+        const n2 = Number(m[2]);
+        const ia = line.search(reA);
+        const ib = line.search(reB);
+        const verb = WIN_VERB_RE.exec(line);
+        let scores: [number, number];
+        if (verb) {
+          const winnerIsA = ia < verb.index && (ib > verb.index || ia < ib);
+          scores = winnerIsA ? [Math.max(n1, n2), Math.min(n1, n2)] : [Math.min(n1, n2), Math.max(n1, n2)];
+        } else scores = ia <= ib ? [n1, n2] : [n2, n1];
+        add(scores, 1);
+      }
+    }
+  }
+  const ranked = [...tally.values()].sort((x, y) => y.weight - x.weight);
+  if (ranked.length === 0) return { postponed };
+  const { excerptWeight: _w, ...best } = ranked[0];
+  best.ambiguous = ranked.length > 1 && ranked[1].weight === best.weight;
+  return { hit: best, postponed };
+}
+
+export type SettleOutcome = "hit" | "miss" | "push" | "pending" | "void";
+
+/**
+ * Settlement by rule. `game.scores` are in `game.teams` order; the pick's teams are matched by name.
+ * hit → supported, miss → contradicted, push/tie → partially supported; anything unplayed is pending.
+ */
+export function settlePick(p: SportsPick, game: { teams: [string, string]; scores?: [number, number]; status: string; eventDate?: string; overtime?: boolean }): { outcome: SettleOutcome; assessment?: "supported" | "contradicted" | "partially_supported" | "not_assessable"; explanation: string } {
+  const when = game.eventDate ? ` on ${game.eventDate}` : "";
+  if (game.status === "postponed") return { outcome: "pending", explanation: `${game.teams[0]} vs ${game.teams[1]} was postponed or cancelled; the pick stays open until the game is played.` };
+  if (game.status !== "final" || !game.scores) return { outcome: "pending", explanation: `No final score is recorded for ${game.teams[0]} vs ${game.teams[1]}${when} yet.` };
+  const scoreOf = (team: string): number | undefined => {
+    const i = game.teams.findIndex((t) => sameTeam(t, team));
+    return i >= 0 ? game.scores![i] : undefined;
+  };
+  const other = p.teams.find((t) => !sameTeam(t, p.pick.team ?? ""))!;
+  const winner = game.scores[0] === game.scores[1] ? undefined : game.scores[0] > game.scores[1] ? game.teams[0] : game.teams[1];
+  const loser = winner ? game.teams.find((t) => t !== winner)! : undefined;
+  const ot = game.overtime ? " (OT)" : "";
+  const scoreLine = winner ? `${winner} beat ${loser} ${Math.max(...game.scores)}–${Math.min(...game.scores)}${ot}${when}` : `${game.teams[0]} and ${game.teams[1]} tied ${game.scores[0]}–${game.scores[1]}${ot}${when}`;
+  if (p.pick.type === "total") {
+    if (p.pick.line === undefined || !p.pick.side) return { outcome: "void", assessment: "not_assessable", explanation: `${scoreLine}. The total pick has no usable line/side, so it cannot be settled.` };
+    const sum = game.scores[0] + game.scores[1];
+    const outcome: SettleOutcome = sum === p.pick.line ? "push" : (sum > p.pick.line) === (p.pick.side === "over") ? "hit" : "miss";
+    return { outcome, assessment: toAssessment(outcome), explanation: `${scoreLine}: combined ${sum} vs the ${p.pick.side} ${p.pick.line} line → ${label(outcome)}.` };
+  }
+  const mine = scoreOf(p.pick.team ?? "");
+  const theirs = scoreOf(other);
+  if (mine === undefined || theirs === undefined) return { outcome: "void", assessment: "not_assessable", explanation: `${scoreLine}. Could not match "${p.pick.team}" / "${other}" to the game's teams.` };
+  if (p.pick.type === "moneyline") {
+    const outcome: SettleOutcome = mine === theirs ? "push" : mine > theirs ? "hit" : "miss";
+    return { outcome, assessment: toAssessment(outcome), explanation: `${scoreLine}. Pick: ${p.pick.team} to win → ${label(outcome)}.` };
+  }
+  if (p.pick.line === undefined) return { outcome: "void", assessment: "not_assessable", explanation: `${scoreLine}. The spread pick has no line, so it cannot be settled.` };
+  const adj = mine - theirs + p.pick.line;
+  const outcome: SettleOutcome = adj === 0 ? "push" : adj > 0 ? "hit" : "miss";
+  return { outcome, assessment: toAssessment(outcome), explanation: `${scoreLine}. Pick: ${p.pick.team} ${fmtLine(p.pick.line)} → margin ${mine - theirs >= 0 ? "+" : ""}${mine - theirs}, adjusted ${adj > 0 ? "+" : ""}${adj} → ${label(outcome)}.` };
+}
+
+function toAssessment(o: SettleOutcome): "supported" | "contradicted" | "partially_supported" {
+  return o === "hit" ? "supported" : o === "miss" ? "contradicted" : "partially_supported";
+}
+function label(o: SettleOutcome): string {
+  return o === "hit" ? "HIT" : o === "miss" ? "MISS" : o === "push" ? "PUSH" : o.toUpperCase();
+}

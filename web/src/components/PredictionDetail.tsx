@@ -5,7 +5,7 @@
  * Licensed under the Apache License 2.0 — see LICENSE and NOTICE in the repository root.
  */
 import { useEffect, useState } from "react";
-import { EVIDENCE_ASSESSMENT_LABEL, TIME_STATUS_LABEL, type Assessment, type ComponentKind, type EvidenceItem, type JobSummary, type PredictionEdit, type ValidationPlan } from "@prediction-ledger/shared";
+import { EVIDENCE_ASSESSMENT_LABEL, TIME_STATUS_LABEL, type Assessment, type ComponentKind, type EvidenceItem, type Game, type JobSummary, type PredictionEdit, type ValidationPlan } from "@prediction-ledger/shared";
 import { content, fmtClock, type PredictionFull, type RunDetail } from "../api";
 
 const KIND_LABEL: Record<ComponentKind, string> = { future_claim: "future claim", premise: "premise", causal_link: "causal link" };
@@ -27,6 +27,13 @@ export function PredictionDetail(props: {
   const planRunning = props.planJob && (props.planJob.status === "queued" || props.planJob.status === "running");
   const researchRunning = props.researchJob && (props.researchJob.status === "queued" || props.researchJob.status === "running");
   const latest = p.assessments?.[0];
+  const [game, setGame] = useState<Game | null>(null);
+  useEffect(() => {
+    let live = true;
+    if (p.gameId) content.game(p.gameId).then((g) => { if (live) setGame(g); }).catch(() => { if (live) setGame(null); });
+    else setGame(null);
+    return () => { live = false; };
+  }, [p.gameId, p.assessments?.length]);
 
   const act = async (label: string, fn: () => Promise<unknown>) => {
     setBusy(label);
@@ -66,8 +73,20 @@ export function PredictionDetail(props: {
                     {p.sportsPick.pick.type === "moneyline" && <>Moneyline: <strong>{p.sportsPick.pick.team}</strong> to win</>}
                     {p.sportsPick.pick.type === "spread" && <>Spread: <strong>{p.sportsPick.pick.team}</strong> {p.sportsPick.pick.line !== undefined ? (p.sportsPick.pick.line > 0 ? `+${p.sportsPick.pick.line}` : p.sportsPick.pick.line) : "(no line)"}</>}
                     {p.sportsPick.pick.type === "total" && <>Total: <strong>{p.sportsPick.pick.side}</strong> {p.sportsPick.pick.line ?? "(no line)"}</>}
-                    {" "}— settled from the final score; the validation plan is written by the app and research is capped at a few score look-ups.
+                    {" "}— settled from the final score by rule (winner, score, date); no deep research.
                   </div>
+                  {game && (
+                    <div className="game-card small">
+                      <strong>Game record:</strong>{" "}
+                      {game.status === "final" && game.scores
+                        ? <>{game.teams[0]} {game.scores[0]} – {game.teams[1]} {game.scores[1]}{game.overtime ? " (OT)" : ""}{game.eventDate ? ` on ${game.eventDate}` : ""}{game.winner && game.winner !== "tie" ? ` · winner ${game.winner}` : game.winner === "tie" ? " · tie" : ""}</>
+                        : game.status === "postponed" ? <>{game.teams[0]} vs {game.teams[1]} — postponed/cancelled</>
+                        : <>{game.teams[0]} vs {game.teams[1]}{game.eventDate ? ` on ${game.eventDate}` : ""} — no final score yet</>}
+                      {game.sourceUrl && <> · <a href={game.sourceUrl} target="_blank" rel="noreferrer noopener">source</a></>}
+                      {game.lookupVia && <span className="muted"> · via {game.lookupVia}</span>}
+                      {game.excerpt && <div className="muted">“{game.excerpt}”</div>}
+                    </div>
+                  )}
                 </dd>
               </>
             )}
@@ -116,7 +135,7 @@ export function PredictionDetail(props: {
           {planRunning ? props.planJob?.stage ?? "Generating…" : p.plans.length ? "Regenerate plan" : "Generate validation plan"}
         </button>
         {p.kind === "sports_pick" ? (
-          <button type="button" className="primary" onClick={props.onValidateScore} disabled={!!researchRunning || !!planRunning} title="Looks up the final score from trusted sources and settles the pick — no deep research">
+          <button type="button" className="primary" onClick={props.onValidateScore} disabled={!!researchRunning || !!planRunning} title="Looks the game up once (winner, score, date) and settles every pick on this matchup — no deep research">
             {researchRunning ? props.researchJob?.stage ?? "Validating…" : latest ? "Re-validate scores" : "Validate scores"}
           </button>
         ) : (

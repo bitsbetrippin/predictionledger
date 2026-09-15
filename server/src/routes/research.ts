@@ -11,6 +11,7 @@ import type { ExportBundle } from "@prediction-ledger/shared";
 import { APP_VERSION } from "../config.js";
 import type { AppContext } from "../context.js";
 import { buildCsv } from "../services/export.js";
+import { matchupKey } from "../analysis/sports.js";
 
 const researchSchema = z.object({
   /** Research a specific plan version; defaults to the latest. */
@@ -26,32 +27,48 @@ export function registerResearchRoutes(app: FastifyInstance, ctx: AppContext): v
    * in those cases, so the processing status stays "not researched" rather than "failed".
    */
   /**
-   * Validate scores (1.3): one click for a sports pick — settlement plan (code) → trusted box-score search
-   * (capped) → settlement verdict. Refused before the game date, since there is nothing to settle yet.
-   * When the game date is unknown (1.3.1) a schedule look-up job runs first and chains into the rest.
+   * Validate scores (1.3 → 1.4): one click settles a sports pick — and every other pick on the same
+   * matchup — against a single game record (winner, score, date) looked up once. Refused only before a
+   * known game date; an unknown date is resolved by the look-up itself.
    */
-  app.post<{ Params: { id: string } }>("/api/predictions/:id/validate-score", async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { recheck?: boolean } }>("/api/predictions/:id/validate-score", async (req, reply) => {
     const p = ctx.predictions.get(req.params.id);
     if (!p) return reply.code(404).send({ error: "not_found" });
     if (p.kind !== "sports_pick" || !p.sportsPick) return reply.code(409).send({ error: "not_sports_pick", message: "Validate scores only applies to sports picks. Use Research for other predictions." });
     const s = ctx.settings.getPersisted();
-    if (s.search.provider === "none") return reply.code(409).send({ error: "no_search_provider", message: "Choose a web search provider in Setup → Web search; the box score is looked up online." });
-    if (!s.privacy.allowInternet) return reply.code(409).send({ error: "offline", message: "Internet access is disabled in Setup → Privacy; the box score cannot be looked up." });
+    if (s.search.provider === "none") return reply.code(409).send({ error: "no_search_provider", message: "Choose a web search provider in Setup → Web search; the final score is looked up online." });
+    if (!s.privacy.allowInternet) return reply.code(409).send({ error: "offline", message: "Internet access is disabled in Setup → Privacy; the final score cannot be looked up." });
     const today = new Date().toISOString().slice(0, 10);
     if (p.deadlineDate && p.deadlineDate > today) return reply.code(409).send({ error: "game_pending", message: `The game is on ${p.deadlineDate}; there is no final score to validate yet.` });
-    if (!p.deadlineDate) {
-      // 1.3.1: the transcript never said when the game is — look the schedule up, then continue to settlement.
-      const jobId = ctx.jobs.enqueue({ kind: "sports.resolve_date", subjectType: "prediction", subjectId: p.id, payload: { predictionId: p.id, thenValidate: true }, dedupeKey: `sports.resolve_date:${p.id}`, maxAttempts: 1 });
-      return reply.code(202).send({ jobId, stage: "schedule" });
+    const recheck = req.body?.recheck === true;
+    const jobId = ctx.jobs.enqueue({ kind: "sports.resolve_game", subjectType: "prediction", subjectId: p.id, payload: { predictionId: p.id, recheck }, dedupeKey: `sports.resolve_game:${matchupKey(p.sportsPick)}`, maxAttempts: 1 });
+    return reply.code(202).send({ jobId, stage: "game" });
+  });
+
+  /** 1.4 — Validate every sports pick of a video: one job per distinct matchup. */
+  app.post<{ Params: { id: string }; Body: { recheck?: boolean } }>("/api/videos/:id/validate-scores", async (req, reply) => {
+    const video = ctx.videos.get(req.params.id);
+    if (!video) return reply.code(404).send({ error: "not_found" });
+    const s = ctx.settings.getPersisted();
+    if (s.search.provider === "none") return reply.code(409).send({ error: "no_search_provider", message: "Choose a web search provider in Setup → Web search; final scores are looked up online." });
+    if (!s.privacy.allowInternet) return reply.code(409).send({ error: "offline", message: "Internet access is disabled in Setup → Privacy; final scores cannot be looked up." });
+    const today = new Date().toISOString().slice(0, 10);
+    const picks = ctx.predictions.list({ videoId: video.id, kind: "sports_pick" }).filter((p) => p.sportsPick && !(p.deadlineDate && p.deadlineDate > today));
+    const seen = new Map<string, string>();
+    for (const p of picks) {
+      const key = matchupKey(p.sportsPick!);
+      if (seen.has(key)) continue;
+      const jobId = ctx.jobs.enqueue({ kind: "sports.resolve_game", subjectType: "prediction", subjectId: p.id, payload: { predictionId: p.id, recheck: req.body?.recheck === true }, dedupeKey: `sports.resolve_game:${key}`, maxAttempts: 1 });
+      seen.set(key, jobId);
     }
-    // Plan is code-generated for picks, so chain plan → research → assessment without a review stop.
-    const plan = ctx.plans.latest(p.id);
-    if (!plan) {
-      const planJob = ctx.jobs.enqueue({ kind: "plan.generate", subjectType: "prediction", subjectId: p.id, payload: { predictionId: p.id, thenResearch: true }, dedupeKey: `plan.generate:${p.id}`, maxAttempts: 2 });
-      return reply.code(202).send({ jobId: planJob, stage: "plan" });
-    }
-    const jobId = ctx.jobs.enqueue({ kind: "research.run", subjectType: "prediction", subjectId: p.id, payload: { predictionId: p.id, planId: plan.id }, dedupeKey: `research.run:${p.id}`, maxAttempts: 1 });
-    return reply.code(202).send({ jobId, stage: "research" });
+    return reply.code(202).send({ jobs: [...seen.entries()].map(([matchup, jobId]) => ({ matchup, jobId })), picks: picks.length, skipped: ctx.predictions.list({ videoId: video.id, kind: "sports_pick" }).length - picks.length });
+  });
+
+  app.get("/api/games", async () => ctx.games.list());
+  app.get<{ Params: { id: string } }>("/api/games/:id", async (req, reply) => {
+    const g = ctx.games.get(req.params.id);
+    if (!g) return reply.code(404).send({ error: "not_found" });
+    return g;
   });
 
   app.post<{ Params: { id: string } }>("/api/predictions/:id/research", async (req, reply) => {
@@ -117,6 +134,7 @@ export function registerResearchRoutes(app: FastifyInstance, ctx: AppContext): v
       sources: ctx.research.allSources(),
       evidence: ctx.research.allEvidence(),
       assessments: ctx.research.allAssessments(),
+      games: ctx.games.list(),
     };
     reply.header("content-disposition", `attachment; filename="prediction-ledger-export-${bundle.exportedAt.slice(0, 10)}.json"`);
     return bundle;

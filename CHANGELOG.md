@@ -4,6 +4,18 @@ All notable changes to Prediction Ledger. Format follows [Keep a Changelog](http
 
 Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
 
+## [1.4.0] — 2026-09-14 — Game records: winner, score, date — one look-up per matchup
+Owner rule: in Sports Mode, validation is just "who won, what was the score, on what day". Four picks on "Bills vs Chiefs" should reconcile against one fact — *Bills and Chiefs played on X, final Y–Z* — and each pick is then matched to it. Nobody publishes a false final score, so no deep research.
+### Added
+- **Game records** (`games` table, migration 007; `GET /api/games`, `/api/games/:id`; included in the JSON export): one row per real game — teams, date/time, status (`final` / `scheduled` / `postponed` / `unknown`), final scores, overtime, winner, the source page, the verbatim score line it was read from, and how it was found. Predictions carry `gameId`.
+- Job `sports.resolve_game` replaces the 1.3.1 date job and the plan → research → assessment chain for picks. It reuses a stored final for the matchup when one exists; otherwise two budgeted searches ("A vs B final score …", "A B box score …"), then a deterministic score reader over result snippets and up to three fetched pages (trusted hosts first): a line naming both teams and free of betting/preview words yields a score from "Team 27, Team 20" or "27-20" beside a win verb; "final" adds weight; ties are ambiguous; records like "(2-0)" are ignored; postponed wording is reported. The date comes from the same text (1.3.1 parser) or one page read. Only when the parser finds nothing does the assessment-stage model read the same pages, and its excerpt must appear verbatim in the page text. No score anywhere → the game is stored as scheduled/unknown and the picks stay pending; nothing is invented.
+- **Settlement by rule** (`settlePick`): moneyline → winner; spread → margin + line; total → sum vs line; equal → push; tie game → push for moneyline. Every pick on the matchup — the four from one video, or the same game across videos — gets a verdict from the same record: provider `app`, template `sports_settlement.v1`, one evidence item (the score line, tied to the pick's component), confidence high from a trusted host, medium otherwise. Picks whose date was unknown pick up the game date (`deadlineBasis: lookup`).
+- **Validate all scores** button on the Predictions page when a video is selected (`POST /api/videos/:id/validate-scores`): one job per distinct matchup, all picks reconciled.
+- Detail panel shows the game record: score, winner, date, source link, the quoted score line, and how it was found.
+### Changed
+- `POST /api/predictions/:id/validate-score` returns `202 { stage: "game" }` and accepts `{ recheck: true }` (Re-validate forces a fresh look-up instead of reusing the stored record). Still `409 game_pending` before a known game date.
+- The 1.3.1 `sports.resolve_date` job and `sports_assessment` model settlement are superseded for picks (the research path still exists for general predictions and remains callable). 59 tests.
+
 ## [1.3.1] — 2026-09-12 — Validate scores finds the game date itself
 Owner report: a Week-1 picks video (published 2026-09-09) produced 16 picks with *deadline unknown* because the transcript never says a date ("Week 1", "Sunday Night Football"), so Validate scores refused with `game_date_unknown`. The button now resolves the date from the published schedule.
 ### Added

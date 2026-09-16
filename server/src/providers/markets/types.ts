@@ -9,7 +9,7 @@
  * quote currency (USDC for Polymarket). Everything here is a snapshot at `retrievedAt`.
  */
 
-export type MarketProviderId = "polymarket";
+export type MarketProviderId = "polymarket" | "manifold";
 
 export interface MarketOutcome {
   /** Outcome label as the venue prints it ("Yes" / "No", or a team name). */

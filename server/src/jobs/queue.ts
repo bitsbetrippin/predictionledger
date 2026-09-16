@@ -32,6 +32,7 @@ export interface JobContext {
 export type JobHandler = (ctx: JobContext) => Promise<Record<string, unknown> | void>;
 
 interface JobRow {
+  result_json: string | null;
   id: string;
   kind: JobKind;
   status: JobStatus;
@@ -253,5 +254,15 @@ function toSummary(row: JobRow): JobSummary {
     error: row.error ?? undefined,
     subjectType: row.subject_type ?? undefined,
     subjectId: row.subject_id ?? undefined,
+    result: row.result_json ? safeJson(row.result_json) : undefined,
   };
+}
+
+function safeJson(text: string): Record<string, unknown> | undefined {
+  try {
+    const v = JSON.parse(text) as unknown;
+    return v && typeof v === "object" ? (v as Record<string, unknown>) : undefined;
+  } catch {
+    return undefined;
+  }
 }

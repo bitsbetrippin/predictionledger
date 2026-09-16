@@ -57,8 +57,14 @@ export async function startYouTubeImport(ctx: AppContext, req: YouTubeImportRequ
   return { video, duplicate: false, jobId };
 }
 
-export function enqueueImport(ctx: AppContext, videoId: string, userSupplied: { title?: boolean; publishedAt?: boolean; language?: boolean } = {}, forceAudio = false): string {
-  return ctx.jobs.enqueue({ kind: "video.import", subjectType: "video", subjectId: videoId, payload: { videoId, userSupplied, forceAudio }, dedupeKey: `video.import:${videoId}`, maxAttempts: 1 });
+export function enqueueImport(ctx: AppContext, videoId: string, userSupplied: { title?: boolean; publishedAt?: boolean; language?: boolean } = {}, forceAudio = false, autoExtract = false): string {
+  return ctx.jobs.enqueue({ kind: "video.import", subjectType: "video", subjectId: videoId, payload: { videoId, userSupplied, forceAudio, autoExtract }, dedupeKey: `video.import:${videoId}`, maxAttempts: 1 });
+}
+
+/** 1.8 — bulk imports can ask for extraction as soon as a transcript lands. */
+export function enqueueExtractIfRequested(ctx: AppContext, videoId: string, autoExtract: boolean): void {
+  if (!autoExtract) return;
+  ctx.jobs.enqueue({ kind: "prediction.extract", subjectType: "video", subjectId: videoId, payload: { videoId }, dedupeKey: `prediction.extract:${videoId}`, maxAttempts: 2 });
 }
 
 export function makeYouTubeImportHandler(ctx: AppContext) {
@@ -66,6 +72,7 @@ export function makeYouTubeImportHandler(ctx: AppContext) {
     const videoId = String(job.payload.videoId ?? "");
     const userSupplied = (job.payload.userSupplied ?? {}) as { title?: boolean; publishedAt?: boolean; language?: boolean };
     const forceAudio = job.payload.forceAudio === true; // "Re-transcribe" on a captions-based import
+    const autoExtract = job.payload.autoExtract === true; // 1.8 bulk import
     const video = ctx.videos.get(videoId);
     if (!video?.youtubeId) throw new Error("Video no longer exists or is not a YouTube import.");
     const ytId = video.youtubeId;
@@ -103,7 +110,8 @@ export function makeYouTubeImportHandler(ctx: AppContext) {
           ctx.videos.setStatus(videoId, "ready");
           ctx.videos.setError(videoId, null);
           ctx.videos.setNotes(videoId, `${info.channel ? `Channel: ${info.channel}. ` : ""}${track.kind === "auto" ? "Transcript comes from YouTube's auto-generated captions; wording and timestamps can be imprecise. Re-transcribe to use your own engine." : `Creator-provided captions (${track.lang}).`}`);
-          job.progress(100, `${cues.length} caption segments`);
+          enqueueExtractIfRequested(ctx, videoId, autoExtract);
+          job.progress(100, `${cues.length} caption segments${autoExtract ? "; extracting…" : ""}`);
           return { source: track.kind === "manual" ? "captions-manual" : "captions-auto", lang: track.lang, segments: cues.length };
         }
         // listed but empty → fall through to audio
@@ -135,7 +143,7 @@ export function makeYouTubeImportHandler(ctx: AppContext) {
       fs.rmSync(scratch, { recursive: true, force: true });
       ctx.videos.setMedia(videoId, { mediaPath: finalRel, mediaHash: hash, mediaSize: size, durationS: probed.durationS });
       ctx.videos.setNotes(videoId, `${info.channel ? `Channel: ${info.channel}. ` : ""}No usable captions; audio downloaded (${(size / 1048576).toFixed(1)} MB) and transcribed locally with the engine chosen in Setup.`);
-      ctx.jobs.enqueue({ kind: "audio.extract", subjectType: "video", subjectId: videoId, payload: { videoId }, dedupeKey: `audio.extract:${videoId}`, maxAttempts: 2 });
+      ctx.jobs.enqueue({ kind: "audio.extract", subjectType: "video", subjectId: videoId, payload: { videoId, autoExtract }, dedupeKey: `audio.extract:${videoId}`, maxAttempts: 2 });
       job.progress(100, "Audio saved; transcribing…");
       return { source: "audio", bytes: size, ext };
     } catch (err) {

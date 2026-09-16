@@ -25,6 +25,10 @@ import { ResearchService } from "./services/research.js";
 import { GameService } from "./services/games.js";
 import { MarketService } from "./services/markets.js";
 import { SignalService } from "./services/signals.js";
+import { AlertService } from "./services/alerts.js";
+import { ConsensusService } from "./services/consensus.js";
+import { makeMarketWatchHandler } from "./jobs/handlers/watch.js";
+import { makePlaylistImportHandler } from "./youtube/playlist.js";
 import { GuardedFetcher, type SourceFetcher } from "./research/fetcher.js";
 import { makeAudioExtractHandler, makeModelDownloadHandler, makeTranscribeHandler } from "./jobs/handlers/media.js";
 import { LocalWhisperProvider, OpenAiTranscriptionProvider, type TranscriptionProvider } from "./media/transcription.js";
@@ -50,6 +54,9 @@ export interface AppContext {
   markets: MarketService;
   /** 1.7: creator records and market-side signals (computed on read). */
   signals: SignalService;
+  /** 1.8: watch-rule alerts and cross-channel consensus. */
+  alerts: AlertService;
+  consensus: ConsensusService;
   fetcher: SourceFetcher;
   /** Builds the transcription engine selected in Setup (or a test override). */
   transcription: () => TranscriptionProvider;
@@ -80,6 +87,8 @@ export function createContext(overrides: Partial<Pick<AppContext, "fetcher" | "t
     games: new GameService(db),
     markets: new MarketService(db),
     signals: new SignalService(db),
+    alerts: new AlertService(db),
+    consensus: new ConsensusService(db, new SignalService(db)),
     fetcher: overrides.fetcher ?? new GuardedFetcher(),
     transcription:
       overrides.transcription ??
@@ -99,6 +108,8 @@ export function createContext(overrides: Partial<Pick<AppContext, "fetcher" | "t
   jobs.register("market.snapshot", makeMarketSnapshotHandler(ctx));
   jobs.register("market.match", makeMarketMatchHandler(ctx));
   jobs.register("market.backfill", makeMarketBackfillHandler(ctx));
+  jobs.register("market.watch", makeMarketWatchHandler(ctx));
+  jobs.register("playlist.import", makePlaylistImportHandler(ctx));
   jobs.register("assessment.run", makeAssessHandler(ctx));
   jobs.register("audio.extract", makeAudioExtractHandler(ctx));
   jobs.register("transcript.generate", makeTranscribeHandler(ctx));

@@ -95,7 +95,8 @@ Delivered: `/prices-history` backfill (`market.backfill`), creator records per c
 - Dashboard: a Signals view — market, side, market price, our estimate, edge, confidence, contributing predictions, liquidity; sortable; every number clicks through to the evidence.
 - Acceptance: fixtures with synthetic settled histories produce the expected Brier/edge numbers; a creator with two predictions gets *no signal*; a sports moneyline with a settled game shows the realised outcome next to the pre-game price.
 
-### 1.8 — Multi-channel weighting and market watch
+### 1.8 — Multi-channel weighting and market watch — **shipped 1.8.0 (except paper trading)**
+Delivered: playlist/channel bulk import with auto-extract, consensus propositions (by market / by text, split shown), watch rules with local deduped alerts, Manifold as the second venue. Not delivered, by design: order placement (never) and the paper-trading ledger — see the open question below; it is a schema change (positions, marks, P&L) and needs a decision.
 *Goal: the range of bets across many channels, and a watchlist that tells you when the market moves against the consensus.*
 
 - Bulk ingestion: playlists/channels (YouTube) and transcript batches, tagged by source; dedupe the *same claim* across videos into one proposition with many endorsements.

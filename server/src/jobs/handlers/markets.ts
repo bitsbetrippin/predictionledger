@@ -21,18 +21,25 @@ import { priceNearest } from "../../analysis/signals.js";
 import { completeStructured, MalformedOutputError } from "../../analysis/structured.js";
 import { resolveStageTarget } from "../../analysis/stages.js";
 import { createMarketProvider } from "../../providers/markets/registry.js";
-import type { MarketProvider, MarketSummary } from "../../providers/markets/types.js";
+import type { MarketProvider, MarketProviderId, MarketSummary } from "../../providers/markets/types.js";
 
-export function marketProviderFor(ctx: AppContext): MarketProvider {
+export function marketProviderFor(ctx: AppContext, id?: MarketProviderId): MarketProvider {
   const s = ctx.settings.getPersisted();
   if (!s.markets.enabled) throw new Error("Prediction markets are turned off in Setup → Markets.");
   if (!s.privacy.allowInternet) throw new Error("Internet access is disabled in Setup → Privacy; market data cannot be fetched.");
-  return createMarketProvider(s.markets.provider);
+  return createMarketProvider(id ?? s.markets.provider);
+}
+
+/** Every venue enabled in Setup → Markets → venues (1.8), default provider first. */
+export function enabledVenues(ctx: AppContext): MarketProviderId[] {
+  const s = ctx.settings.getPersisted();
+  const list = [...new Set([s.markets.provider, ...s.markets.venues])];
+  return list.filter((v) => s.markets.venues.includes(v) || v === s.markets.provider);
 }
 
 export function makeMarketSnapshotHandler(ctx: AppContext) {
   return async (job: JobContext): Promise<Record<string, unknown>> => {
-    const provider = marketProviderFor(ctx);
+    marketProviderFor(ctx); // settings/internet gate
     const budget = ctx.settings.getPersisted().markets.snapshotBudget;
     const ids = Array.isArray(job.payload.marketIds) ? (job.payload.marketIds as string[]) : undefined;
     const targets = (ids ? ids.map((id) => ctx.markets.get(id)).filter((m): m is NonNullable<typeof m> => !!m) : ctx.markets.refreshable()).slice(0, budget);
@@ -44,7 +51,7 @@ export function makeMarketSnapshotHandler(ctx: AppContext) {
       job.progress(Math.round((i / Math.max(1, targets.length)) * 100), `Refreshing ${m.question.slice(0, 50)} (${i + 1}/${targets.length})`);
       try {
         await ctx.rateLimiter.acquire();
-        const fresh = await provider.get(m.venueId, job.signal);
+        const fresh = await createMarketProvider(m.provider).get(m.venueId, job.signal);
         if (!fresh) { failed.push(`${m.question}: no longer available at the venue`); continue; }
         ctx.markets.upsertFromSummary(fresh);
         ok++;
@@ -52,6 +59,8 @@ export function makeMarketSnapshotHandler(ctx: AppContext) {
         failed.push(`${m.question}: ${(err as Error).message}`);
       }
     }
+    // 1.8: watch rules run over the fresh snapshots.
+    if (ctx.settings.getPersisted().markets.watch.enabled && ok > 0) ctx.jobs.enqueue({ kind: "market.watch", subjectType: "market", subjectId: "all", payload: {}, dedupeKey: "market.watch:all", maxAttempts: 1 });
     job.progress(100, `${ok} market(s) refreshed${failed.length ? `, ${failed.length} failed` : ""}`);
     return { refreshed: ok, failed, budget, candidates: targets.length };
   };
@@ -93,7 +102,8 @@ export function makeMarketMatchHandler(ctx: AppContext) {
     const predictionId = String(job.payload.predictionId ?? "");
     const p = ctx.predictions.get(predictionId);
     if (!p) throw new Error(`Prediction ${predictionId} no longer exists.`);
-    const provider = marketProviderFor(ctx);
+    marketProviderFor(ctx); // settings/internet gate
+    const venues = enabledVenues(ctx);
     const settings = ctx.settings.getPersisted();
     const limit = Number(job.payload.limit ?? 5);
 
@@ -102,13 +112,18 @@ export function makeMarketMatchHandler(ctx: AppContext) {
     const seen = new Map<string, MarketSummary>();
     const notes: string[] = [];
     for (let i = 0; i < queries.length; i++) {
-      if (job.signal.aborted) throw new Error("Cancelled");
-      job.progress(5 + i * 20, `Searching markets (${i + 1}/${queries.length}): ${queries[i].slice(0, 50)}`);
-      try {
-        await ctx.rateLimiter.acquire();
-        for (const m of await provider.search(queries[i], { limit: 25, signal: job.signal })) if (!seen.has(m.id)) seen.set(m.id, m);
-      } catch (err) {
-        notes.push(`Search "${queries[i]}" failed: ${(err as Error).message}`);
+      for (const venue of venues) {
+        if (job.signal.aborted) throw new Error("Cancelled");
+        job.progress(5 + i * 20, `Searching ${venue} (${i + 1}/${queries.length}): ${queries[i].slice(0, 50)}`);
+        try {
+          await ctx.rateLimiter.acquire();
+          for (const m of await createMarketProvider(venue).search(queries[i], { limit: 25, signal: job.signal })) {
+            const key = `${m.provider}:${m.id}`;
+            if (!seen.has(key)) seen.set(key, m);
+          }
+        } catch (err) {
+          notes.push(`${venue} search "${queries[i]}" failed: ${(err as Error).message}`);
+        }
       }
     }
     if (seen.size === 0) {
@@ -150,7 +165,7 @@ export function makeMarketMatchHandler(ctx: AppContext) {
           })
         ).data;
         for (const r of out.matches) {
-          const hit = scored.find((x) => x.m.id === r.market_id);
+          const hit = scored.find((x) => x.m.id === r.market_id || `${x.m.provider}:${x.m.id}` === r.market_id);
           if (!hit) continue;
           const adj = r.relation === "same" ? 0.2 : r.relation === "different" ? -0.35 : 0.05;
           hit.s = { ...hit.s, score: Math.max(0, Math.min(1, +(hit.s.score + adj).toFixed(3))), relation: r.relation, side: r.side ?? hit.s.side, rationale: `${hit.s.rationale} · model: ${r.rationale}` };
@@ -191,7 +206,7 @@ export function makeMarketMatchHandler(ctx: AppContext) {
  */
 export function makeMarketBackfillHandler(ctx: AppContext) {
   return async (job: JobContext): Promise<Record<string, unknown>> => {
-    const provider = marketProviderFor(ctx);
+    marketProviderFor(ctx); // settings/internet gate
     const budget = ctx.settings.getPersisted().markets.snapshotBudget;
     const one = job.payload.linkId ? ctx.markets.getLink(String(job.payload.linkId)) : undefined;
     const links = one ? [one] : ctx.markets.linksNeedingBackfill(budget);
@@ -212,7 +227,7 @@ export function makeMarketBackfillHandler(ctx: AppContext) {
       const to = new Date(Math.min(Date.now(), Date.parse(at) + 2 * 86_400_000)).toISOString();
       try {
         await ctx.rateLimiter.acquire();
-        const points = await provider.priceHistory(outcome.tokenId, { from, to, fidelityMinutes: 60, signal: job.signal });
+        const points = await createMarketProvider(m.provider).priceHistory(outcome.tokenId, { from, to, fidelityMinutes: 60, signal: job.signal });
         const pt = priceNearest(points, at);
         if (!pt) { skipped.push(`${link.id}: no price history around ${p.madeOnDate} (market may not have existed yet)`); continue; }
         ctx.markets.setPriceAtMade(link.id, pt.p, pt.t, "history");

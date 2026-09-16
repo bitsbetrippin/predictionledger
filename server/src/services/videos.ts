@@ -128,6 +128,11 @@ export class VideoService {
     return this.get(id)!;
   }
 
+  /** 1.8 — the playlist/channel URL a video was bulk-imported from. */
+  setSourceList(id: string, url: string | null): void {
+    this.db.run("UPDATE videos SET source_list = ? WHERE id = ?", url, id);
+  }
+
   findByYouTubeId(youtubeId: string): VideoSummary | undefined {
     const row = this.db.get<VideoRow>(`${SUMMARY_SQL} WHERE v.youtube_id = ?`, youtubeId);
     return row ? toSummary(row) : undefined;

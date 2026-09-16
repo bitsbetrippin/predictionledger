@@ -342,6 +342,24 @@ export function SetupPage() {
             <span>Auto-accept exact game matchups (both teams, game date, same pick type). General predictions are always proposals you accept by hand.</span>
           </label>
         </div>
+        <h3>Venues</h3>
+        <div className="grid-3">
+          {(["polymarket", "manifold"] as const).map((v) => (
+            <label key={v} className="row">
+              <input type="checkbox" checked={settings.markets.venues.includes(v)} onChange={(e) => update((s) => { const set = new Set(s.markets.venues); if (e.target.checked) set.add(v); else set.delete(v); if (set.size === 0) set.add("polymarket"); s.markets.venues = [...set]; return s; })} />
+              <span><strong>{v === "polymarket" ? "Polymarket" : "Manifold"}</strong>{v === "manifold" ? " — play-money markets (mana); liquidity and volume are not dollars, so treat its signal gates accordingly." : " — USDC markets; trading is geo-restricted, data is public."}</span>
+            </label>
+          ))}
+          <label className="field"><span>Default venue</span><select value={settings.markets.provider} onChange={(e) => update((s) => ((s.markets.provider = e.target.value as typeof s.markets.provider), s))}><option value="polymarket">Polymarket</option><option value="manifold">Manifold</option></select></label>
+        </div>
+        <h3>Watch rules</h3>
+        <p className="muted small">Checked after every snapshot refresh (and on demand from the Signals page); each rule raises one local alert per subject per day.</p>
+        <div className="grid-3">
+          <label className="row"><input type="checkbox" checked={settings.markets.watch.enabled} onChange={(e) => update((s) => ((s.markets.watch.enabled = e.target.checked), s))} /> <span>Enable watch rules</span></label>
+          <label className="field"><span>Price move (pts, ~24 h)</span><input type="number" min={1} max={100} value={settings.markets.watch.movePts} onChange={(e) => update((s) => ((s.markets.watch.movePts = Math.max(1, Number(e.target.value) || 1)), s))} /></label>
+          <label className="field"><span>Divergence (pts)</span><input type="number" min={1} max={100} value={settings.markets.watch.divergencePts} onChange={(e) => update((s) => ((s.markets.watch.divergencePts = Math.max(1, Number(e.target.value) || 1)), s))} /></label>
+          <label className="field"><span>Resolving within (days)</span><input type="number" min={1} max={365} value={settings.markets.watch.resolveDays} onChange={(e) => update((s) => ((s.markets.watch.resolveDays = Math.max(1, Number(e.target.value) || 1)), s))} /></label>
+        </div>
         <h3>Signal gates</h3>
         <p className="muted small">A signal label appears only when a contributor's record, the edge, the market's liquidity and the deadlines all clear these thresholds. Realized edge is shrunk by n/(n+k) toward zero; k is the prior weight.</p>
         <div className="grid-3">

@@ -12,6 +12,8 @@ Setup → **Prediction markets** turns on read-only Polymarket data (default on;
 
 **Signals (1.7).** The Signals page shows, per market side, the market's price against the linked creators' *realized edge* — what following them would have earned per $1 at the market's price on their settled, linked calls — shrunk toward zero when the record is thin, and a label (strong / moderate / lean / no signal) that only appears when the record size, the edge, the market's liquidity and the deadlines all clear the gates under Setup → Prediction markets → Signal gates. Accepting a link triggers a read of the venue's price history for the day the claim was made. Every row expands to the claims and numbers behind it.
 
+**Consensus, alerts and bulk import (1.8).** Library → *Import a playlist or channel* queues a whole channel (newest first, up to the limit you set) and can extract predictions as each transcript lands. Signals → *Consensus across channels* groups the same claim across videos and shows a split room as a split. Watch rules (Setup → Prediction markets → Watch rules) raise local alerts — a market moved, creators and the market diverge, a market resolves soon — listed on the Signals page with a count in the nav; nothing is sent anywhere. Setup → Venues adds Manifold (play-money) beside Polymarket; searches, links and snapshots then cover both.
+
 ## 1. Prerequisites
 
 | Requirement | Windows | macOS | Notes |

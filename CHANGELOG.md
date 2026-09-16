@@ -4,6 +4,19 @@ All notable changes to Prediction Ledger. Format follows [Keep a Changelog](http
 
 Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
 
+## [1.8.0] — 2026-09-16 — Consensus across channels, watch rules, second venue, bulk import
+Last step of [docs/PREDICTION_MARKETS.md](docs/PREDICTION_MARKETS.md) as planned: the range of bets across many channels, and a watch that says when the market moves against them. Paper trading is deliberately not included — it is a product decision (see the doc).
+### Added
+- **Playlist / channel import** (Library → *Import a playlist or channel*; `POST /api/videos/import-youtube-list { url, limit, autoExtract }`, job `playlist.import`): `yt-dlp --flat-playlist` lists a playlist, a channel's videos tab or an `@handle`, each video not already in the ledger is created and queued through the normal import, and `autoExtract` runs prediction extraction as soon as each transcript lands (captions path immediately; audio path after transcription). Videos remember their `source_list`.
+- **Consensus** (`GET /api/consensus`, Signals → *Consensus across channels*): the same claim across videos becomes one proposition — grouped by the accepted market (sides may differ) or, when unlinked, by statement overlap (Jaccard ≥ 0.5 over content tokens, same kind, negation → No). Endorsement weight = creator's settled market-linked record (min 1) × recency (half-life 90 days). A split room is shown as a split with each side's share, sources and claims.
+- **Watch rules** (job `market.watch`, chained after every snapshot refresh; `POST /api/markets/watch-run`; Setup → Prediction markets → Watch rules): *market moved* ≥ N pts vs the snapshot ~24 h earlier, *divergence* ≥ N pts between a labelled signal's estimate and the market, *resolving soon* within N days for a market with open linked claims. Alerts are local rows (migration 010 `alerts`, one per rule/subject/day), listed on the Signals page with a count badge in the nav; `GET /api/alerts`, `POST /api/alerts/:id/dismiss`, `/api/alerts/dismiss-all`, `/api/alerts/seen`.
+- **Manifold Markets** as a second venue behind `MarketProvider` (`providers/markets/manifold.ts`; public API, play-money — liquidity/volume are mana, tagged `token:mana`): search, get by id/slug/URL, list, history from the bet tape; Setup → Venues chooses which venues Find markets searches and snapshots refresh; the Markets page and manual links take a venue. Binary markets only.
+- Job results are returned on `JobSummary.result`; `settings.markets` gains `venues` and `watch`.
+### Fixed
+- Settings deep-merge turned arrays into objects (would have reset settings to defaults once an array field existed).
+### Notes
+- 77 tests (Manifold adapter, playlist parsing + a fake-yt-dlp listing run, watch rules with dedupe, consensus by market and by text).
+
 ## [1.7.0] — 2026-09-16 — Signals: creator record vs market
 Step three of [docs/PREDICTION_MARKETS.md](docs/PREDICTION_MARKETS.md): turn "creator said X" + "market says p" + "creator's history" into a number you can argue with. Computed on read, nothing stored, nothing traded.
 ### Added

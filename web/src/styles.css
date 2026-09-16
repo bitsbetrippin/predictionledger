@@ -181,3 +181,13 @@ details summary { cursor: pointer; }
 .chip.conf-lean { background: #8aa6c1; color: #fff; }
 .chip.conf-none { opacity: 0.7; }
 .detail-row td { background: var(--surface); }
+
+/* 1.8 — alerts, consensus, bulk import */
+.badge { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 10px; background: #e8a33d; color: #fff; font-size: 11px; line-height: 16px; }
+.alerts .alert { padding: 6px 8px; border-left: 3px solid var(--border); margin-bottom: 4px; }
+.alerts .alert.unseen { border-left-color: #e8a33d; }
+.alerts .alert.divergence { border-left-color: var(--ok); }
+.proposition { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; background: var(--surface); }
+.proposition.split { border-left: 3px solid #e8a33d; }
+.proposition .sides { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 6px; }
+.proposition .side { flex: 1 1 280px; }

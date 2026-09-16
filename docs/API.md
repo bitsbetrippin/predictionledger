@@ -120,6 +120,17 @@ Provider calls made by every job now go through a resilience wrapper: 120 s per-
 
 Settings gain `sports: { enabled, trackSpreads }`.
 
+## Release 1.8 — consensus, alerts, bulk import, Manifold
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/videos/import-youtube-list` | `{ url, limit?≤200, autoExtract? }` → `202 { jobId, url, kind }` (`playlist.import`; result `{ listTitle, found, queued, skipped, videoIds }`). `400 invalid_url`, `409 offline`, `409 tool_missing`. |
+| GET | `/api/consensus?includeSettled=1` | `Proposition[]` — grouped by market or by text; sides with endorsements, share, creators; `disagreement`. |
+| GET | `/api/alerts?includeDismissed=1` | `{ open, alerts: Alert[] }`. `POST /api/alerts/seen { ids }`, `POST /api/alerts/:id/dismiss`, `POST /api/alerts/dismiss-all`. |
+| POST | `/api/markets/watch-run` | Enqueue `market.watch` → `202 { jobId }` (result `{ raised, messages[], open }`). |
+
+`provider` on the market routes accepts `polymarket` or `manifold`; `POST /api/markets/watch` and manual links accept venue URLs. Settings gain `markets.venues[]` and `markets.watch { enabled, movePts, divergencePts, resolveDays }`. `JobSummary.result` carries a completed job's return value. Jobs: `playlist.import { url, limit, autoExtract }`, `market.watch {}`; `video.import`/`audio.extract`/`transcript.generate` accept `autoExtract`.
+
 ## Release 1.7 — signals
 
 | Method | Path | Notes |

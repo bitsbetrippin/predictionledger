@@ -56,7 +56,8 @@ export const persistedSettingsSchema = z.object({
   markets: z
     .object({
       enabled: z.boolean().default(true),
-      provider: z.enum(["polymarket"]).default("polymarket"),
+      provider: z.enum(["polymarket", "manifold"]).default("polymarket"),
+      venues: z.array(z.enum(["polymarket", "manifold"])).min(1).default(["polymarket"]),
       refreshHours: z.number().min(0).max(168).default(6),
       snapshotBudget: z.number().int().min(1).max(500).default(50),
       autoLinkSports: z.boolean().default(true),
@@ -69,8 +70,16 @@ export const persistedSettingsSchema = z.object({
           minLiquidity: z.number().min(0).default(10000),
         })
         .default({ priorWeight: 10, minSettledLean: 3, minSettledModerate: 8, minSettledStrong: 20, minLiquidity: 10000 }),
+      watch: z
+        .object({
+          enabled: z.boolean().default(true),
+          movePts: z.number().min(1).max(100).default(10),
+          divergencePts: z.number().min(1).max(100).default(10),
+          resolveDays: z.number().int().min(1).max(365).default(7),
+        })
+        .default({ enabled: true, movePts: 10, divergencePts: 10, resolveDays: 7 }),
     })
-    .default({ enabled: true, provider: "polymarket", refreshHours: 6, snapshotBudget: 50, autoLinkSports: true, signals: { priorWeight: 10, minSettledLean: 3, minSettledModerate: 8, minSettledStrong: 20, minLiquidity: 10000 } }),
+    .default({ enabled: true, provider: "polymarket", venues: ["polymarket"], refreshHours: 6, snapshotBudget: 50, autoLinkSports: true, signals: { priorWeight: 10, minSettledLean: 3, minSettledModerate: 8, minSettledStrong: 20, minLiquidity: 10000 }, watch: { enabled: true, movePts: 10, divergencePts: 10, resolveDays: 7 } }),
   youtube: z
     .object({
       captions: z.enum(["manual-then-auto", "manual-only", "never"]).default("manual-then-auto"),
@@ -122,7 +131,7 @@ export const DEFAULT_SETTINGS: PersistedSettings = {
     overlapSeconds: 5,
   },
   sports: { enabled: false, trackSpreads: true },
-  markets: { enabled: true, provider: "polymarket", refreshHours: 6, snapshotBudget: 50, autoLinkSports: true, signals: { priorWeight: 10, minSettledLean: 3, minSettledModerate: 8, minSettledStrong: 20, minLiquidity: 10000 } },
+  markets: { enabled: true, provider: "polymarket", venues: ["polymarket"], refreshHours: 6, snapshotBudget: 50, autoLinkSports: true, signals: { priorWeight: 10, minSettledLean: 3, minSettledModerate: 8, minSettledStrong: 20, minLiquidity: 10000 }, watch: { enabled: true, movePts: 10, divergencePts: 10, resolveDays: 7 } },
   youtube: { captions: "manual-then-auto", allowAudioDownload: true, captionLanguage: "auto" },
   search: { provider: "none" },
   limits: { concurrency: 2, maxSearchesPerRun: 8, maxSourcesPerRun: 12, requestsPerMinute: 30, modelTimeoutSeconds: 120 },
@@ -179,6 +188,8 @@ export class SettingsService {
 }
 
 function deepMerge<T>(base: T, patch: unknown): T {
+  // Arrays replace wholesale (1.8: `markets.venues`); spreading one into an object would break its schema.
+  if (Array.isArray(patch) || Array.isArray(base)) return (patch ?? base) as T;
   if (typeof base !== "object" || base === null || typeof patch !== "object" || patch === null) {
     return (patch ?? base) as T;
   }

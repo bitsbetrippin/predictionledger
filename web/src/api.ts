@@ -212,6 +212,8 @@ export const youtube = {
   import: (body: YouTubeImportRequest) => request<{ video: VideoDetail; duplicate: boolean; jobId?: string }>("POST", "/api/videos/import-youtube", body),
   toolsStatus: () => request<ToolsStatus>("GET", "/api/tools/status"),
   installYtDlp: () => request<{ jobId: string }>("POST", "/api/tools/ytdlp/install"),
+  /** 1.8 — playlist / channel bulk import. */
+  importList: (body: import("@prediction-ledger/shared").PlaylistImportRequest) => request<{ jobId: string; url: string; kind: "playlist" | "channel" }>("POST", "/api/videos/import-youtube-list", body),
 };
 
 /** Poll a job until it reaches a terminal state; calls onTick with each snapshot. */
@@ -234,26 +236,26 @@ export const fmtClock = (s?: number) => {
 // Release 1.6 — prediction markets (read-only)
 // ---------------------------------------------------------------------------
 
-import type { CreatorRecord, MarketRecord, MarketSignal, MarketSnapshot, PredictionMarketLink } from "@prediction-ledger/shared";
+import type { Alert, CreatorRecord, MarketProviderId, MarketRecord, MarketSignal, MarketSnapshot, PredictionMarketLink, Proposition } from "@prediction-ledger/shared";
 
 export interface MarketSummaryView {
-  provider: "polymarket"; id: string; slug: string; url: string; question: string; description?: string; event?: { id: string; slug: string; title: string };
+  provider: MarketProviderId; id: string; slug: string; url: string; question: string; description?: string; event?: { id: string; slug: string; title: string };
   outcomes: { label: string; tokenId?: string; price?: number; bestBid?: number; bestAsk?: number }[]; liquidity?: number; volume?: number; volume24h?: number; endDate?: string; active: boolean; closed: boolean; restricted?: boolean; retrievedAt: string;
 }
 export type MarketStoredDetail = MarketRecord & { snapshots: MarketSnapshot[]; links: PredictionMarketLink[] };
 
 export const marketsApi = {
-  search: (q: string, limit = 10) => request<MarketSummaryView[]>("GET", `/api/markets/search${qs({ q, limit: String(limit) })}`),
-  byTag: (tag: string, limit = 20) => request<MarketSummaryView[]>("GET", `/api/markets${qs({ tag, limit: String(limit) })}`),
+  search: (q: string, limit = 10, provider: MarketProviderId = "polymarket") => request<MarketSummaryView[]>("GET", `/api/markets/search${qs({ q, limit: String(limit), provider })}`),
+  byTag: (tag: string, limit = 20, provider: MarketProviderId = "polymarket") => request<MarketSummaryView[]>("GET", `/api/markets${qs({ tag, limit: String(limit), provider })}`),
   stored: () => request<MarketRecord[]>("GET", "/api/markets/stored"),
   storedDetail: (id: string) => request<MarketStoredDetail>("GET", `/api/markets/stored/${id}`),
-  watch: (idOrSlug: string) => request<MarketRecord>("POST", "/api/markets/watch", { provider: "polymarket", idOrSlug }),
+  watch: (idOrSlug: string, provider: MarketProviderId = "polymarket") => request<MarketRecord>("POST", "/api/markets/watch", { provider, idOrSlug }),
   unwatch: (id: string) => request<MarketRecord>("POST", `/api/markets/stored/${id}/unwatch`),
   remove: (id: string) => request<{ ok: true }>("DELETE", `/api/markets/stored/${id}`),
   snapshot: (marketIds?: string[]) => request<{ jobId: string }>("POST", "/api/markets/snapshot", marketIds ? { marketIds } : {}),
   links: (predictionId: string) => request<PredictionMarketLink[]>("GET", `/api/predictions/${predictionId}/market-links`),
   match: (predictionId: string, limit = 5) => request<{ jobId: string }>("POST", `/api/predictions/${predictionId}/market-links/match`, { limit }),
-  linkManual: (predictionId: string, idOrSlug: string, side?: string) => request<PredictionMarketLink>("POST", `/api/predictions/${predictionId}/market-links`, { provider: "polymarket", idOrSlug, side }),
+  linkManual: (predictionId: string, idOrSlug: string, side?: string, provider: MarketProviderId = "polymarket") => request<PredictionMarketLink>("POST", `/api/predictions/${predictionId}/market-links`, { provider, idOrSlug, side }),
   accept: (linkId: string, side?: string) => request<PredictionMarketLink>("POST", `/api/market-links/${linkId}/accept`, { side }),
   reject: (linkId: string) => request<PredictionMarketLink>("POST", `/api/market-links/${linkId}/reject`),
   unlink: (linkId: string) => request<{ ok: true }>("DELETE", `/api/market-links/${linkId}`),
@@ -270,3 +272,13 @@ export const fmtEdge = (e?: number) => (e === undefined ? "—" : `${e >= 0 ? "+
 
 export const fmtPct = (p?: number) => (p === undefined || Number.isNaN(p) ? "—" : `${(p * 100).toFixed(p < 0.1 || p > 0.9 ? 1 : 0)}%`);
 export const fmtMoney = (n?: number) => (n === undefined || Number.isNaN(n) ? "—" : `$${Math.round(n).toLocaleString("en-US")}`);
+
+// 1.8 — consensus, alerts
+export const consensusApi = { get: (includeSettled = false) => request<Proposition[]>("GET", `/api/consensus${includeSettled ? "?includeSettled=1" : ""}`) };
+export const alertsApi = {
+  list: (includeDismissed = false) => request<{ open: number; alerts: Alert[] }>("GET", `/api/alerts${includeDismissed ? "?includeDismissed=1" : ""}`),
+  seen: (ids: string[]) => request<{ ok: true }>("POST", "/api/alerts/seen", { ids }),
+  dismiss: (id: string) => request<Alert>("POST", `/api/alerts/${id}/dismiss`),
+  dismissAll: () => request<{ dismissed: number }>("POST", "/api/alerts/dismiss-all"),
+  runNow: () => request<{ jobId: string }>("POST", "/api/markets/watch-run"),
+};

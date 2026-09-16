@@ -9,7 +9,7 @@
  */
 import { useEffect, useState } from "react";
 import type { HealthResponse } from "@prediction-ledger/shared";
-import { api } from "./api";
+import { alertsApi, api } from "./api";
 import { SetupPage } from "./pages/SetupPage";
 import { LibraryPage } from "./pages/LibraryPage";
 import { VideoPage } from "./pages/VideoPage";
@@ -54,9 +54,13 @@ export function App() {
   const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash));
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
+  const [openAlerts, setOpenAlerts] = useState(0);
 
   useEffect(() => {
-    const onHash = () => setRoute(parseHash(window.location.hash));
+    const refreshAlerts = () => alertsApi.list().then((r) => setOpenAlerts(r.open)).catch(() => undefined);
+    const onHash = () => { setRoute(parseHash(window.location.hash)); void refreshAlerts(); };
+    void refreshAlerts();
+    const timer = setInterval(refreshAlerts, 120_000);
     window.addEventListener("hashchange", onHash);
     api
       .health()
@@ -66,7 +70,7 @@ export function App() {
         if (!window.location.hash) navigate("/library");
       })
       .catch((e: Error) => setHealthError(e.message));
-    return () => window.removeEventListener("hashchange", onHash);
+    return () => { window.removeEventListener("hashchange", onHash); clearInterval(timer); };
   }, []);
 
   const active = route.name === "video" ? "library" : route.name;
@@ -82,7 +86,7 @@ export function App() {
         <nav aria-label="Primary">
           {TABS.map((t) => (
             <a key={t.name} href={`#${t.to}`} className={active === t.name ? "tab active" : "tab"} aria-current={active === t.name ? "page" : undefined}>
-              {t.label}
+              {t.label}{t.name === "signals" && openAlerts > 0 && <span className="badge" aria-label={`${openAlerts} open alerts`}>{openAlerts}</span>}
             </a>
           ))}
         </nav>

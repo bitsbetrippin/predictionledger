@@ -48,7 +48,7 @@ export function makeAudioExtractHandler(ctx: AppContext) {
       }
       ctx.videos.setAudioPath(videoId, wavRel);
       ctx.videos.setStatus(videoId, "transcribing");
-      ctx.jobs.enqueue({ kind: "transcript.generate", subjectType: "video", subjectId: videoId, payload: { videoId }, dedupeKey: `transcript.generate:${videoId}`, maxAttempts: 2 });
+      ctx.jobs.enqueue({ kind: "transcript.generate", subjectType: "video", subjectId: videoId, payload: { videoId, autoExtract: job.payload.autoExtract === true }, dedupeKey: `transcript.generate:${videoId}`, maxAttempts: 2 });
       job.progress(100, "Audio ready; transcribing…");
       return { audioPath: wavRel, meanVolumeDb: db };
     } catch (err) {
@@ -124,6 +124,7 @@ export function makeTranscribeHandler(ctx: AppContext) {
       ctx.videos.setStatus(videoId, "ready");
       ctx.videos.setTranscriptSource(videoId, "transcribed");
       if (segmentCount === 0) ctx.videos.setError(videoId, "Transcription produced no text. The audio may be music, noise, or in an unsupported language.");
+      if (segmentCount > 0 && job.payload.autoExtract === true) ctx.jobs.enqueue({ kind: "prediction.extract", subjectType: "video", subjectId: videoId, payload: { videoId }, dedupeKey: `prediction.extract:${videoId}`, maxAttempts: 2 });
       job.progress(100, segmentCount === 0 ? "No speech recognised" : `${segmentCount} segments`);
       return { chunks: finalStates.length, newSegments: transcribed, segmentCount };
     } catch (err) {

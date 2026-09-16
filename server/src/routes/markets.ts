@@ -12,7 +12,17 @@ import type { FastifyInstance } from "fastify";
 import type { AppContext } from "../context.js";
 import { z } from "zod";
 import { MarketApiError, type MarketProvider } from "../providers/markets/types.js";
-import { createMarketProvider } from "../providers/markets/registry.js";
+import { createMarketProvider, isMarketProviderId } from "../providers/markets/registry.js";
+
+/** Accept an id, a slug, or a venue URL (polymarket.com/event/<slug>, manifold.markets/<user>/<slug>). */
+export function marketKeyFromInput(input: string): string {
+  const t = input.trim();
+  const pm = /^https?:\/\/(www\.)?polymarket\.com\/(event|market)\/([^?#/]+)/i.exec(t);
+  if (pm) return pm[3];
+  const mf = /^https?:\/\/(www\.)?manifold\.markets\/[^/?#]+\/([^?#/]+)/i.exec(t);
+  if (mf) return mf[2];
+  return t.split(/[?#/]/)[0];
+}
 
 export function registerMarketRoutes(app: FastifyInstance, ctx: AppContext): void {
   const guard = (reply: { code: (n: number) => { send: (b: unknown) => unknown } }, providerId: string): MarketProvider | undefined => {
@@ -25,7 +35,7 @@ export function registerMarketRoutes(app: FastifyInstance, ctx: AppContext): voi
       reply.code(409).send({ error: "offline", message: "Internet access is disabled in Setup → Privacy; market data cannot be fetched." });
       return undefined;
     }
-    if (providerId !== "polymarket") {
+    if (!isMarketProviderId(providerId)) {
       reply.code(404).send({ error: "unknown_provider", message: `No market provider "${providerId}".` });
       return undefined;
     }
@@ -76,7 +86,7 @@ export function registerMarketRoutes(app: FastifyInstance, ctx: AppContext): voi
     return { ...m, snapshots: ctx.markets.snapshots(m.id, 100), links: ctx.markets.linksForMarket(m.id) };
   });
 
-  const watchSchema = z.object({ provider: z.enum(["polymarket"]).default("polymarket"), idOrSlug: z.string().min(1).max(300) });
+  const watchSchema = z.object({ provider: z.enum(["polymarket", "manifold"]).default("polymarket"), idOrSlug: z.string().min(1).max(300) });
   /** Store a market and keep it refreshed. */
   app.post("/api/markets/watch", async (req, reply) => {
     const parsed = watchSchema.safeParse(req.body ?? {});
@@ -84,7 +94,7 @@ export function registerMarketRoutes(app: FastifyInstance, ctx: AppContext): voi
     const provider = guard(reply, parsed.data.provider);
     if (!provider) return;
     return wrap(reply, async () => {
-      const key = parsed.data.idOrSlug.trim().replace(/^https?:\/\/(www\.)?polymarket\.com\/(event|market)\//, "").split(/[?#/]/)[0];
+      const key = marketKeyFromInput(parsed.data.idOrSlug);
       const s = await provider.get(key);
       if (!s) return reply.code(404).send({ error: "not_found", message: `No market "${parsed.data.idOrSlug}" at ${parsed.data.provider}.` });
       return reply.code(201).send(ctx.markets.upsertFromSummary(s, { watched: true }));
@@ -117,7 +127,7 @@ export function registerMarketRoutes(app: FastifyInstance, ctx: AppContext): voi
     const jobId = ctx.jobs.enqueue({ kind: "market.match", subjectType: "prediction", subjectId: p.id, payload: { predictionId: p.id, limit: Math.min(Math.max(Number(req.body?.limit ?? 5), 1), 10) }, dedupeKey: `market.match:${p.id}`, maxAttempts: 1 });
     return reply.code(202).send({ jobId });
   });
-  const manualSchema = z.object({ provider: z.enum(["polymarket"]).default("polymarket"), idOrSlug: z.string().min(1).max(300), side: z.string().max(80).optional() });
+  const manualSchema = z.object({ provider: z.enum(["polymarket", "manifold"]).default("polymarket"), idOrSlug: z.string().min(1).max(300), side: z.string().max(80).optional() });
   /** Link a market by hand (stored, accepted, matched_by user). */
   app.post<{ Params: { id: string } }>("/api/predictions/:id/market-links", async (req, reply) => {
     const p = ctx.predictions.get(req.params.id);
@@ -127,7 +137,7 @@ export function registerMarketRoutes(app: FastifyInstance, ctx: AppContext): voi
     const provider = guard(reply, parsed.data.provider);
     if (!provider) return;
     return wrap(reply, async () => {
-      const key = parsed.data.idOrSlug.trim().replace(/^https?:\/\/(www\.)?polymarket\.com\/(event|market)\//, "").split(/[?#/]/)[0];
+      const key = marketKeyFromInput(parsed.data.idOrSlug);
       const s = await provider.get(key);
       if (!s) return reply.code(404).send({ error: "not_found", message: `No market "${parsed.data.idOrSlug}".` });
       const m = ctx.markets.upsertFromSummary(s);
@@ -164,6 +174,17 @@ export function registerMarketRoutes(app: FastifyInstance, ctx: AppContext): voi
     return { gates, creators: ctx.signals.creators(gates), signals: ctx.signals.signals(gates, { includeSettled: req.query.includeSettled === "1" }) };
   });
   app.get("/api/signals/creators", async () => ctx.signals.creators(ctx.settings.getPersisted().markets.signals));
+
+  // ---- 1.8 — consensus, alerts, watch ----
+  app.get<{ Querystring: { includeSettled?: string } }>("/api/consensus", async (req) => ctx.consensus.propositions(ctx.settings.getPersisted().markets.signals, { includeSettled: req.query.includeSettled === "1" }));
+  app.get<{ Querystring: { includeDismissed?: string } }>("/api/alerts", async (req) => ({ open: ctx.alerts.openCount(), alerts: ctx.alerts.list({ includeDismissed: req.query.includeDismissed === "1" }) }));
+  app.post<{ Body: { ids?: string[] } }>("/api/alerts/seen", async (req) => { ctx.alerts.markSeen(Array.isArray(req.body?.ids) ? req.body!.ids!.filter((x) => typeof x === "string").slice(0, 500) : []); return { ok: true }; });
+  app.post<{ Params: { id: string } }>("/api/alerts/:id/dismiss", async (req, reply) => ctx.alerts.dismiss(req.params.id) ?? reply.code(404).send({ error: "not_found" }));
+  app.post("/api/alerts/dismiss-all", async () => ({ dismissed: ctx.alerts.dismissAll() }));
+  app.post("/api/markets/watch-run", async (_req, reply) => {
+    const jobId = ctx.jobs.enqueue({ kind: "market.watch", subjectType: "market", subjectId: "all", payload: {}, dedupeKey: "market.watch:all", maxAttempts: 1 });
+    return reply.code(202).send({ jobId });
+  });
   app.post<{ Params: { id: string } }>("/api/market-links/:id/reject", async (req, reply) => ctx.markets.setLinkStatus(req.params.id, "rejected") ?? reply.code(404).send({ error: "not_found" }));
   app.delete<{ Params: { id: string } }>("/api/market-links/:id", async (req, reply) => (ctx.markets.deleteLink(req.params.id) ? { ok: true } : reply.code(404).send({ error: "not_found" })));
 }

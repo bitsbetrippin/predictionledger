@@ -86,6 +86,7 @@ export function LibraryPage() {
 
       <div className="import-grid">
         <ImportYouTubeCard onImported={reload} tools={tools} onToolsChanged={reloadTools} />
+        <ImportListCard onImported={reload} tools={tools} />
         <UploadMediaCard onImported={reload} disabled={mediaStatus ? !mediaStatus.ffmpeg.ok : false} />
         <ImportTranscriptCard onImported={reload} />
       </div>
@@ -321,6 +322,50 @@ function ImportYouTubeCard({ onImported, tools, onToolsChanged }: { onImported: 
       {msg && <div className={`banner ${msg.kind}`} role="status">{msg.text}</div>}
       <div className="row">
         <button type="button" className="primary" onClick={submit} disabled={busy || offline || needsTool || !url.trim()}>{busy ? "Starting…" : "Import from YouTube"}</button>
+      </div>
+    </div>
+  );
+}
+
+function ImportListCard({ onImported, tools }: { onImported: () => void; tools: ToolsStatus | null }) {
+  const [url, setUrl] = useState("");
+  const [limit, setLimit] = useState(20);
+  const [autoExtract, setAutoExtract] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  const offline = tools ? !tools.internet : false;
+  const needsTool = tools ? !tools.ytdlp.ok : false;
+  const submit = async () => {
+    setMsg(null);
+    setBusy("Listing…");
+    try {
+      const { jobId } = await youtube.importList({ url: url.trim(), limit, autoExtract });
+      const done = await pollJob(jobId, (j) => setBusy(j.stage ?? "Listing…"));
+      if (done.status === "failed") setMsg({ kind: "error", text: done.error ?? "Listing failed." });
+      else {
+        const r = (done.result ?? {}) as { found?: number; queued?: number; skipped?: number; listTitle?: string };
+        setMsg({ kind: "ok", text: `${r.listTitle ? `"${r.listTitle}": ` : ""}${r.found ?? 0} video(s) found, ${r.queued ?? 0} queued${r.skipped ? `, ${r.skipped} already in the ledger` : ""}. Imports run one by one below${autoExtract ? "; predictions are extracted as each transcript lands" : ""}.` });
+        setUrl("");
+      }
+      onImported();
+    } catch (e) {
+      setMsg({ kind: "error", text: e instanceof ApiError ? e.message : (e as Error).message });
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <div className="card">
+      <strong>Import a playlist or channel</strong>
+      <p className="muted">Lists the videos (newest first) without downloading them, then queues each one through the normal YouTube import. Use it to load a channel's picks or macro calls in one go so the same claims can be compared across videos (Signals → Consensus).</p>
+      <div className="grid-3">
+        <label className="field"><span>Playlist or channel link</span><input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://www.youtube.com/@channel/videos or …/playlist?list=…" disabled={offline} /></label>
+        <label className="field"><span>Max videos</span><input type="number" min={1} max={200} value={limit} onChange={(e) => setLimit(Math.min(200, Math.max(1, Number(e.target.value) || 1)))} /><small>Each import fetches captions or audio; keep it modest the first time.</small></label>
+        <label className="row"><input type="checkbox" checked={autoExtract} onChange={(e) => setAutoExtract(e.target.checked)} /> <span>Extract predictions automatically</span></label>
+      </div>
+      {msg && <div className={`banner ${msg.kind}`} role="status">{msg.text}</div>}
+      <div className="row">
+        <button type="button" className="primary" onClick={submit} disabled={!!busy || offline || needsTool || !url.trim()}>{busy ?? "Import list"}</button>
       </div>
     </div>
   );

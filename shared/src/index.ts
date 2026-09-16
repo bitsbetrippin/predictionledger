@@ -83,7 +83,9 @@ export interface AppSettings {
   /** 1.6 — prediction markets (read-only). */
   markets: {
     enabled: boolean;
-    provider: "polymarket";
+    provider: MarketProviderId;
+    /** Venues searched by Find markets and refreshed by snapshots (1.8). */
+    venues: MarketProviderId[];
     /** Hours between automatic snapshot refreshes of linked/watched markets (0 = manual only). */
     refreshHours: number;
     /** Max markets refreshed per snapshot run. */
@@ -100,6 +102,16 @@ export interface AppSettings {
       minSettledStrong: number;
       /** Venue liquidity (quote currency) below which no label is shown. */
       minLiquidity: number;
+    };
+    /** 1.8 — watch rules evaluated after every snapshot run. */
+    watch: {
+      enabled: boolean;
+      /** Alert when a linked/watched market's first-side price moved at least this many points since ~24 h ago. */
+      movePts: number;
+      /** Alert when a labelled signal's estimate differs from the market by at least this many points. */
+      divergencePts: number;
+      /** Alert when a market with an open linked prediction resolves within this many days. */
+      resolveDays: number;
     };
   };
   youtube: {
@@ -194,7 +206,11 @@ export type JobKind =
   /** 1.6: propose market links for one prediction. */
   | "market.match"
   /** 1.7: fetch the venue price nearest a prediction's made-on date for a link. */
-  | "market.backfill";
+  | "market.backfill"
+  /** 1.8: evaluate watch rules over stored markets and signals. */
+  | "market.watch"
+  /** 1.8: list a YouTube playlist/channel and queue each video's import. */
+  | "playlist.import";
 
 export type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 
@@ -215,6 +231,8 @@ export interface JobSummary {
   /** Free-form reference to the owning entity (video id, prediction id). */
   subjectType?: string;
   subjectId?: string;
+  /** Handler return value once completed (1.8: shown for bulk imports and watch runs). */
+  result?: Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------
@@ -668,7 +686,7 @@ export interface ExportBundle {
 // Release 1.6 — prediction markets in the ledger
 // ---------------------------------------------------------------------------
 
-export type MarketProviderId = "polymarket";
+export type MarketProviderId = "polymarket" | "manifold";
 
 export interface MarketRecord {
   id: string;
@@ -806,4 +824,71 @@ export interface MarketSignal {
   contributions: SignalContribution[];
   /** Prediction deadlines vs market end: "consistent" | "inconsistent" | "unknown". */
   deadlineCheck: "consistent" | "inconsistent" | "unknown";
+}
+
+// ---------------------------------------------------------------------------
+// Release 1.8 — consensus, alerts, bulk import
+// ---------------------------------------------------------------------------
+
+export type AlertKind = "market_move" | "divergence" | "resolving_soon";
+export interface Alert {
+  id: string;
+  kind: AlertKind;
+  marketId?: string;
+  side?: string;
+  predictionId?: string;
+  message: string;
+  value?: number;
+  threshold?: number;
+  createdAt: string;
+  seenAt?: string;
+  dismissedAt?: string;
+  market?: { question: string; url: string };
+}
+
+export interface Endorsement {
+  predictionId: string;
+  videoId: string;
+  videoTitle?: string;
+  creatorKey: string;
+  creatorLabel: string;
+  quote: string;
+  madeOnDate?: string;
+  /** Settled market-linked record behind the weight. */
+  settled: number;
+  shrunkEdge?: number;
+  /** Record weight × recency (1 for today, decaying with age). */
+  weight: number;
+  verdict?: EvidenceAssessment;
+}
+
+export interface PropositionSide {
+  side: string;
+  endorsements: Endorsement[];
+  /** Share of total weight on this side (0–1). */
+  share: number;
+  creators: number;
+}
+
+export interface Proposition {
+  key: string;
+  /** Market question, or the representative normalized statement for unlinked clusters. */
+  label: string;
+  marketId?: string;
+  marketUrl?: string;
+  marketPrice?: Record<string, number>;
+  sides: PropositionSide[];
+  /** More than one side has endorsements. */
+  disagreement: boolean;
+  videos: number;
+  creators: number;
+  groupedBy: "market" | "text";
+}
+
+export interface PlaylistImportRequest {
+  url: string;
+  /** Max videos to queue (newest first as the listing returns them). */
+  limit?: number;
+  /** Extract predictions automatically once each transcript lands. */
+  autoExtract?: boolean;
 }

@@ -74,7 +74,7 @@ test("A02/A05 — test + save: connection and buying power appear, zero order ca
     assert.equal(before.policy.mode, "paper");
     assert.equal(before.armed, false);
     assert.equal(before.submissionAvailable, false);
-    assert.deepEqual(before.features, { submission: false, automation: false });
+    assert.deepEqual(before.features, { submission: true, automation: false });
 
     const t = await ctx.trading.testConnection({ keyId: KEY_A, secretKey: SECRET_A });
     assert.equal(t.ok, true, t.message);
@@ -103,7 +103,8 @@ test("A02/A05 — test + save: connection and buying power appear, zero order ca
     assert.equal(saved.sync?.ok, true);
     assert.equal(fake.orderCalls, 0, "no create/cancel calls");
     assert.deepEqual(fake.calls.map((c) => c.method), ["balances", "balances", "balances", "positions", "openOrders"], "test; connect re-tests; then one read-only sync");
-    assert.ok(s.gates.every((g) => g.id === "credentials_valid" || g.id === "account_fresh" || g.id === "reconciled" ? g.satisfied : !g.satisfied), JSON.stringify(s.gates));
+    // 1.13: the submission feature exists and no holds are open; strategy/contract/authorization gates stay unmet on a fresh account.
+    assert.ok(s.gates.every((g) => ["credentials_valid", "account_fresh", "reconciled", "submission_feature", "no_holds"].includes(g.id) ? g.satisfied : !g.satisfied), JSON.stringify(s.gates));
     assert.match(s.identityNote, /does not expose a stable account identifier/);
 
     // A06: canary in every surface a browser, an export, a job or a model could see.
@@ -257,9 +258,10 @@ test("ACC-05 — live modes are refused with their unmet gates; a generic settin
   try {
     fake.script(KEY_A, { secretKey: SECRET_A });
     await ctx.trading.connect({ keyId: KEY_A, secretKey: SECRET_A });
-    for (const mode of ["manual_live", "auto_live"] as const) {
-      assert.throws(() => ctx.trading.setMode(mode), (e: unknown) => e instanceof TradingGateError && e.gates.some((g) => g.id === "submission_feature") && e.gates.some((g) => g.id === "live_authorization"));
-    }
+    // 1.13: manual_live needs fresh account state + the exact acknowledgement; auto_live needs strategy qualification (1.14) as well.
+    assert.throws(() => ctx.trading.setMode("manual_live"), (e: unknown) => e instanceof TradingGateError && e.gates.some((g) => g.id === "live_authorization"), "no acknowledgement → refused");
+    assert.throws(() => ctx.trading.setMode("manual_live", { acknowledge: "i understand" }), (e: unknown) => e instanceof TradingGateError && e.gates.some((g) => g.id === "live_authorization"), "wrong text → refused");
+    assert.throws(() => ctx.trading.setMode("auto_live"), (e: unknown) => e instanceof TradingGateError && e.gates.some((g) => g.id === "strategy_qualified"));
     assert.equal(ctx.trading.setMode("disabled").mode, "disabled");
     assert.equal(ctx.trading.setMode("paper").mode, "paper");
     // Settings document has no trading key; anything smuggled in is dropped by the schema and the policy row is untouched.

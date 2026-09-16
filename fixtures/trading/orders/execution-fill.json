@@ -1,0 +1,23 @@
+{
+ "_note": "SYNTHETIC, shaped after the private stream / synchronous create 'Execution' object: a partial fill of 4 at YES 0.50 on a BUY_LONG order.",
+ "id": "exe-synthetic-1",
+ "type": "EXECUTION_TYPE_PARTIAL_FILL",
+ "lastShares": "4",
+ "lastPx": { "value": "0.50", "currency": "USD" },
+ "tradeId": "trd-synthetic-1",
+ "transactTime": "2026-10-01T12:00:01Z",
+ "commissionNotionalCollected": { "value": "0.08", "currency": "USD" },
+ "aggressor": true,
+ "order": {
+  "id": "ord-synthetic-yes-1",
+  "marketSlug": "aec-nfl-det-buf-2026-10-01",
+  "price": { "value": "0.50", "currency": "USD" },
+  "quantity": 19,
+  "cumQuantity": 4,
+  "leavesQuantity": 15,
+  "intent": "ORDER_INTENT_BUY_LONG",
+  "state": "ORDER_STATE_PARTIALLY_FILLED",
+  "avgPx": { "value": "0.50", "currency": "USD" },
+  "createTime": "2026-10-01T12:00:00Z"
+ }
+}

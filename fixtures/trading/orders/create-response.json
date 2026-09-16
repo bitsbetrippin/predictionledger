@@ -1,0 +1,4 @@
+{
+ "_note": "SYNTHETIC, shaped after POST /v1/orders (asynchronous, the default). An id is acceptance, not a fill; fills arrive on the private stream / GET /v1/order/{id}.",
+ "id": "ord-synthetic-create-1"
+}

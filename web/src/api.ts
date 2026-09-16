@@ -312,7 +312,9 @@ export const tradingApi = {
   connect: (body: { keyId: string; secretKey: string; assertSameAccount?: boolean }) => request<{ binding: TradingAccountBinding; test: TradingConnectionTest; sync?: TradingAccountSync; status: TradingStatus }>("PUT", "/api/trading/connection", body),
   disconnect: () => request<{ disconnected: boolean; cancellations: { orderId: string; outcome: string; message?: string }[]; note: string; status: TradingStatus }>("DELETE", "/api/trading/connection"),
   sync: () => request<TradingAccountSync>("POST", "/api/trading/sync"),
-  setMode: (mode: TradingMode) => request<{ policy: TradingPolicy; gates: TradingGate[] }>("PUT", "/api/trading/policy", { mode }),
+  setMode: (mode: TradingMode, acknowledge?: string) => request<{ policy: TradingPolicy; gates: TradingGate[]; status?: TradingStatus }>("PUT", "/api/trading/policy", acknowledge ? { mode, acknowledge } : { mode }),
+  /** 1.13 (EXE-01): one statement; live modes fall back to paper and the authorization is cleared. */
+  disarm: (reason?: string) => request<{ policy: TradingPolicy; gates: TradingGate[]; status: TradingStatus }>("POST", "/api/trading/disarm", reason ? { reason } : {}),
 };
 export const fmtAmount = (a?: DecimalAmount) => (a ? `${a.currency === "USD" ? "$" : `${a.currency} `}${a.value}` : "—");
 
@@ -356,4 +358,64 @@ export const VERIFICATION_LABEL: Record<ContractVerification["status"], string> 
   research_only: "Research only",
   verified_equivalent: "Verified equivalent",
   stale: "Stale",
+};
+
+// ---------------------------------------------------------------------------
+// 1.12 — forecasts, paper decisions, risk limits, US paper book (no order path exists)
+// ---------------------------------------------------------------------------
+
+import type { ContractVerification as _CV, DecisionOutcome, EvidenceDossier as _ED, ForecastEvaluation, ForecastSnapshot, PaperUsBook, RiskExposure, RiskLimits, RiskReservation, TradeDecision } from "@prediction-ledger/shared";
+
+export interface LimitsResponse { policyVersion: string; limits: RiskLimits; budgetTimezone: string; policyHash: string; mode?: TradingMode }
+export interface DecisionEvidence { decision: TradeDecision; forecast?: ForecastSnapshot; verification?: _CV; dossier?: _ED; reservation?: RiskReservation }
+export const decisionsApi = {
+  evaluate: (body: { predictionId: string; linkId?: string; candidateQuantity?: string; dryRun?: boolean }) => request<TradeDecision>("POST", "/api/trading/decisions", body),
+  list: (f: { mode?: TradingMode; outcome?: DecisionOutcome; from?: string; to?: string; predictionId?: string; limit?: number } = {}) => request<TradeDecision[]>("GET", `/api/trading/decisions${qs({ mode: f.mode, outcome: f.outcome, from: f.from, to: f.to, predictionId: f.predictionId, limit: f.limit ? String(f.limit) : undefined })}`),
+  get: (id: string) => request<TradeDecision>("GET", `/api/trading/decisions/${id}`),
+  evidence: (id: string) => request<DecisionEvidence>("GET", `/api/trading/decisions/${id}/evidence`),
+  exposure: () => request<RiskExposure & { unreflectedReservations: string; limits: RiskLimits }>("GET", "/api/trading/exposure"),
+  limits: () => request<LimitsResponse>("GET", "/api/trading/limits"),
+  setLimits: (patch: Partial<RiskLimits> & { budgetTimezone?: string }) => request<LimitsResponse>("PUT", "/api/trading/limits", patch),
+};
+export const forecastsApi = {
+  build: (predictionId: string, linkId?: string) => request<ForecastSnapshot>("POST", "/api/forecasts", { predictionId, linkId }),
+  get: (id: string) => request<ForecastSnapshot>("GET", `/api/forecasts/${id}`),
+  forPrediction: (predictionId: string) => request<ForecastSnapshot[]>("GET", `/api/predictions/${predictionId}/forecasts`),
+  evaluation: (category?: string) => request<ForecastEvaluation>("GET", `/api/forecasts/evaluation${qs({ category })}`),
+};
+export const paperUsApi = {
+  get: () => request<PaperUsBook>("GET", "/api/paper/us"),
+  setBankroll: (bankrollStart: string) => request<PaperUsBook>("PUT", "/api/paper/us/bankroll", { bankrollStart }),
+  reset: () => request<{ deleted: number }>("POST", "/api/paper/us/reset"),
+};
+export const fmtUsd = (s?: string) => (s === undefined || s === "" ? "—" : `${s.startsWith("-") ? "−" : ""}$${Number(s.replace("-", "")).toFixed(2)}`);
+export const OUTCOME_LABEL: Record<DecisionOutcome, string> = { eligible: "Eligible", skipped: "Skipped", needs_review: "Needs review" };
+
+// ---------------------------------------------------------------------------
+// 1.13 — manual-live execution: preview → confirm, intents, orders, holds, reconciliation (fake venue in tests)
+// ---------------------------------------------------------------------------
+
+import type { DispatchLease, ExecutionRecord, IntentState, LivePosition, OrderPreviewRecord, ReconciliationHold, SettlementEventRecord, TradeIntent, VenueOrderRecord } from "@prediction-ledger/shared";
+
+export interface ReconcileReport { bindingId: string; syncedAt: string; ordersChecked: number; executionsAdded: number; activitiesRead: number; settlements: number; unknownIntents: { intentId: string; candidates: string[] }[]; discrepancies: { marketSlug: string; venueNet: string; localNet: string }[]; holdsOpen: number; paused: boolean }
+export const executionApi = {
+  preview: (decisionId: string) => request<OrderPreviewRecord>("POST", `/api/trading/decisions/${decisionId}/preview`, {}),
+  submit: (decisionId: string, previewId: string, decisionHash: string) => request<TradeIntent>("POST", `/api/trading/decisions/${decisionId}/submit`, { previewId, decisionHash }),
+  intents: (f: { state?: IntentState; mode?: "paper" | "live"; limit?: number } = {}) => request<TradeIntent[]>("GET", `/api/trading/intents${qs({ state: f.state, mode: f.mode, limit: f.limit ? String(f.limit) : undefined })}`),
+  intent: (id: string) => request<TradeIntent>("GET", `/api/trading/intents/${id}`),
+  cancel: (id: string) => request<{ outcome: string; message?: string }>("POST", `/api/trading/intents/${id}/cancel`, {}),
+  resolveUnknown: (id: string, body: { venueOrderId: string; note: string } | { outcome: "not_submitted"; note: string }) => request<TradeIntent>("POST", `/api/trading/intents/${id}/resolve-unknown`, body),
+  orders: (f: { external?: boolean; limit?: number } = {}) => request<VenueOrderRecord[]>("GET", `/api/trading/orders${qs({ external: f.external === undefined ? undefined : String(f.external), limit: f.limit ? String(f.limit) : undefined })}`),
+  order: (id: string) => request<VenueOrderRecord & { executions: ExecutionRecord[] }>("GET", `/api/trading/orders/${id}`),
+  reconcile: () => request<ReconcileReport>("POST", "/api/trading/reconcile", {}),
+  holds: (open = false) => request<ReconciliationHold[]>("GET", `/api/trading/holds${qs({ open: open ? "true" : undefined })}`),
+  resolveHold: (id: string, resolution: string) => request<ReconciliationHold>("POST", `/api/trading/holds/${id}/resolve`, { resolution }),
+  positions: () => request<LivePosition[]>("GET", "/api/trading/positions"),
+  settlements: () => request<SettlementEventRecord[]>("GET", "/api/trading/settlements"),
+  lease: () => request<DispatchLease & { stream: string }>("GET", "/api/trading/lease"),
+  exportUrl: "/api/trading/export",
+};
+export const INTENT_LABEL: Record<IntentState, string> = {
+  prepared: "Prepared", reserved: "Reserved (not sent)", submitting: "Sending…", acknowledged: "Accepted by venue (open)", filled: "Filled", partially_filled: "Partially filled", canceled: "Canceled (no fill)",
+  rejected: "Rejected by venue", rejected_local: "Not sent", skipped: "Skipped", expired: "Expired (never sent)", submission_unknown: "Unknown — reconciling",
 };

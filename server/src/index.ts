@@ -29,6 +29,8 @@ import { registerYouTubeRoutes } from "./routes/youtube.js";
 import { registerMarketRoutes } from "./routes/markets.js";
 import { registerTradingRoutes } from "./routes/trading.js";
 import { registerSubscriptionRoutes } from "./routes/subscriptions.js";
+import { registerDecisionRoutes } from "./routes/decisions.js";
+import { registerExecutionRoutes } from "./routes/execution.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const webDist = path.resolve(here, "..", "..", "web", "dist");
@@ -71,6 +73,8 @@ async function main(): Promise<void> {
   registerMarketRoutes(app, ctx);
   registerTradingRoutes(app, ctx);
   registerSubscriptionRoutes(app, ctx);
+  registerDecisionRoutes(app, ctx);
+  registerExecutionRoutes(app, ctx);
 
   if (fs.existsSync(webDist)) {
     await app.register(fastifyStatic, { root: webDist, prefix: "/", wildcard: false });
@@ -93,6 +97,7 @@ async function main(): Promise<void> {
   ctx.jobs.start();
   startMarketRefresh(ctx);
   startSubscriptionPolling(ctx);
+  const stopExecution = startExecutionLoop(ctx);
 
   // This exact line is what scripts/start.mjs waits for before opening the browser.
   console.log(`PREDICTION_LEDGER_READY ${origin}`);
@@ -101,12 +106,54 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string) => {
     app.log.info(`received ${signal}, shutting down`);
     await ctx.jobs.stop();
+    stopExecution();
     await app.close();
     ctx.db.close();
     process.exit(0);
   };
   process.once("SIGINT", () => void shutdown("SIGINT"));
   process.once("SIGTERM", () => void shutdown("SIGTERM"));
+}
+
+/**
+ * 1.13 — live execution lifecycle (EXE-04/07, OPS-03): take the dispatch lease and keep it renewed, settle what a
+ * crash left behind (a reserved intent without a marker is expired; one with a marker becomes `submission_unknown`),
+ * then, while an account is connected, open the private stream and reconcile at startup and every 30 s while any
+ * live intent is open. Nothing here resubmits anything.
+ */
+function startExecutionLoop(ctx: AppContext): () => void {
+  const LEASE_TTL_MS = 60_000;
+  const held = ctx.lease.acquire(LEASE_TTL_MS);
+  if (!held) console.log("[execution] dispatch lease is held by another process on this data directory; this instance will not send live orders");
+  const recovered = ctx.execution.recoverAfterCrash();
+  if (recovered.expired.length || recovered.unknown.length) console.log(`[execution] recovery: ${recovered.expired.length} unsent intent(s) expired, ${recovered.unknown.length} marked submission_unknown (reconcile before trading)`);
+  const heartbeat = setInterval(() => { ctx.lease.acquire(LEASE_TTL_MS); }, LEASE_TTL_MS / 3);
+  heartbeat.unref();
+  let reconciling = false;
+  const tick = async (force: boolean) => {
+    if (reconciling || !ctx.trading.connected()) return;
+    const open = ctx.execution.intents({ mode: "live", limit: 1000 }).some((i) => ["submitting", "acknowledged", "submission_unknown", "partially_filled"].includes(i.state) && !(i.state === "partially_filled" && i.order && ["filled", "canceled", "expired", "rejected"].includes(i.order.state)));
+    if (!force && !open) return;
+    reconciling = true;
+    try { await ctx.execution.reconcile(); } catch (err) { console.log(`[execution] reconcile failed: ${(err as Error).message.slice(0, 200)}`); } finally { reconciling = false; }
+  };
+  const boot = setTimeout(() => {
+    void (async () => {
+      if (!ctx.trading.connected()) return;
+      await tick(true);
+      if (ctx.settings.getPersisted().privacy.allowInternet) await ctx.execution.startStream();
+    })();
+  }, 1_000);
+  boot.unref();
+  const periodic = setInterval(() => void tick(false), 30_000);
+  periodic.unref();
+  return () => {
+    clearTimeout(boot);
+    clearInterval(periodic);
+    clearInterval(heartbeat);
+    ctx.execution.stopStream();
+    ctx.lease.release();
+  };
 }
 
 /**

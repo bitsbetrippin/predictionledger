@@ -1,0 +1,10 @@
+{
+ "_note": "SYNTHETIC, shaped after GET /v1/portfolio/activities: one trade (no order id, no side — documented shape), one position resolution (LONG won), one balance change. Cursor paging fields included.",
+ "activities": [
+  { "type": "ACTIVITY_TYPE_TRADE", "trade": { "id": "trd-synthetic-1", "marketSlug": "aec-nfl-det-buf-2026-10-01", "state": "TRADE_STATE_CLEARED", "createTime": "2026-10-01T12:00:01Z", "updateTime": "2026-10-01T12:00:01Z", "price": { "value": "0.50", "currency": "USD" }, "qty": "4", "qtyDecimal": "4", "isAggressor": true, "costBasis": { "value": "2.00", "currency": "USD" }, "realizedPnl": null } },
+  { "type": "ACTIVITY_TYPE_POSITION_RESOLUTION", "positionResolution": { "marketSlug": "aec-nfl-det-buf-2026-10-01", "beforePosition": { "marketSlug": "aec-nfl-det-buf-2026-10-01", "netPosition": 4, "netPositionDecimal": "4" }, "afterPosition": { "marketSlug": "aec-nfl-det-buf-2026-10-01", "netPosition": 0, "netPositionDecimal": "0", "realized": { "value": "2.00", "currency": "USD" } }, "updateTime": "2026-10-01T23:00:00Z", "side": "POSITION_RESOLUTION_SIDE_LONG" } },
+  { "type": "ACTIVITY_TYPE_ACCOUNT_DEPOSIT", "accountBalanceChange": { "transactionId": "txn-synthetic-1", "status": "COMPLETED", "amount": { "value": "100.00", "currency": "USD" }, "updateTime": "2026-09-30T00:00:00Z" } }
+ ],
+ "nextCursor": "",
+ "eof": true
+}

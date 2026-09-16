@@ -13,7 +13,7 @@ import type { MarketSummary } from "../providers/markets/types.js";
 interface MarketRow {
   id: string; provider: MarketRecord["provider"]; venue_id: string; condition_id: string | null; slug: string; url: string; question: string; description: string | null;
   event_id: string | null; event_slug: string | null; event_title: string | null; outcomes_json: string; end_date: string | null; start_date: string | null;
-  active: number; closed: number; restricted: number; resolved: number; resolved_outcome: string | null; tags_json: string; watched: number; updated_at: string; constraints_json: string | null;
+  active: number; closed: number; restricted: number; resolved: number; resolved_outcome: string | null; resolved_at?: string | null; tags_json: string; watched: number; updated_at: string; constraints_json: string | null;
 }
 interface SnapshotRow { id: string; market_id: string; retrieved_at: string; prices_json: string; liquidity: number | null; volume: number | null; volume_24h: number | null; spread: number | null; source: MarketSnapshot["source"] }
 interface LinkRow {
@@ -39,15 +39,16 @@ export class MarketService {
     const outcomes = JSON.stringify(s.outcomes.map((o) => ({ label: o.label, tokenId: o.tokenId })));
     const watched = opts.watched === undefined ? (existing?.watched ?? 0) : opts.watched ? 1 : 0;
     this.db.run(
-      `INSERT INTO markets (id, provider, venue_id, condition_id, slug, url, question, description, event_id, event_slug, event_title, outcomes_json, end_date, start_date, active, closed, restricted, resolved, resolved_outcome, tags_json, watched, constraints_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO markets (id, provider, venue_id, condition_id, slug, url, question, description, event_id, event_slug, event_title, outcomes_json, end_date, start_date, active, closed, restricted, resolved, resolved_outcome, tags_json, watched, constraints_json, resolved_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 1 THEN strftime('%Y-%m-%dT%H:%M:%fZ','now') ELSE NULL END)
        ON CONFLICT(provider, venue_id) DO UPDATE SET condition_id = excluded.condition_id, slug = excluded.slug, url = excluded.url, question = excluded.question, description = excluded.description,
          event_id = COALESCE(excluded.event_id, markets.event_id), event_slug = COALESCE(excluded.event_slug, markets.event_slug), event_title = COALESCE(excluded.event_title, markets.event_title), outcomes_json = excluded.outcomes_json, end_date = excluded.end_date, start_date = excluded.start_date,
          active = excluded.active, closed = excluded.closed, restricted = excluded.restricted, resolved = excluded.resolved, resolved_outcome = excluded.resolved_outcome, tags_json = excluded.tags_json,
+         resolved_at = CASE WHEN excluded.resolved = 1 THEN COALESCE(markets.resolved_at, strftime('%Y-%m-%dT%H:%M:%fZ','now')) ELSE markets.resolved_at END,
          watched = excluded.watched, constraints_json = COALESCE(excluded.constraints_json, markets.constraints_json), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')`,
       id, s.provider, s.id, s.conditionId ?? null, s.slug, s.url, s.question, s.description ?? null, s.event?.id ?? null, s.event?.slug ?? null, s.event?.title ?? null, outcomes,
       s.endDate ?? null, s.startDate ?? null, s.active ? 1 : 0, s.closed ? 1 : 0, s.restricted ? 1 : 0, s.resolved ? 1 : 0, s.resolvedOutcome ?? null, JSON.stringify(s.tags ?? []), watched,
-      s.constraints ? JSON.stringify(s.constraints) : null,
+      s.constraints ? JSON.stringify(s.constraints) : null, s.resolved ? 1 : 0,
     );
     if (opts.snapshot !== false) this.addSnapshot(id, s);
     return this.get(id)!;
@@ -189,7 +190,7 @@ export class MarketService {
       id: r.id, provider: r.provider, venueId: r.venue_id, conditionId: r.condition_id ?? undefined, slug: r.slug, url: r.url, question: r.question, description: r.description ?? undefined,
       event: r.event_id ? { id: r.event_id, slug: r.event_slug ?? "", title: r.event_title ?? "" } : undefined,
       outcomes: JSON.parse(r.outcomes_json) as MarketRecord["outcomes"], endDate: r.end_date ?? undefined, startDate: r.start_date ?? undefined,
-      active: r.active === 1, closed: r.closed === 1, restricted: r.restricted === 1, resolved: r.resolved === 1, resolvedOutcome: r.resolved_outcome ?? undefined,
+      active: r.active === 1, closed: r.closed === 1, restricted: r.restricted === 1, resolved: r.resolved === 1, resolvedOutcome: r.resolved_outcome ?? undefined, resolvedAt: r.resolved_at ?? undefined,
       tags: JSON.parse(r.tags_json) as string[], watched: r.watched === 1, updatedAt: r.updated_at, latest: this.latestSnapshot(r.id),
       constraints: r.constraints_json ? (JSON.parse(r.constraints_json) as MarketRecord["constraints"]) : undefined,
     };
@@ -227,7 +228,7 @@ export class MarketService {
     const v = this.getVerification(id);
     if (!v || v.status === "stale") return v;
     this.db.transaction(() => {
-      this.db.run("UPDATE contract_verifications SET status = 'stale', stale_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), stale_reasons_json = ? WHERE id = ?", JSON.stringify(reasons), id);
+      this.db.run("UPDATE contract_verifications SET prior_status = status, status = 'stale', stale_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), stale_reasons_json = ? WHERE id = ?", JSON.stringify(reasons), id);
       this.db.run("UPDATE prediction_market_links SET verification_status = 'stale', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND verification_id = ?", v.linkId, id);
     });
     return this.getVerification(id);
@@ -240,6 +241,20 @@ export class MarketService {
 
   verificationsForLink(linkId: string): ContractVerification[] {
     return this.db.all<VerificationRow>("SELECT * FROM contract_verifications WHERE link_id = ? ORDER BY version DESC", linkId).map(hydrateVerification);
+  }
+
+  /** 1.12: was this link ever verified equivalent by `asOf` (the trading cohort's condition, FOR-02)? */
+  wasVerifiedEquivalentBy(linkId: string, asOf: string): { verificationId: string; sideId?: string; createdAt: string } | undefined {
+    const r = this.db.get<{ id: string; side_id: string | null; created_at: string }>(
+      "SELECT id, side_id, created_at FROM contract_verifications WHERE link_id = ? AND created_at <= ? AND (status = 'verified_equivalent' OR (status = 'stale' AND prior_status = 'verified_equivalent')) ORDER BY version DESC LIMIT 1",
+      linkId, asOf,
+    );
+    return r ? { verificationId: r.id, sideId: r.side_id ?? undefined, createdAt: r.created_at } : undefined;
+  }
+
+  /** Latest verification of a link (any status). */
+  latestVerification(linkId: string): ContractVerification | undefined {
+    return this.verificationsForLink(linkId)[0];
   }
 
   /** Links whose latest verification is currently `verified_equivalent` — the only execution candidates (MAT-03). */

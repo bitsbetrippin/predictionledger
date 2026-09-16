@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import type { AnalysisStage, AppSettings, JobSummary, LlmProviderId, MediaStatus, ModelInfo, ProviderTestResult, ToolsStatus } from "@prediction-ledger/shared";
 import { api, backups, content, media, pollJob, toPayload, youtube, type BackupInfo, type SecretUpdates } from "../api";
 import { PolymarketUsCard } from "../components/PolymarketUsCard";
+import { TradingLimitsCard } from "../components/TradingLimitsCard";
 import type { PromptTemplateInfo } from "@prediction-ledger/shared";
 
 const PROVIDER_LABELS: Record<LlmProviderId, string> = {
@@ -456,6 +457,7 @@ export function SetupPage() {
 
       <h2>Polymarket US account</h2>
       <PolymarketUsCard allowInternet={settings.privacy.allowInternet} />
+      <TradingLimitsCard />
 
       <h2>Web search (for outcome research)</h2>
       <fieldset className="card">

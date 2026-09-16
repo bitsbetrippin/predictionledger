@@ -137,12 +137,24 @@ export class PaperService {
       if (last && last.at === point.at) curve[curve.length - 1] = point;
       else curve.push(point);
     }
+    // 1.12 (F11): per-unit subtotals so play money is never read as dollars. Manifold positions are mana; the rest USDC/USD.
+    const byCurrency: PaperBook["byCurrency"] = {};
+    for (const p of all) {
+      const cur = p.market?.provider === "manifold" ? "MANA" : p.market?.provider === "polymarket_us" ? "USD" : "USDC";
+      const b = (byCurrency[cur] ??= { open: 0, closed: 0, staked: 0, realizedPnl: 0, unrealizedPnl: 0 });
+      if (p.status === "open") b.open += 1; else b.closed += 1;
+      b.staked = round(b.staked + p.stake);
+      b.realizedPnl = round(b.realizedPnl + (p.realizedPnl ?? 0));
+      b.unrealizedPnl = round(b.unrealizedPnl + (p.unrealizedPnl ?? 0));
+    }
     return {
       enabled: cfg.enabled, bankrollStart: cfg.bankroll, bankroll: round(cfg.bankroll + realized), equity: round(cfg.bankroll + realized + unrealized), realizedPnl: realized, unrealizedPnl: unrealized,
       openCount: open.length, closedCount: closed.length, wins: closed.filter((p) => (p.realizedPnl ?? 0) > 0).length, losses: closed.filter((p) => (p.realizedPnl ?? 0) < 0).length, staked,
       returnOnStake: closedStake > 0 ? Math.round((realized / closedStake) * 10_000) / 10_000 : undefined,
       brierEstimate: mean((p) => (p.estimateAtOpen! - p.closedPrice!) ** 2), brierMarket: mean((p) => (p.openedPrice - p.closedPrice!) ** 2),
       curve: curve.slice(-500),
+      method: "legacy-snapshot-v1",
+      byCurrency,
     };
   }
 }

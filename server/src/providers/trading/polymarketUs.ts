@@ -18,13 +18,28 @@
  * are fixed; a base-URL override exists for tests only and is refused unless `allowTestHosts` is set by
  * the caller — settings never reach it (ACC-04).
  *
- * There is intentionally no create / preview / modify method in this file (1.10: "no submission possible").
+ * 1.13 (EXE-01) adds the order API, verified the same way:
+ *   POST /v1/order/preview {request}      → { order }                      (read-only)
+ *   POST /v1/orders                       → { id, executions? }            (an id is acceptance, never a fill)
+ *   GET  /v1/order/{id}                   → { order }                      (state, cumQuantity, avgPx, commissions)
+ *   GET  /v1/portfolio/activities         → { activities, nextCursor, eof } (trades, position resolutions, balances)
+ *   GET  gateway /v1/markets/{slug}/settlement → { slug, settlement }
+ *   wss://api.polymarket.us/v1/ws/private (SDK `ws.private()`; signed handshake; execution events with tradeId)
+ * `price.value` is always the YES price and is passed through untouched; the SDK posts the body verbatim.
+ * The SDK raises APIError(408) on its own timeout and APIError(0) on network failure: those, and 5xx, are the
+ * ambiguous class for a create call (an order may exist); 400/401/403/404/429 mean no order was created.
  */
 
+import crypto from "node:crypto";
 import type { DecimalAmount, TradingBalanceSummary, TradingOpenOrderSummary, TradingPositionSummary } from "@prediction-ledger/shared";
 import { redactSecrets } from "../../security/redact.js";
+import { normalizeExecutionType, normalizeOrderState, sideOfIntent, toVenueCreateBody } from "../../analysis/orderState.js";
 import type { TradingCredentials } from "./credentials.js";
-import { TradingAdapterError, type CancelResult, type PositionsPage, type TradingAdapter, type TradingErrorCode } from "./types.js";
+import {
+  TradingAdapterError,
+  type ActivitiesPage, type ActivityRecord, type CancelResult, type CreateOrderResult, type OrderPreview, type OrderRequest, type PositionsPage, type PrivateStreamHandle, type PrivateStreamHandlers,
+  type SubmitFailureClass, type TradingAdapter, type TradingErrorCode, type VenueExecution, type VenueOrder,
+} from "./types.js";
 
 export const POLYMARKET_US_HOSTS = { gateway: "https://gateway.polymarket.us", api: "https://api.polymarket.us" } as const;
 /** Pinned in server/package.json; npm "latest" was 0.1.1 when verified (2026-09-16). */
@@ -34,6 +49,18 @@ export const POLYMARKET_US_SDK = { package: "polymarket-us", version: "0.1.1" } 
 export interface SdkClientLike {
   get<T>(path: string, options?: { query?: Record<string, unknown>; authenticated?: boolean }): Promise<T>;
   post<T>(path: string, options?: { body?: unknown; query?: Record<string, unknown>; authenticated?: boolean }): Promise<T>;
+  /** Present on polymarket-us@0.1.1 (`client.ws.private()`); optional so a fake client can omit it. */
+  ws?: { private(): SdkPrivateSocketLike };
+}
+/** The private WebSocket the SDK exposes (structural). */
+export interface SdkPrivateSocketLike {
+  connect(): Promise<void>;
+  subscribeOrders(requestId: string, marketSlugs?: string[]): void;
+  subscribePositions(requestId: string, marketSlugs?: string[]): void;
+  subscribeAccountBalance(requestId: string): void;
+  on(event: string, listener: (...args: unknown[]) => void): unknown;
+  close(): void;
+  readonly isConnected: boolean;
 }
 export interface SdkModuleLike {
   PolymarketUS: new (options?: { keyId?: string; secretKey?: string; gatewayBaseUrl?: string; apiBaseUrl?: string; timeout?: number }) => SdkClientLike;
@@ -140,6 +167,176 @@ export class PolymarketUsTradingAdapter implements TradingAdapter {
       throw err;
     }
   }
+
+  // ---- 1.13 (EXE-01): order API --------------------------------------------------------------------------
+
+  async previewOrder(creds: TradingCredentials, req: OrderRequest, signal?: AbortSignal): Promise<OrderPreview> {
+    const body = toVenueCreateBody(req);
+    const raw = await this.call(creds, (c) => c.post<unknown>("/v1/order/preview", { body: { request: body }, authenticated: true }), signal);
+    const order = obj(obj(raw)?.order);
+    return { order: order ? normalizeOrder(order) : undefined, raw };
+  }
+
+  async createOrder(creds: TradingCredentials, req: OrderRequest, signal?: AbortSignal): Promise<CreateOrderResult> {
+    const body = toVenueCreateBody(req);
+    const raw = await this.call(creds, (c) => c.post<unknown>("/v1/orders", { body, authenticated: true }), signal);
+    const o = obj(raw) ?? {};
+    const id = str(o.id);
+    if (!id) throw new TradingAdapterError("unknown", "The venue answered the create call without an order id; treat as ambiguous.");
+    const executions = ((o.executions as unknown[] | undefined) ?? []).flatMap((e) => { const x = normalizeExecution(e, id); return x ? [x] : []; });
+    return { orderId: id, executions, raw };
+  }
+
+  classifySubmitFailure(err: unknown): SubmitFailureClass {
+    const code = err instanceof TradingAdapterError ? err.code : "unknown";
+    return code === "bad_request" || code === "unauthorized" || code === "forbidden" || code === "not_found" || code === "rate_limited" || code === "clock_skew" || code === "host_not_allowed" || code === "sdk_missing" ? "not_created" : "ambiguous";
+  }
+
+  async getOrder(creds: TradingCredentials, orderId: string, signal?: AbortSignal): Promise<VenueOrder | undefined> {
+    if (!/^[A-Za-z0-9._:-]{1,128}$/.test(orderId)) throw new TradingAdapterError("bad_request", "order id has an unexpected shape");
+    try {
+      const raw = await this.call(creds, (c) => c.get<unknown>(`/v1/order/${encodeURIComponent(orderId)}`, { authenticated: true }), signal);
+      const order = obj(obj(raw)?.order) ?? obj(raw);
+      return order && str(order.id) ? normalizeOrder(order) : undefined;
+    } catch (err) {
+      if (err instanceof TradingAdapterError && err.code === "not_found") return undefined;
+      throw err;
+    }
+  }
+
+  async activities(creds: TradingCredentials, opts: { cursor?: string; limit?: number; marketSlug?: string; signal?: AbortSignal } = {}): Promise<ActivitiesPage> {
+    const query: Record<string, unknown> = { limit: opts.limit ?? 100 };
+    if (opts.cursor) query.cursor = opts.cursor;
+    if (opts.marketSlug) query.marketSlug = opts.marketSlug;
+    const raw = await this.call(creds, (c) => c.get<unknown>("/v1/portfolio/activities", { query, authenticated: true }), opts.signal);
+    return normalizeActivities(raw);
+  }
+
+  async settlement(marketSlug: string, signal?: AbortSignal): Promise<{ price: string } | undefined> {
+    if (!/^[A-Za-z0-9._-]{1,200}$/.test(marketSlug)) throw new TradingAdapterError("bad_request", "market slug has an unexpected shape");
+    const res = await fetch(`${this.hosts.gateway}/v1/markets/${encodeURIComponent(marketSlug)}/settlement`, { signal, headers: { accept: "application/json" } });
+    if (res.status === 404) return undefined;
+    if (!res.ok) throw new TradingAdapterError(res.status >= 500 ? "venue_unavailable" : "unknown", `settlement lookup failed: HTTP ${res.status}`, res.status);
+    const j = obj(await res.json()) ?? {};
+    const price = numberToDecimal(j.settlement);
+    return price === undefined ? undefined : { price };
+  }
+
+  async openPrivateStream(creds: TradingCredentials, handlers: PrivateStreamHandlers): Promise<PrivateStreamHandle> {
+    const client = await this.client(creds);
+    if (!client.ws) throw new TradingAdapterError("sdk_missing", "The installed SDK exposes no private WebSocket client.");
+    const socket = client.ws.private();
+    const secrets = [creds.secretKey, creds.keyId];
+    socket.on("orderSnapshot", (m: unknown) => {
+      const snap = obj(obj(m)?.orderSubscriptionSnapshot) ?? obj(obj(m)?.ordersSnapshot) ?? {};
+      const orders = ((snap.orders as unknown[] | undefined) ?? []).flatMap((o) => { const x = obj(o); return x && str(x.id) ? [normalizeOrder(x)] : []; });
+      handlers.onEvent({ kind: "order_snapshot", orders, eof: snap.eof === true });
+    });
+    socket.on("orderUpdate", (m: unknown) => {
+      const upd = obj(obj(m)?.orderSubscriptionUpdate) ?? obj(obj(m)?.orderUpdate) ?? {};
+      const ex = normalizeExecution(upd.execution, undefined);
+      if (ex) handlers.onEvent({ kind: "execution", execution: ex });
+    });
+    socket.on("positionUpdate", (m: unknown) => {
+      const upd = obj(obj(m)?.positionSubscriptionUpdate) ?? obj(obj(m)?.positionUpdate) ?? {};
+      const pos = obj(upd.position) ?? obj(upd.afterPosition) ?? {};
+      const slug = str(upd.marketSlug) ?? str(obj(pos.marketMetadata)?.slug);
+      const net = numberToDecimal(pos.netPositionDecimal) ?? numberToDecimal(pos.netPosition);
+      if (slug && net !== undefined) handlers.onEvent({ kind: "position", marketSlug: slug, netQuantity: net, at: str(upd.updateTime) });
+    });
+    socket.on("accountBalanceUpdate", (m: unknown) => {
+      const upd = obj(obj(m)?.accountBalanceSubscriptionUpdate) ?? obj(obj(m)?.accountBalanceUpdate) ?? {};
+      handlers.onEvent({ kind: "balance", buyingPower: numberToDecimal(upd.buyingPower), balance: numberToDecimal(upd.balance) });
+    });
+    socket.on("heartbeat", () => handlers.onEvent({ kind: "heartbeat" }));
+    socket.on("error", (e: unknown) => handlers.onEvent({ kind: "error", message: redactSecrets(e instanceof Error ? e.message : String(e), secrets).slice(0, 200) }));
+    socket.on("close", () => handlers.onClose("closed"));
+    try {
+      await socket.connect();
+      socket.subscribeOrders("orders");
+      socket.subscribePositions("positions");
+      socket.subscribeAccountBalance("balance");
+    } catch (err) {
+      throw mapError(err, secrets);
+    }
+    return { close: () => socket.close(), get connected() { return socket.isConnected; } };
+  }
+}
+
+// ---- 1.13 normalisation --------------------------------------------------------------------------------
+
+export function normalizeOrder(o: Raw): VenueOrder {
+  const intentRaw = str(o.intent) ?? (str(o.outcomeSide) && str(o.action) ? `${o.outcomeSide}/${o.action}` : undefined);
+  return {
+    id: str(o.id) ?? "",
+    marketSlug: str(o.marketSlug) ?? str(obj(o.marketMetadata)?.slug) ?? "",
+    intentRaw,
+    side: sideOfIntent(intentRaw),
+    stateRaw: str(o.state),
+    state: normalizeOrderState(str(o.state)),
+    quantity: numberToDecimal(o.quantity),
+    filledQuantity: numberToDecimal(o.cumQuantity) ?? "0",
+    leavesQuantity: numberToDecimal(o.leavesQuantity),
+    yesPrice: amount(o.price)?.value,
+    avgPrice: amount(o.avgPx)?.value,
+    feesCollected: amount(o.commissionNotionalTotalCollected)?.value,
+    createTime: str(o.createTime) ?? str(o.insertTime),
+    updateTime: str(o.updateTime),
+    raw: o,
+  };
+}
+
+export function normalizeExecution(e: unknown, fallbackOrderId: string | undefined): VenueExecution | undefined {
+  const x = obj(e);
+  if (!x) return undefined;
+  const order = obj(x.order);
+  const orderId = str(order?.id) ?? fallbackOrderId;
+  const id = str(x.id);
+  if (!orderId || !id) return undefined;
+  return {
+    id,
+    orderId,
+    marketSlug: str(order?.marketSlug) ?? str(obj(order?.marketMetadata)?.slug),
+    type: normalizeExecutionType(str(x.type)),
+    rawType: str(x.type),
+    quantity: numberToDecimal(x.lastShares),
+    yesPrice: amount(x.lastPx)?.value,
+    fee: amount(x.commissionNotionalCollected)?.value,
+    tradeId: str(x.tradeId),
+    at: str(x.transactTime),
+    rejectReason: str(x.orderRejectReason),
+    text: str(x.text),
+    order: order ? normalizeOrder(order) : undefined,
+    raw: x,
+  };
+}
+
+export function normalizeActivities(raw: unknown): ActivitiesPage {
+  const o = obj(raw) ?? {};
+  const rows = (o.activities as unknown[] | undefined) ?? [];
+  const activities: ActivityRecord[] = rows.flatMap((r): ActivityRecord[] => {
+    const a = obj(r);
+    if (!a) return [];
+    const type = str(a.type) ?? "unknown";
+    const trade = obj(a.trade);
+    const res = obj(a.positionResolution);
+    const bal = obj(a.accountBalanceChange);
+    if (trade) {
+      const id = str(trade.id) ?? crypto.createHash("sha256").update(JSON.stringify(trade)).digest("hex").slice(0, 32);
+      return [{ id: `trade:${id}`, kind: "trade" as const, rawType: type, marketSlug: str(trade.marketSlug), tradeId: str(trade.id), quantity: numberToDecimal(trade.qtyDecimal) ?? numberToDecimal(trade.qty), yesPrice: amount(trade.price)?.value, realizedPnl: amount(trade.realizedPnl)?.value, costBasis: amount(trade.costBasis)?.value, at: str(trade.createTime) ?? str(trade.updateTime), raw: a }];
+    }
+    if (res) {
+      const before = obj(res.beforePosition), after = obj(res.afterPosition);
+      const key = crypto.createHash("sha256").update(JSON.stringify({ m: res.marketSlug, t: res.updateTime, s: res.side, b: before?.netPositionDecimal ?? before?.netPosition })).digest("hex").slice(0, 32);
+      return [{ id: `resolution:${key}`, kind: "position_resolution" as const, rawType: type, marketSlug: str(res.marketSlug), tradeId: str(res.tradeId), at: str(res.updateTime), resolutionSide: str(res.side), positionBefore: numberToDecimal(before?.netPositionDecimal) ?? numberToDecimal(before?.netPosition), positionAfter: numberToDecimal(after?.netPositionDecimal) ?? numberToDecimal(after?.netPosition), realizedPnl: amount(after?.realized)?.value, raw: a }];
+    }
+    if (bal) {
+      const id = str(bal.transactionId) ?? crypto.createHash("sha256").update(JSON.stringify(bal)).digest("hex").slice(0, 32);
+      return [{ id: `balance:${id}`, kind: "balance_change" as const, rawType: type, amount: amount(bal.amount)?.value, at: str(bal.updateTime) ?? str(bal.createTime), raw: a }];
+    }
+    return [{ id: `other:${crypto.createHash("sha256").update(JSON.stringify(a)).digest("hex").slice(0, 32)}`, kind: "other" as const, rawType: type, raw: a }];
+  });
+  return { activities, nextCursor: str(o.nextCursor), eof: o.eof === true || str(o.nextCursor) === undefined };
 }
 
 // ---- normalisation (pure, fixture-tested) ----------------------------------------------------------

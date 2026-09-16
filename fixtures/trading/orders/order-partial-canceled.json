@@ -1,0 +1,21 @@
+{
+ "_note": "SYNTHETIC, shaped after GET /v1/order/{orderId}: a 19-contract BUY_SHORT (NO) IOC that filled 10 at YES 0.60 and had the remainder canceled. price/avgPx are YES-denominated.",
+ "order": {
+  "id": "ord-synthetic-no-1",
+  "marketSlug": "aec-nfl-det-buf-2026-10-01",
+  "side": "ORDER_SIDE_BUY",
+  "type": "ORDER_TYPE_LIMIT",
+  "price": { "value": "0.60", "currency": "USD" },
+  "quantity": 19,
+  "cumQuantity": 10,
+  "leavesQuantity": 0,
+  "tif": "TIME_IN_FORCE_IMMEDIATE_OR_CANCEL",
+  "intent": "ORDER_INTENT_BUY_SHORT",
+  "state": "ORDER_STATE_CANCELED",
+  "commissionNotionalTotalCollected": { "value": "0.20", "currency": "USD" },
+  "avgPx": { "value": "0.60", "currency": "USD" },
+  "createTime": "2026-10-01T12:00:00Z",
+  "outcomeSide": "OUTCOME_SIDE_NO",
+  "action": "ORDER_ACTION_BUY"
+ }
+}

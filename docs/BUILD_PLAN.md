@@ -48,7 +48,7 @@ gantt
 | **1.5 → 1.9** | Prediction markets (read-only) | Polymarket/Manifold data, stored links and snapshots, creator signals, consensus and alerts, paper trading. | 1.4 |
 | **1.10** | Polymarket US foundation (delivered) | Connect a Polymarket US account (reads only), discover US markets with contract constraints, masked credentials in a protected vault, portable backups. No submission path. | 1.9 |
 | **1.11** | Source subscriptions + verified contracts (delivered) | Bounded channel subscriptions with provenance and independence metadata; evidence dossier with as-of replay; forecast-purpose research kept apart from verdicts; execution-specific contract verification that blocks every near-match and cannot be overridden. No execution. | 1.10 gate |
-| **1.12** | Forecasts, decisions, US paper engine | Immutable forecasts (versioned estimator), pure trade/no-trade decisions, atomic reservations, execution-aware paper fills. | 1.11 gate |
+| **1.12** | Forecasts, decisions, US paper engine (delivered) | Immutable forecasts (`baseline-edge-v1`), pure trade/no-trade decisions with every gate and a stable reason code, atomic reservations with daily buckets, one opportunity per contract, execution-aware IOC paper fills, versioned pilot limits, Trades page scaffold. No order path. | 1.11 gate |
 | **1.13** | Manual-live execution | Preview → one bounded IOC order → reconciliation; NO-price conversion; `submission_unknown` drills. Owner-run capped smoke test. | 1.12 gate |
 | **1.14** | Bounded automation + Trades dashboard | Explicit arming with a policy hash, scheduler, emergency stop, evidence drill-downs, secret-free export. | 1.13 gate |
 | **2.0** | Verified release | Upgrade/restore/duplicate-process drills, Windows verification on real content, qualification evidence (or "gate unmet"). | 1.14 gate |
@@ -413,6 +413,42 @@ The 1.0 backlog split in two: 0.6 is everything that could be built and verified
 | ADR-032; README, CHANGELOG, SETUP, API, ARCHITECTURE, PREDICTION_MARKETS, VERIFICATION | — | AG-02, AG-16 | ✓ |
 | Tests: 14 new (verifier, independence, provenance end to end, contract routes); regression 112/112 in the sandbox | 03 §1.11 | AG-14 | ✓ |
 | Exit demo on a real US event page; Windows install / typecheck / build / test with real packages | 03 §1.11 exit | owner | **pending** |
+
+## 10c. Release 1.12 — Forecasts, decisions, reservations, US paper execution (delivered)
+
+| Item | Req. | Agent | Done |
+|---|---|---|---|
+| `analysis/decimal.ts` fixed-point ledger arithmetic with declared rounding and increment alignment | RSK-04/07 | AG-05 | ✓ |
+| `analysis/forecast.ts`: estimator §7 exactly, validation, evaluation, qualification gate (F01, F02, F03, F07, F08, F09) | FOR-01, FOR-03, FOR-04, FOR-06, FOR-07 | AG-05 | ✓ |
+| `services/forecasts.ts`: trading cohort (verified links, pre-claim prices, official resolutions observed by the instant; voids/pending/partials counted and excluded), contributions per creator with reupload clustering, immutable hashed snapshots, as-of replay (F04, F05, F06) | FOR-02, FOR-03, FOR-05 | AG-05, AG-11 | ✓ |
+| `analysis/tradeDecision.ts`: pure decision with every gate/reason code, sizing to increments, YES/NO wire rounding, fee bounds, freshness and cutoff boundaries (R01–R06, R08, R09) | RSK-01, RSK-03, RSK-04, RSK-06 | AG-05 | ✓ |
+| `services/riskReservations.ts` + `services/tradeDecisions.ts`: decision + reservation + opportunity in one transaction, paper dispatch, settlement from the venue resolution (F10, R07, R08, R10) | RSK-02, RSK-05, RSK-07, FOR-08 | AG-05, AG-11 | ✓ |
+| `services/paperUs.ts` (`us-ioc-v1`, separate USD bankroll); legacy book labelled with per-unit subtotals (F11) | FOR-08 | AG-05 | ✓ |
+| Migration 014 (additive; immutability trigger; `resolved_at`, `prior_status`, policy limits) | OPS-05 | AG-11 | ✓ |
+| Routes: forecasts, decisions, evidence, exposure, limits, US paper book; strict bodies; live controls still 501 | §12 | AG-05, AG-15 | ✓ |
+| Web: Trades page scaffold, Evaluate paper decision, Setup limits card | DASH scaffold | AG-10 | ✓ (typechecked; browser walk-through pending owner) |
+| ADR-033; README, CHANGELOG, SETUP, API, ARCHITECTURE, PREDICTION_MARKETS, VERIFICATION | — | AG-02, AG-16 | ✓ |
+| Tests: 26 new (estimator, decision, end-to-end decisions with concurrency); regression 138/138 in the sandbox | 03 §1.12 | AG-14 | ✓ |
+| Exit demo on the owner's machine (.60 passes cheap, abstains at .75; $10 cap under two workers); Windows install / typecheck / build / test | 03 §1.12 exit | owner | **pending** |
+| Production strategy qualification (≥ 100 settled paper decisions with a market baseline) | FOR-06/07 | paper soak | **unmet gate** (reported, not waived) |
+
+## 10d. Release 1.13 — Manual-live execution (delivered; owner smoke test pending)
+
+| Item | Req. | Agent | Done |
+|---|---|---|---|
+| Adapter order surface on the pinned SDK: preview, create, get, activities, settlement, private stream, failure classification; API facts verified and recorded (no client id / idempotency / sandbox / identity invented) | EXE-01, EXE-04, EXE-07 | AG-13, AG-05 | ✓ |
+| `analysis/orderState.ts`: wire body with the single NO→YES conversion passed through, enum normalisation, forward-only merge, intent-from-order (E03 pure, E09 pure) | EXE-01, EXE-06, MAT-05 | AG-05 | ✓ |
+| Migration 015 (`trade_intents` rebuilt in place; previews, venue orders, append-only executions, holds, position snapshots, dispatch lease; settlement lineage) | OPS-05 | AG-11 | ✓ |
+| `services/execution.ts`: preview → confirm with immutable hash; T1 reserve / T2 marker / one POST; unknown handling with holds and pause; crash recovery; executions dedupe; targeted cancel; reconciliation (sync, read-back, paged activities with retry, unambiguous attribution, external labelling, discrepancy holds); official settlement with corrections; fault injection (E01–E12) | EXE-02…08 | AG-05, AG-11, AG-15 | ✓ |
+| `services/dispatchLease.ts` + startup/shutdown loop in `index.ts` (O03) | OPS-03 | AG-07, AG-05 | ✓ |
+| Arming with the typed acknowledgement, disarm, dispatch blockers, `no_holds` gate; mode gates enforced on direct APIs; live exposure in `RiskService` | EXE-01, ACC-05, RSK-06 | AG-05, AG-15 | ✓ |
+| Routes: preview/submit/intents/cancel/resolve-unknown/orders/reconcile/holds/positions/settlements/lease/export; deletion guard (D04); export bundle lineage (D03) | §12, DASH-05 | AG-05, AG-15 | ✓ |
+| Web: acknowledgement dialog + disarm on the account card; Trades page live section, preview/confirm dialog, holds resolution, external orders, positions, reconcile, export | DASH core (D01/D02) | AG-10 | ✓ (typechecked; browser walk-through pending owner) |
+| ADR-034; README, CHANGELOG, SETUP (§4.14 smoke-test checklist), API, ARCHITECTURE §6.4, PREDICTION_MARKETS, VERIFICATION, THIRD_PARTY_NOTICES | — | AG-02, AG-16 | ✓ |
+| Tests: 23 new (pure state, real pinned SDK with stubbed fetch, E01–E12 / live R07 / D01–D04 / O01–O03 with fault injection and a second process); regression 161/161 in the sandbox | 03 §1.13 | AG-14 | ✓ |
+| Windows install / typecheck / build / test; fake-venue exit demo on the owner's machine | 03 §1.13 exit | owner | **pending** |
+| **Capped owner-run smoke test** (SETUP §4.14: one contract, quantity 1, cents) — the only live check; no production order was placed in development | EXE-01…08 | owner | **pending — mandatory before "accepted"** |
+| Automation, emergency stop, remaining DASH filters, ACL script, upgrade rehearsal on real data | AUTO-*, DASH-*, OPS-* | 1.14 / 2.0 | — |
 
 ## 11. Working agreements
 

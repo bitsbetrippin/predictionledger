@@ -1,4 +1,4 @@
-# Prediction markets — integration framework (1.5 → 1.11)
+# Prediction markets — integration framework (1.5 → 1.12)
 
 Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
 
@@ -123,6 +123,14 @@ Try it: tick **Polymarket US** under Setup → Venues and search from the Market
 Similarity got a link *proposed* and a human got it *accepted*; neither says the contract settles on the claim's terms. 1.11 adds a **contract verification** per link: a computed checklist over the venue's rules text and constraints against the stored claim (and the stored game record for sports picks). Sports: league, both teams, game date and start, market type, line and sign, period, overtime and tie/void rules, side. General: subject, proposition semantics (touches vs closes above vs cumulative), comparator, threshold, units, observation window, geography, measurement source, side. Always: venue, market open, rules hash, question, settlement conditions, trading close and the earliest pre-event cutoff. The status is derived — `verified_equivalent` only when every required field verified — and no route can set it; a documented fact with its source may fill a missing non-gate field, never an incompatible one. Revalidation marks a version stale when the rules hash, schedule, market status, side ids or the claim itself change; editing the prediction does the same immediately. Only Polymarket US links can verify at all; Polymarket international and Manifold links are `research_only` by construction. `POST /api/predictions/:id/us-candidates` finds US contracts (or reads a pasted event URL) and answers none / one / multiple; `POST /api/market-links/:id/verify-contract` runs the checklist; ADR-032 records the rules, including the "unqualified pick = full game" convention.
 
 Provenance landed in the same release: subscriptions (Library → *Follow a channel or playlist*) with per-poll budgets, first-seen times and content hashes on videos and sources, independence groups after every research run, an evidence dossier with dissent and an as-of replay, and forecast-purpose research that never becomes a verdict. Nothing in 1.11 places, previews or prepares an order.
+
+## Forecasts and paper decisions (1.12)
+
+The forecast is the §7 baseline estimator over the **trading cohort** — verified, pre-claim-priced, officially resolved observations only — added to one fresh YES midpoint; it is frozen with its inputs and hash. The decision is a pure function with every gate reported (freshness of book, sync and forecast; cutoff minus buffer; verified, unchanged contract; opposing exposure; caps; probability strictly above .50; net edge at least .03 after fee-aware, increment-aligned sizing). Capacity is reserved in the decision's own transaction, one entry per contract, and paper fills walk the venue's depth at the limit with fees and IOC cancellation in a separate USD bankroll. The Trades page shows all of it, skipped decisions included. ADR-033 has the rules.
+
+## Manual-live execution (1.13)
+
+A manual-live decision (`needs_review`) can be **previewed** (re-decided with a fresh book and account, the venue's own preview, everything shown, bound to the decision's hash, 60 s) and **confirmed** once by the owner. The app reserves, commits a dispatch marker (policy still armed, lease held, no holds) and sends **one** bounded limit immediate-or-cancel; NO orders go to the wire as the YES price converted exactly once. A lost answer is an *unknown* submission — held, paused, listed with candidates for the owner, never resent; a rejection releases; fills arrive by stream and by reconciliation and are unique by execution and trade id; a cancel keeps the fills; orders from the website stay *external* with no rationale; only the venue's position-resolution activity settles, corrections included. Arming needs the typed acknowledgement in Setup; restarts, limit edits, backups and credential changes disarm. Automation is 1.14. The owner smoke test (SETUP §4.14) is the only live check and is pending. ADR-034 has the rules.
 
 ## Open questions for the product owner
 

@@ -120,6 +120,91 @@ Provider calls made by every job now go through a resilience wrapper: 120 s per-
 
 Settings gain `sports: { enabled, trackSpreads }`.
 
+## Release 1.13 — manual-live execution (preview → confirm), orders, holds, reconciliation
+
+All mutations: CSRF header + same origin; bodies `.strict()`. Amounts are decimal strings in USD; prices are YES-denominated on the wire and chosen-side in the app's cost fields. **Mode gates apply here exactly as in the UI**: preview and submit answer `409` unless the policy is `manual_live` with a live authorization, an account is connected, this process holds the dispatch lease and no hold is open. `POST /api/trading/arm` and `/emergency-stop` still answer `501 feature_disabled` (automation, 1.14).
+
+### Arming (EXE-01)
+
+| Method | Path | Notes |
+|---|---|---|
+| PUT | `/api/trading/policy` | `{ mode, acknowledge? }`. `manual_live` needs validated credentials, a sync ≤ 30 s old, a reconciled binding, no open holds and `acknowledge` equal to `LIVE_ACKNOWLEDGEMENT` (`I understand this places real orders with real money`) — otherwise `409 gate_unmet` with the unmet gates (`live_authorization` for a missing/different text). `auto_live` → `409` (strategy qualification, 1.14). `paper` / `disabled` clear the authorization. Returns `{ policy, gates, status }`. |
+| POST | `/api/trading/disarm` | `{ reason? }` → `{ policy, gates, status }`. One statement: live modes → `paper`, authorization cleared, audited. The dispatch marker transaction re-reads the policy, so nothing can start after a disarm. Open venue orders are untouched (cancel them per intent). |
+| GET | `/api/trading/status` | now carries `armed`, `submissionAvailable`, `dispatchBlockers[]` (human-readable reasons) and the `no_holds` gate. |
+| GET | `/api/trading/lease` | `DispatchLease { holder?, acquiredAt?, expiresAt?, heldByThisProcess }` + `stream` (`closed | connecting | open | reconnecting`). |
+
+### Preview → confirm (EXE-02/03/04)
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/trading/decisions/:id/preview` | `201 OrderPreviewRecord { id, decisionId, decisionHash, request (the exact wire body), venue (the venue's preview answer), display { side, sideLabel, pChosen, netEdge, quantity, chosenCost, yesWirePrice, worstCost, feeBound, estimatedEv, deadlineAt, policyHash, question, marketUrl, evidenceUrl }, expiresAt (+60 s), consumedAt?, consumedBy? }`. The decision must be a manual-live decision (`409 decision_not_live` for a paper one), not skipped, on a Polymarket US contract; the server re-decides with a fresh book/account first (`409 decision_not_eligible` / `decision_changed`). `409 mode_not_live`, `not_authorized`, `not_connected`, `dispatch_blocked`. Makes no create call. |
+| POST | `/api/trading/decisions/:id/submit` | `{ previewId, decisionHash }` — nothing else is accepted (no price, side, quantity, budget). `201 TradeIntent` on acceptance (states below); `409 rejected_local` intent when the marker could not be committed (disarmed, lease lost, blocked); `409 hash_mismatch`, `preview_consumed`, `preview_expired`, `preview_stale` (price/evidence/policy/account moved: evaluate and preview again). Repeating the same confirmation returns the same intent — even while the account is paused for it. Exactly one venue POST per intent, ever. |
+| GET | `/api/trading/previews/:id` | one preview. |
+
+### Intents, orders, executions (EXE-05/06)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/trading/intents?state=&mode=&limit=` | `TradeIntent[]` newest first. `state ∈ prepared, reserved, submitting, acknowledged, filled, partially_filled, canceled, rejected, rejected_local, skipped, expired, submission_unknown`. Live intents carry `bindingId, venueOrderId?, previewId, decisionHash, dispatchMarkerAt?, submittedAt?, acknowledgedAt?, unknownReason?, lastError?, order?, executions?`. |
+| GET | `/api/trading/intents/:id` | one intent with its venue order and executions. |
+| POST | `/api/trading/intents/:id/cancel` | targeted cancel of that intent's venue order → `{ outcome: requested | not_found | failed | not_open, message? }`; `cancel_pending` locally until the venue confirms; a `failed_cancel` hold on failure. `409 no_order` for an unknown submission (resolve it instead). |
+| POST | `/api/trading/intents/:id/resolve-unknown` | `{ venueOrderId, note }` (link this venue order — it becomes ours, its fills settle the reservation once) **or** `{ outcome: "not_submitted", note }` (the venue never created it — reservation released, opportunity returned). Exactly one of the two; the note is mandatory and audited. `409 not_unknown`, `order_taken`. |
+| GET | `/api/trading/orders?external=&limit=` | `VenueOrderRecord[]` — ours and external (`external: true`, no `intentId`, no rationale). |
+| GET | `/api/trading/orders/:id` | the order with `executions[]` (`id, orderId, intentId?, tradeId?, type, quantity?, yesPrice?, chosenCost?, fee?, at?, source ∈ create_response, stream, rest, activity`). |
+| POST | `/api/trading/orders` | `409 preview_required` — there is no direct order route. |
+
+### Reconciliation, holds, positions, settlement (EXE-04/05/07/08)
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/trading/reconcile` | `ReconcileReport { bindingId, syncedAt, ordersChecked, executionsAdded, activitiesRead, settlements, unknownIntents[{intentId, candidates[]}], discrepancies[{marketSlug, venueNet, localNet}], holdsOpen, paused }`. Never sends or resends anything. |
+| GET | `/api/trading/holds?open=true` | `ReconciliationHold[] { id, bindingId, kind ∈ submission_unknown, discrepancy, failed_cancel, stale_sync, stream_gap; subject, detail, openedAt, resolvedAt?, resolution? }`. Any open hold pauses dispatch. |
+| POST | `/api/trading/holds/:id/resolve` | `{ resolution }` for every kind except `submission_unknown` (use `resolve-unknown`). |
+| GET | `/api/trading/positions` | `LivePosition[] { marketSlug, venueNet?, venueAt?, localNet (signed, YES-denominated), intentIds, discrepancy?, settled? { outcome ∈ win, loss, void, correction, external_exit; at } }`. |
+| GET | `/api/trading/settlements` | `SettlementEventRecord[]` — `source: account_activity` rows carry `bindingId`, `intentId?`, `amount?`, `activityId?`; corrections are separate rows. |
+| GET | `/api/trading/export` | `{ exportedAt, intents, orders, executions, settlements, holds, audit }` — the complete manual order audit trail, secret-free. |
+
+Deletion guard (DASH-05): `DELETE /api/videos/:id`, `/api/predictions/:id`, `/api/markets/stored/:id` → `409 live_lineage { intentIds }` when a live intent descends from the record.
+
+Audit kinds added: `order.previewed`, `order.submitting`, `order.acknowledged`, `order.refused`, `order.submission_unknown`, `order.cancel_requested`, `execution.recovered`, `reconcile.completed`, `settlement.recorded`, `hold.opened`, `hold.resolved`, `dispatch.paused`, `dispatch.resumed`, `stream.failed`, `stream.closed`, `stream.error`, `stream.apply_failed`, `trading.disarmed`, `policy.mode_changed` (with `liveAuthorizationHash`).
+
+## Release 1.12 — forecasts, paper decisions, risk limits (no order path)
+
+All mutations: CSRF header + same origin; bodies `.strict()`. Amounts are decimal strings in USD. (In 1.12 `POST /api/trading/orders`, `/arm`, `/disarm`, `/emergency-stop` answered `501`; see Release 1.13 above for the current contract.)
+
+### Forecasts (FOR-01…07)
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/forecasts` | `{ predictionId, linkId? }` → `201 ForecastSnapshot` built over the trading cohort with a fresh YES midpoint from the venue book (`linkId` defaults to the prediction's verified link). `409 no_link` without a verified Polymarket US link. |
+| GET | `/api/forecasts/evaluation?strategy=&category=` | `ForecastEvaluation` over every stored decision of the strategy/category: events, groups, Brier, baseline Brier, calibration bins, fee-adjusted paper return, coverage/abstention, drawdown, skipped reasons, qualification gate. Never writes a production qualification record. |
+| GET | `/api/forecasts/:id`, `/api/predictions/:id/forecasts` | Immutable snapshots: `pYes`, `pNo`, `prior {p0, source, bookAt, bid, ask}`, `status`, `inputs` (versions as of the instant), `formula`, `exclusions[]`, `contributions[]` (`sourceKey, clusterKey, stance, n, meanEdge, shrunkEdge, weight, ageDays, selected, reason, history[]`), `hash`, `expiresAt`. |
+
+### Decisions and risk (RSK-01…07, FOR-08)
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/trading/decisions` | `{ predictionId, linkId?, candidateQuantity?, dryRun? }` → `201 TradeDecision`. Never accepts a price, side or budget. Evaluates every gate, persists the decision (skipped ones too), and in paper mode reserves capacity, consumes the contract's entry opportunity and simulates an IOC fill. `409 no_link`, `404`. |
+| GET | `/api/trading/decisions?mode=&outcome=&from=&to=&predictionId=&limit=` | Newest first. Each carries `outcome`, `sizing?` (`side, sideId, sideLabel, pChosen, quantity, limitCost, wirePrice, feeBound, worstCost, netEdge, estimatedEv, boundBy`), `gates[]` (`id, label, satisfied, code?, detail`), `reasonCodes[]`, `inputs` (immutable snapshot), `rationaleHash`, `policyVersion/policyHash`, `dailyBucket`, `intent?`, `paperPosition?`. |
+| GET | `/api/trading/decisions/:id` | one decision. |
+| GET | `/api/trading/decisions/:id/evidence` | `{ decision, forecast?, verification?, dossier (as of the decision clock), reservation? }` — the "why this decision" record. |
+| GET | `/api/trading/exposure` | `RiskExposure` for the paper account today plus the limits in force. |
+| GET | `/api/trading/limits` | `{ policyVersion, limits: RiskLimits, budgetTimezone, policyHash }`. |
+| PUT | `/api/trading/limits` | any `RiskLimits` field (money as decimal strings; ages in ms) and/or `budgetTimezone` (IANA). A change is hashed, audited (`policy.changed`), disarms a live mode, and never resets consumed allowances. `400 invalid_limits` for an unknown timezone. |
+
+### US paper book (FOR-08)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/paper/us` | `PaperUsBook { method: "us-ioc-v1", currency: "USD", bankrollStart, bankroll, committed, realizedPnl, fees, open, settled, wins, losses, voids, positions[] }` with fills per position. Separate from `/api/paper` (legacy, `method: "legacy-snapshot-v1"`, now with `byCurrency` subtotals). |
+| PUT | `/api/paper/us/bankroll` | `{ bankrollStart }`. |
+| POST | `/api/paper/us/reset` | deletes US paper positions and fills; decisions, intents and reservations stay as history. |
+| POST | `/api/markets/stored/:id/settle-paper` | settles open US paper positions from the market's stored venue resolution (also runs after every snapshot refresh). |
+
+Reason codes (stable): `MODE_DISABLED, OFFLINE, WRONG_VENUE, CONTRACT_NOT_VERIFIED, CONTRACT_STALE, RULES_CHANGED, MARKET_NOT_OPEN, CONSTRAINTS_UNSUPPORTED, CUTOFF_UNKNOWN, AT_OR_PAST_CUTOFF, FORECAST_MISSING, FORECAST_INVALID, FORECAST_INSUFFICIENT, FORECAST_EXPIRED, FORECAST_STALE, STRATEGY_NOT_QUALIFIED, BOOK_MISSING, BOOK_STALE, SYNC_MISSING, SYNC_STALE, SYNC_INCOMPLETE, FEE_UNKNOWN, OPPORTUNITY_CONSUMED, DAILY_LOSS_STOP, MAX_OPEN_MARKETS, PROB_NOT_ABOVE_HALF, OPPOSING_EXPOSURE, OPEN_ORDER_ON_CONTRACT, NO_LIQUIDITY, ORDER_BUDGET_ZERO, MARKET_CAP_REACHED, TOTAL_RISK_CAP_REACHED, DAILY_CAP_REACHED, EVENT_CAP_REACHED, BUYING_POWER, BUYING_POWER_UNKNOWN, NO_VALID_QUANTITY, WORST_COST_EXCEEDS_CAP, EDGE_NEGATIVE, EDGE_BELOW_MIN`.
+
+`TradingPolicy` gains `policyVersion`, `limits`, `budgetTimezone`, `policyHash`; `MarketRecord` gains `resolvedAt`; the JSON export gains `forecasts`, `tradeDecisions`, `paperUsPositions`.
+
 ## Release 1.11 — source subscriptions, evidence dossier, contract verification (no execution)
 
 All mutations: CSRF header + same origin; bodies `.strict()`. Nothing in this release previews, creates or prepares an order.

@@ -109,7 +109,12 @@ export function registerMarketRoutes(app: FastifyInstance, ctx: AppContext): voi
     const m = ctx.markets.setWatched(req.params.id, false);
     return m ?? reply.code(404).send({ error: "not_found" });
   });
-  app.delete<{ Params: { id: string } }>("/api/markets/stored/:id", async (req, reply) => (ctx.markets.delete(req.params.id) ? { ok: true } : reply.code(404).send({ error: "not_found" })));
+  app.delete<{ Params: { id: string } }>("/api/markets/stored/:id", async (req, reply) => {
+    // D04 (1.13): a market with live order lineage keeps its record.
+    const live = ctx.execution.liveLineage({ marketId: req.params.id });
+    if (live.length) return reply.code(409).send({ error: "live_lineage", message: `This market has ${live.length} live trade intent(s); live order history cannot be deleted.`, intentIds: live });
+    return ctx.markets.delete(req.params.id) ? { ok: true } : reply.code(404).send({ error: "not_found" });
+  });
 
   /** Refresh snapshots now (all refreshable markets, or the given ids). */
   app.post<{ Body: { marketIds?: string[] } }>("/api/markets/snapshot", async (req, reply) => {

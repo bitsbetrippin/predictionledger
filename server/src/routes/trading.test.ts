@@ -19,6 +19,7 @@ import { FakeTradingAdapter } from "../providers/trading/fake.js";
 import { setTradingAdapterForTests } from "../providers/trading/registry.js";
 import { registerCsrfGuard } from "../security/csrf.js";
 import { registerTradingRoutes } from "./trading.js";
+import { registerExecutionRoutes } from "./execution.js";
 
 after(() => { delete process.env.PL_DATA_DIR; setTradingAdapterForTests(undefined); });
 
@@ -36,6 +37,7 @@ test("trading routes: CSRF/origin enforced, strict bodies refuse host overrides,
   const app = Fastify();
   registerCsrfGuard(app, () => [ORIGIN]);
   registerTradingRoutes(app, ctx);
+  registerExecutionRoutes(app, ctx);
   try {
     // A07: a mutation without the custom header, or from another origin, is refused before any handler runs.
     const noHeader = await app.inject({ method: "PUT", url: "/api/trading/connection", payload: { keyId: KEY, secretKey: SECRET } });
@@ -86,14 +88,23 @@ test("trading routes: CSRF/origin enforced, strict bodies refuse host overrides,
     assert.equal(sync.statusCode, 200);
     assert.equal(sync.json().ok, true);
 
-    // ACC-05: live modes are refused with their gates; paper/disabled are allowed; controls that do not exist answer 501.
+    // ACC-05 / EXE-01: manual_live without the exact acknowledgement is refused with the live_authorization gate; auto_live stays gated in 1.13.
     const live = await app.inject({ method: "PUT", url: "/api/trading/policy", headers: csrf, payload: { mode: "manual_live" } });
     assert.equal(live.statusCode, 409);
     assert.equal(live.json().error, "gate_unmet");
-    assert.ok(live.json().gates.some((g: { id: string }) => g.id === "submission_feature"));
+    assert.ok(live.json().gates.some((g: { id: string }) => g.id === "live_authorization"), live.body);
+    const auto = await app.inject({ method: "PUT", url: "/api/trading/policy", headers: csrf, payload: { mode: "auto_live", acknowledge: "I understand this places real orders with real money" } });
+    assert.equal(auto.statusCode, 409);
+    assert.ok(auto.json().gates.some((g: { id: string }) => g.id === "strategy_qualified"));
     const paper = await app.inject({ method: "PUT", url: "/api/trading/policy", headers: csrf, payload: { mode: "disabled" } });
     assert.equal(paper.json().policy.mode, "disabled");
-    for (const url of ["/api/trading/arm", "/api/trading/emergency-stop", "/api/trading/decisions", "/api/trading/orders"]) {
+    // 1.13: direct order placement does not exist (preview → confirm only); automation controls still answer 501.
+    const direct = await app.inject({ method: "POST", url: "/api/trading/orders", headers: csrf, payload: {} });
+    assert.equal(direct.statusCode, 409);
+    assert.equal(direct.json().error, "preview_required");
+    const previewOff = await app.inject({ method: "POST", url: "/api/trading/decisions/00000000-0000-4000-8000-000000000000/preview", headers: csrf, payload: {} });
+    assert.equal(previewOff.statusCode, 404, "unknown decision → 404 (the mode gate is checked on the decision, see execution tests)");
+    for (const url of ["/api/trading/arm", "/api/trading/emergency-stop"]) {
       const r = await app.inject({ method: "POST", url, headers: csrf, payload: {} });
       assert.equal(r.statusCode, 501, url);
       assert.equal(r.json().error, "feature_disabled");

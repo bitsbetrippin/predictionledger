@@ -357,6 +357,7 @@ Design rules baked into the schema:
 - **Deletion is cascading and explicit.** Deleting a video deletes its segments, predictions, plans, runs, evidence links, and media/artifact files; `sources` rows are reference-counted and removed when orphaned.
 - **Exports** (JSON, CSV) come from these tables only; `secrets` is never joined into an export path.
 - **Indexes**: `(video_id, seq)` on segments; `(video_id, user_status)` and `deadline_date` on predictions; `(prediction_id, version)` unique on plans; `(status, created_at)` on jobs; `canonical_url` unique on sources.
+- **1.12 additions (migration 014).** `markets.resolved_at`; `contract_verifications.prior_status`; `paper_positions.method`; `trading_policy.policy_version/limits_json/budget_timezone/policy_hash`; tables `forecast_snapshots` (immutable), `forecast_contributions`, `strategy_qualifications` (source production|fixture), `trade_decisions`, `risk_reservations`, `trade_intents`, `trade_opportunities` (PRIMARY KEY account/provider/contract), `paper_us_book`, `paper_us_positions`, `paper_us_fills`, `settlement_events`. Decision-lineage tables deliberately carry no cascading foreign keys to predictions/videos/markets.
 - **1.11 additions (migration 013).** `videos`: `channel_id`, `published_precision`, `first_seen_at`, `transcript_hash`, `subscription_id`. `predictions`: `quote_hash`, `transcript_hash`, `analysis_version`. `sources`: `first_seen_at`, `status` (`available|withdrawn|missing`), `status_changed_at`, `status_note`, `independence_group`, `last_checked_at`, `last_http_status`. `research_runs`: `purpose` (`verdict|forecast`), `cutoff_at`. New tables `source_subscriptions` (unique canonical `url`), `subscription_runs`, `contract_verifications` (unique `(link_id, version)`; status CHECK; JSON checklist and facts; rules/quote hashes; stale fields); `prediction_market_links.verification_status` (default `unverified`) and `verification_id`. All additive; earlier rows are backfilled, never rewritten.
 
 ### 5.3 Where the "untrusted content" line is
@@ -425,7 +426,64 @@ prediction_market_links ──▶ contract_verifications (versioned, computed) �
 - **`services/subscriptions.ts`** — canonical URL, dedupe, `classifyEntry` (known → lookback → allowlist → budget → queue), `makeSubscriptionPollHandler(ctx, lister)`; the lister is injectable so tests never run yt-dlp.
 - **`services/dossier.ts`** — read-only join over evidence, sources, runs and assessments; `asOf` filtering uses `first_seen_at` (publication date only under `assumePublished`).
 
+### 6.3 Forecasts, decisions, reservations and paper execution (1.12)
+
+```
+verified link + contract ──┐
+fresh YES book ────────────┼──▶ ForecastService.build (cohort as of T, one midpoint) ──▶ forecast_snapshots (immutable, hashed)
+policy limits + exposure ──┘                                                                  │
+                     ┌────────────────── one SQLite transaction ──────────────────────────────┐
+                     │ exposure → decide() (pure; every gate) → trade_decisions (inputs, hash) │
+                     │ eligible & paper → risk_reservations + trade_intents + trade_opportunities │
+                     └────────────────────────────────────────────────────────────────────────┘
+                                          │ paper dispatch
+                                          ▼
+                     simulateIocFill(book, limit, fees) → paper_us_positions/fills; reservation consumed / released
+                                          ▼ (after snapshot refresh)
+                     venue resolution → settlement_events → paper position settled (win / loss / void)
+```
+
+- **`analysis/decimal.ts`** — BigInt fixed-point; every ledger amount, tick and increment alignment, with the rounding mode at the call site.
+- **`analysis/forecast.ts`** — pure: `computeForecast` (§7 estimator, versioned), `validateProbabilities`, `evaluateForecasts` (Brier, calibration, baseline, coverage, drawdown, gate).
+- **`analysis/tradeDecision.ts`** — pure: `decide(input)` with a supplied clock; `wirePriceFor`, `feePerContractBound`, `dailyBucket`; `decisionInputsRecord` (the immutable snapshot).
+- **`analysis/paperFill.ts`** — pure: `simulateIocFill` over side-specific depth.
+- **`services/forecasts.ts`**, **`services/riskReservations.ts`**, **`services/tradeDecisions.ts`**, **`services/paperUs.ts`** — the only writers of their tables; `TradingAccountService` owns the policy row and its limits/hash.
+- The trading adapter is not referenced by any of these modules; a manual-live decision stops at `needs_review` here — the live path (§6.4, 1.13) starts from that stored, hashed decision.
+
 Trust rules unchanged from §5.3 and §7.6, with two additions: model output in a research run is validated against the fetched pages (an excerpt that appears in no page is discarded; an unknown component id is dropped; a missing date stays missing) and has no path to the trading service, the policy row or settings; and a verification is a *precondition record* — it authorizes nothing by itself, and 1.12/1.13 will read it only when `verified_equivalent` and not stale.
+
+### 6.4 Manual-live execution: preview → confirm → dispatch → reconcile → settle (1.13)
+
+```
+manual-live decision (needs_review, hashed) ──▶ ExecutionService.preview: re-decide (fresh book + account) → adapter.previewOrder → order_previews (60 s, bound to rationale hash)
+                                                     │ owner confirms { previewId, decisionHash }
+              T1 ┌── one transaction ──────────────────────────────────────────────────────────────────┐
+                 │ intent 'reserved' + risk_reservations + trade_opportunities (PK) + preview consumed │
+                 └──────────────────────────────────────────────────────────────────────────────────────┘
+              T2 ┌── one transaction, committed BEFORE the POST ────────────────────────────────────────┐
+                 │ policy still manual_live + authorized? dispatch lease held? no blockers? → 'submitting' + marker │
+                 │ else 'rejected_local', reservation released, opportunity returned                    │
+                 └──────────────────────────────────────────────────────────────────────────────────────┘
+              POST /v1/orders — exactly one attempt, never retried by anything
+                 ├─ id → 'acknowledged' + venue_orders (+ executions from the response) → read-back GET /v1/order/{id}
+                 ├─ 400/401/403/404/429 → 'rejected_local' (venue refused; nothing created)
+                 └─ timeout / reset / 5xx / no id / crash after the marker → 'submission_unknown': reservation kept, hold, dispatch paused
+private stream (orderUpdate/positionUpdate) ─┐
+GET /v1/order/{id}, /orders/open ────────────┼──▶ applyExecution (unique by execution id + trade id) → forward-only order state → intent follows → reservation settles once on terminal
+GET /v1/portfolio/activities (all pages) ────┘        trades attributed only when unambiguous; external orders/trades kept as external (no rationale)
+                                                       positionResolution activity → settlement_events (market + per-intent amount; corrections are new rows)
+                                                       venue positions vs. our signed fills → discrepancy hold; unknown intents → candidate list, never linked
+```
+
+- **`analysis/orderState.ts`** — pure: venue enum normalisation, forward-only `mergeOrderState`, `mergeFilled`, `intentStateFor`, `chosenCostOf`, `consumedByFills`, `toVenueCreateBody` (the single NO→YES conversion made by the decision is passed through untouched; precision and price-bound guards).
+- **`services/execution.ts`** — the only caller of the adapter's order methods; owns `order_previews`, `venue_orders`, `executions`, `reconciliation_holds`, `position_snapshots` and the live columns of `trade_intents` / `settlement_events`; fault-injection points (`before_reserve`, `after_reserve`, `after_marker`, `after_post`) so crash drills run the production path.
+- **`services/dispatchLease.ts`** — one dispatcher per data directory (`dispatch_leases`, conditional UPDATE, 60 s TTL, heartbeat every 20 s); re-checked inside T2.
+- **`services/tradingAccounts.ts`** — arming (`setMode('manual_live', { acknowledge })` with account gates and the exact text), `disarm`, dispatch pause/blockers, `withCredentials` (the only way code obtains the credentials for an adapter call).
+- **`index.ts` `startExecutionLoop`** — acquire the lease, `recoverAfterCrash()`, then (connected) reconcile + open the stream, reconcile every 30 s while an intent is open; on shutdown close the stream and release the lease.
+- The job queue has **no** execution job kind: an ambiguous submission can never be retried by the generic retry mechanism, and long transcription/research jobs never delay a cancel (cancel is a direct route).
+- Three state machines are kept apart on purpose — the intent (what the app tried), the venue order (what the exchange says) and the position (what is held) — and the dashboard shows all three.
+
+Trust rules: the browser cannot bypass a gate (every check is server-side, in T1/T2); a client can send only a preview id and the decision hash; no client order id or idempotency key is claimed (the venue has none — reconciliation is the only truth); an order the app did not place is never linked to an intent automatically; secrets never reach prompts, browser storage, logs, exports or fixtures (canary-tested).
 
 ---
 

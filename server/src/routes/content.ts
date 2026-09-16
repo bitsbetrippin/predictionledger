@@ -98,6 +98,9 @@ export function registerContentRoutes(app: FastifyInstance, ctx: AppContext): vo
   });
 
   app.delete<{ Params: { id: string } }>("/api/videos/:id", async (req, reply) => {
+    // D04 (1.13): a video whose predictions carry live order lineage is not deletable; the audit trail must survive.
+    const live = ctx.execution.liveLineage({ videoId: req.params.id });
+    if (live.length) return reply.code(409).send({ error: "live_lineage", message: `This video has ${live.length} live trade intent(s); live order history cannot be deleted.`, intentIds: live });
     return ctx.videos.delete(req.params.id) ? { ok: true } : reply.code(404).send({ error: "not_found" });
   });
 
@@ -198,6 +201,8 @@ export function registerContentRoutes(app: FastifyInstance, ctx: AppContext): vo
   });
 
   app.delete<{ Params: { id: string } }>("/api/predictions/:id", async (req, reply) => {
+    const live = ctx.execution.liveLineage({ predictionId: req.params.id });
+    if (live.length) return reply.code(409).send({ error: "live_lineage", message: `This prediction has ${live.length} live trade intent(s); live order history cannot be deleted.`, intentIds: live });
     return ctx.predictions.delete(req.params.id) ? { ok: true } : reply.code(404).send({ error: "not_found" });
   });
 

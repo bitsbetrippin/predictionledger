@@ -9,10 +9,10 @@
  * submission path, and connecting never changes the trading mode.
  */
 import { useEffect, useState } from "react";
-import type { TradingConnectionTest, TradingMode, TradingStatus } from "@prediction-ledger/shared";
+import { LIVE_ACKNOWLEDGEMENT, type TradingConnectionTest, type TradingMode, type TradingStatus } from "@prediction-ledger/shared";
 import { ApiError, fmtAmount, tradingApi } from "../api";
 
-const MODE_LABELS: Record<TradingMode, string> = { disabled: "Disabled", paper: "Paper (no real orders)", manual_live: "Manual live (not available)", auto_live: "Automatic live (not available)" };
+const MODE_LABELS: Record<TradingMode, string> = { disabled: "Disabled", paper: "Paper (no real orders)", manual_live: "Manual live (preview → confirm, real money)", auto_live: "Automatic live (not available until 1.14)" };
 
 export function PolymarketUsCard({ allowInternet }: { allowInternet: boolean }) {
   const [status, setStatus] = useState<TradingStatus | null>(null);
@@ -85,15 +85,31 @@ export function PolymarketUsCard({ allowInternet }: { allowInternet: boolean }) 
       setBusy(null);
     }
   };
-  const setMode = async (mode: TradingMode) => {
+  const [ack, setAck] = useState<string | null>(null);
+  const setMode = async (mode: TradingMode, acknowledge?: string) => {
+    if (mode === "manual_live" && acknowledge === undefined) { setAck(""); return; }
     setBusy("mode");
     setMsg(null);
     try {
-      await tradingApi.setMode(mode);
+      await tradingApi.setMode(mode, acknowledge);
+      setAck(null);
       await reload();
     } catch (e) {
       const body = (e as ApiError).body as { gates?: { label: string; detail: string }[]; message?: string } | undefined;
       setMsg({ kind: "error", text: body?.message ?? (e as Error).message });
+    } finally {
+      setBusy(null);
+    }
+  };
+  const disarm = async () => {
+    setBusy("mode");
+    setMsg(null);
+    try {
+      const r = await tradingApi.disarm("owner disarm from Setup");
+      setStatus(r.status);
+      setMsg({ kind: "ok", text: "Disarmed: mode is paper and the live authorization is cleared. Open orders at the venue are untouched (cancel them from Trades if needed)." });
+    } catch (e) {
+      setMsg({ kind: "error", text: (e as Error).message });
     } finally {
       setBusy(null);
     }
@@ -107,9 +123,9 @@ export function PolymarketUsCard({ allowInternet }: { allowInternet: boolean }) 
   return (
     <fieldset className="card">
       <p className="muted small">
-        Connecting an account lets the app <strong>read</strong> your Polymarket US balances, positions and open orders. This build (1.10) has no order-submission path at all —
-        connecting does not arm anything, and the trading mode stays <strong>paper</strong> until later releases pass their gates. Requests go only to <code>{status?.hosts.api ?? "api.polymarket.us"}</code>,
-        signed with your key (Ed25519); the secret is encrypted on this computer and never shown again.
+        Connecting an account lets the app <strong>read</strong> your Polymarket US balances, positions and open orders. Connecting never arms anything: the trading mode stays <strong>paper</strong>
+        until you choose <em>Manual live</em> here and type the acknowledgement. Even then, every order needs a preview and an explicit confirmation on the Trades page; nothing is automated (1.14).
+        Requests go only to <code>{status?.hosts.api ?? "api.polymarket.us"}</code>, signed with your key (Ed25519); the secret is encrypted on this computer and never shown again.
       </p>
       <details>
         <summary>How to get API keys (developer portal)</summary>
@@ -139,7 +155,24 @@ export function PolymarketUsCard({ allowInternet }: { allowInternet: boolean }) 
             <select value={status.policy.mode} disabled={busy !== null} onChange={(e) => void setMode(e.target.value as TradingMode)}>
               {(Object.keys(MODE_LABELS) as TradingMode[]).map((m) => <option key={m} value={m}>{MODE_LABELS[m]}</option>)}
             </select>
-            <small className="muted">Live modes are refused until their release gates pass; connecting never changes this.</small>
+            <small className="muted">{status.armed ? `Armed (manual live) since ${status.policy.liveAuthorizedAt?.slice(0, 19).replace("T", " ")}. Restarts, limit edits, backups/restores and credential changes disarm.` : "Manual live needs a fresh, validated account, no open holds and the typed acknowledgement; automatic live stays gated until 1.14."}</small>
+            {status.armed && <button type="button" className="danger" disabled={busy !== null} onClick={() => void disarm()}>Disarm now</button>}
+          </div>
+        </div>
+      )}
+      {status && (status.dispatchBlockers.length > 0 || status.armed) && (
+        <p className={`small ${status.submissionAvailable ? "ok" : "warn"}`}>
+          {status.submissionAvailable ? "Orders can be previewed and confirmed on the Trades page." : `New orders are blocked: ${status.dispatchBlockers.join("; ")}.`}
+        </p>
+      )}
+      {ack !== null && (
+        <div className="banner warn" role="dialog" aria-label="Manual live acknowledgement">
+          <p><strong>Manual live places real orders with real money.</strong> Each order still needs a preview and your confirmation, is bounded by the pilot limits, and is sent once — an ambiguous outcome pauses trading until you resolve it. To continue, type exactly:</p>
+          <p><code>{LIVE_ACKNOWLEDGEMENT}</code></p>
+          <div className="row">
+            <input type="text" value={ack} onChange={(e) => setAck(e.target.value)} placeholder="Type the sentence above" style={{ minWidth: "28rem" }} />
+            <button type="button" className="danger" disabled={busy !== null || ack !== LIVE_ACKNOWLEDGEMENT} onClick={() => void setMode("manual_live", ack)}>Enter manual live</button>
+            <button type="button" onClick={() => setAck(null)}>Cancel</button>
           </div>
         </div>
       )}

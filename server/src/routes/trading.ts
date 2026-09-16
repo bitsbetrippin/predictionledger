@@ -6,8 +6,9 @@
  *
  * Application routes, distinct from venue routes. Every mutation is Zod-validated with `.strict()` so a
  * client cannot smuggle a base URL, a mode or a budget through a connection body (ACC-04/05). The CSRF
- * guard registered in index.ts applies to all of them. Order submission routes do not exist in this
- * release; arm/submit-style calls answer 501 `feature_disabled` so the gate is visible, not silent.
+ * guard registered in index.ts applies to all of them. Order submission lives in routes/execution.ts (1.13,
+ * preview → confirm only); the automation controls (arm / emergency-stop) answer 501 `feature_disabled` until 1.14
+ * so the gate is visible, not silent.
  */
 
 import type { FastifyInstance } from "fastify";
@@ -28,7 +29,8 @@ const testSchema = z.object({
   secretKey: z.string().max(500).optional(),
 }).strict();
 
-const policySchema = z.object({ mode: z.enum(["disabled", "paper", "manual_live", "auto_live"]) }).strict();
+/** 1.13: `manual_live` needs the exact owner acknowledgement (EXE-01); other modes must not carry one. */
+const policySchema = z.object({ mode: z.enum(["disabled", "paper", "manual_live", "auto_live"]), acknowledge: z.string().max(200).optional() }).strict();
 
 type Reply = { code: (n: number) => { send: (b: unknown) => unknown } };
 
@@ -88,14 +90,46 @@ export function registerTradingRoutes(app: FastifyInstance, ctx: AppContext): vo
     const parsed = policySchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", issues: parsed.error.issues });
     try {
-      return { policy: ctx.trading.setMode(parsed.data.mode), gates: ctx.trading.gates() };
+      return { policy: ctx.trading.setMode(parsed.data.mode, { acknowledge: parsed.data.acknowledge }), gates: ctx.trading.gates(), status: ctx.trading.status() };
     } catch (err) {
       return adapterError(reply, err);
     }
   });
 
-  // Live-execution controls are not built in this release. They answer explicitly so nothing can be mistaken for silent success.
-  for (const path of ["/api/trading/arm", "/api/trading/disarm", "/api/trading/emergency-stop", "/api/trading/decisions", "/api/trading/orders"]) {
-    app.post(path, async (_req, reply) => reply.code(501).send({ error: "feature_disabled", message: "Order submission and automation are not part of this build (1.10). They arrive with their release gates (1.13/1.14).", features: TRADING_FEATURES }));
+  // ---- 1.12: pilot limits (RSK-02/07). Any change disarms and is audited; consumed allowances are never reset. ----
+  app.get("/api/trading/limits", async () => { const p = ctx.trading.policy(); return { policyVersion: p.policyVersion, limits: p.limits, budgetTimezone: p.budgetTimezone, policyHash: p.policyHash }; });
+  app.put("/api/trading/limits", async (req, reply) => {
+    const parsed = limitsSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", issues: parsed.error.issues });
+    try {
+      const { budgetTimezone, ...limits } = parsed.data;
+      const p = ctx.trading.setLimits(limits, { budgetTimezone });
+      return { policyVersion: p.policyVersion, limits: p.limits, budgetTimezone: p.budgetTimezone, policyHash: p.policyHash, mode: p.mode };
+    } catch (err) {
+      return reply.code(400).send({ error: "invalid_limits", message: (err as Error).message });
+    }
+  });
+
+  // Automation controls are not built in this release (1.14). They answer explicitly so nothing can be mistaken for silent success.
+  for (const path of ["/api/trading/arm", "/api/trading/emergency-stop"]) {
+    app.post(path, async (_req, reply) => reply.code(501).send({ error: "feature_disabled", message: "Automated (auto_live) trading is not part of this build (1.13). Manual-live orders go through preview → confirm; automation arrives with its release gates (1.14).", features: TRADING_FEATURES }));
   }
 }
+
+const money = z.string().regex(/^\d+(\.\d{1,8})?$/, "decimal string");
+const limitsSchema = z.object({
+  orderBudget: money.optional(),
+  dailyCommitmentCap: money.optional(),
+  totalOpenRisk: money.optional(),
+  perMarket: money.optional(),
+  perEvent: money.optional(),
+  maxOpenMarkets: z.number().int().min(1).max(100).optional(),
+  dailyLossStop: money.optional(),
+  probabilityThreshold: z.string().regex(/^0\.\d{1,4}$/).optional(),
+  minNetEdge: z.string().regex(/^0\.\d{1,4}$/).optional(),
+  bookMaxAgeMs: z.number().int().min(1000).max(600_000).optional(),
+  syncMaxAgeMs: z.number().int().min(1000).max(3_600_000).optional(),
+  forecastMaxAgeMs: z.number().int().min(60_000).max(86_400_000).optional(),
+  preEventBufferMs: z.number().int().min(0).max(86_400_000).optional(),
+  budgetTimezone: z.string().min(1).max(64).optional(),
+}).strict();

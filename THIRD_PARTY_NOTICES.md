@@ -18,9 +18,9 @@ This file is maintained by hand. **Rule:** a dependency is added to `package.jso
 
 | Component | Version | License | Copyright / origin | Used for |
 |---|---|---|---|---|
-| polymarket-us | 0.1.1 (pinned exactly) | MIT | Polymarket Team — github.com/Polymarket/polymarket-us-typescript | Signed transport for the Polymarket US retail API (reads only in 1.10); loaded lazily by `providers/trading/polymarketUs.ts` |
+| polymarket-us | 0.1.1 (pinned exactly) | MIT | Polymarket Team — github.com/Polymarket/polymarket-us-typescript | Signed transport for the Polymarket US retail API (reads since 1.10; order preview/create/read, activities and the private stream since 1.13); loaded lazily by `providers/trading/polymarketUs.ts` |
 | @noble/ed25519 | ^2.2.3 (transitive, via polymarket-us) | MIT | Paul Miller | Ed25519 request signatures inside the SDK |
-| ws | ^8.18 (transitive, via polymarket-us) | MIT | Einar Otto Stangvik and contributors | SDK WebSocket support (not used by 1.10) |
+| ws | ^8.18 (transitive, via polymarket-us) | MIT | Einar Otto Stangvik and contributors | SDK WebSocket support — the private order/position stream (used since 1.13; loaded lazily by the SDK) |
 
 ## Build-time dependencies
 

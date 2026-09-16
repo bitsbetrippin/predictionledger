@@ -8,7 +8,8 @@
  */
 import { useEffect, useState } from "react";
 import type { ContractField, ContractVerification, PredictionMarketLink, UsCandidateSearch } from "@prediction-ledger/shared";
-import { VERIFICATION_LABEL, contractsApi, fmtPct, marketsApi, type VerifyFacts } from "../api";
+import { OUTCOME_LABEL, VERIFICATION_LABEL, contractsApi, decisionsApi, fmtPct, fmtUsd, marketsApi, type VerifyFacts } from "../api";
+import type { TradeDecision } from "@prediction-ledger/shared";
 
 const FIELD_STATUS_LABEL: Record<ContractField["status"], string> = { verified: "✓ verified", incompatible: "✗ incompatible", missing: "? missing", not_applicable: "n/a" };
 
@@ -32,6 +33,7 @@ export function ContractPanel(props: { predictionId: string; links: PredictionMa
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  const [lastDecision, setLastDecision] = useState<TradeDecision | null>(null);
 
   const run = async (label: string, fn: () => Promise<unknown>) => {
     setBusy(label); setError(null);
@@ -73,10 +75,22 @@ export function ContractPanel(props: { predictionId: string; links: PredictionMa
                 <span className="small">
                   <button type="button" className="link" disabled={!!busy} onClick={() => setOpen(open === l.id ? null : l.id)}>{open === l.id ? "hide checklist" : "checklist"}</button>
                   {l.status !== "accepted" && <button type="button" className="link" disabled={!!busy} onClick={() => run("Accepting…", () => marketsApi.accept(l.id))}>accept link</button>}
+                  {l.verificationStatus === "verified_equivalent" && (
+                    <button type="button" className="link" disabled={!!busy} title="Builds a forecast from the creators' verified record, runs every risk gate, and — when eligible — reserves capacity and simulates an IOC fill in the US paper book. No order is sent." onClick={() => run("Evaluating…", async () => { setLastDecision(await decisionsApi.evaluate({ predictionId: props.predictionId, linkId: l.id })); })}>evaluate paper decision</button>
+                  )}
                 </span>
               </div>
               <div className="muted small">match {Math.round(l.score * 100)}% · {l.matchedBy}{l.side ? ` · side ${l.side} at ${fmtPct(l.market?.latest?.prices.find((x) => x.label === l.side)?.price)}` : ""}</div>
               {open === l.id && <Checklist link={l} busy={busy} run={run} />}
+              {lastDecision && lastDecision.linkId === l.id && (
+                <div className={`candidate-result outcome-${lastDecision.outcome === "eligible" ? "one" : "multiple"} small`}>
+                  <strong>Paper decision: {OUTCOME_LABEL[lastDecision.outcome]}</strong>
+                  {lastDecision.sizing && <> — {lastDecision.sizing.side.toUpperCase()} × {lastDecision.sizing.quantity} at {lastDecision.sizing.limitCost} (p {lastDecision.sizing.pChosen}, edge {lastDecision.sizing.netEdge}, worst cost {fmtUsd(lastDecision.sizing.worstCost)})</>}
+                  {lastDecision.reasonCodes.length > 0 && <div className="muted">{lastDecision.reasonCodes.join(", ")}</div>}
+                  {lastDecision.intent && <div className="muted">intent {lastDecision.intent.state}: {lastDecision.intent.filledQuantity}/{lastDecision.intent.quantity} filled (IOC)</div>}
+                  <div><a href="#/trades">Open Trades for every gate and the evidence</a></div>
+                </div>
+              )}
             </li>
           ))}
         </ul>

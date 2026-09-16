@@ -269,6 +269,8 @@ export interface HealthResponse {
 /** Header the browser must send on every mutating request (CSRF guard). */
 export const CSRF_HEADER = "x-prediction-ledger";
 export const CSRF_VALUE = "1";
+/** 1.13 (EXE-01): the exact text an owner must send to enter manual-live mode; anything else is refused server-side. */
+export const LIVE_ACKNOWLEDGEMENT = "I understand this places real orders with real money";
 
 // ---------------------------------------------------------------------------
 // Release 0.2 — videos, transcripts, predictions, validation plans
@@ -725,6 +727,16 @@ export interface ExportBundle {
   /** 1.10 — secret-free: bindings carry masked hints and fingerprints only. */
   tradingBindings?: TradingAccountBinding[];
   tradingAudit?: TradingAuditEvent[];
+  /** 1.12 — lineage of every paper decision (skipped ones included); never credentials. */
+  forecasts?: ForecastSnapshot[];
+  tradeDecisions?: TradeDecision[];
+  paperUsPositions?: PaperUsPosition[];
+  /** 1.13 — live lineage: intents, venue orders (external ones labelled, with no invented rationale), executions, settlements, holds. */
+  tradeIntents?: TradeIntent[];
+  venueOrders?: VenueOrderRecord[];
+  executions?: ExecutionRecord[];
+  settlementEvents?: SettlementEventRecord[];
+  reconciliationHolds?: ReconciliationHold[];
 }
 
 // ---------------------------------------------------------------------------
@@ -758,6 +770,8 @@ export interface MarketRecord {
   restricted: boolean;
   resolved: boolean;
   resolvedOutcome?: string;
+  /** 1.12 — when the app first observed the venue's resolution (never the venue's own settlement time). */
+  resolvedAt?: string;
   tags: string[];
   watched: boolean;
   updatedAt: string;
@@ -1034,6 +1048,9 @@ export interface PaperBook {
   brierMarket?: number;
   /** Equity over time from marks (newest last). */
   curve: { at: string; equity: number }[];
+  /** 1.12 (F11): the legacy book's simulation method, and its totals split by the venue's unit so mana is never summed into dollars. */
+  method: "legacy-snapshot-v1";
+  byCurrency: Record<string, { open: number; closed: number; staked: number; realizedPnl: number; unrealizedPnl: number }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1149,6 +1166,12 @@ export interface TradingPolicy {
   liveAuthorizedAt?: string;
   liveAuthorizationHash?: string;
   updatedAt: string;
+  /** 1.12 — versioned pilot limits (RSK-02/03/07). */
+  policyVersion: string;
+  limits: RiskLimits;
+  budgetTimezone: string;
+  /** sha256 of {policyVersion, limits, budgetTimezone}; any change disarms and is audited. */
+  policyHash: string;
 }
 
 export interface TradingGate {
@@ -1169,10 +1192,13 @@ export interface TradingAuditEvent {
 export interface TradingStatus {
   venue: TradingVenueId;
   policy: TradingPolicy;
-  /** Feature flags: what this build can do at all. Both false in 1.10. */
+  /** Feature flags: what this build can do at all. 1.13: submission true (manual live), automation false. */
   features: { submission: boolean; automation: boolean };
-  armed: false;
-  submissionAvailable: false;
+  /** True only when a live mode is set, authorized, the account is connected, and no hold pauses dispatch. */
+  armed: boolean;
+  submissionAvailable: boolean;
+  /** 1.13: why new orders are blocked right now (holds, pause, missing lease), if they are. */
+  dispatchBlockers: string[];
   binding?: TradingAccountBinding;
   /** Retained earlier bindings (history is never deleted on disconnect). */
   previousBindings: TradingAccountBinding[];
@@ -1326,4 +1352,403 @@ export interface EvidenceDossier {
   rationale?: { assessment: EvidenceAssessment; explanation: string; guardNotes: string[]; version: number };
   asOf?: string;
   excludedAsOf: number;
+}
+
+// ---------------------------------------------------------------------------
+// Release 1.12 — forecasts, decisions, risk reservations, US paper execution (no live path)
+// ---------------------------------------------------------------------------
+
+/** Pilot limits (RSK-02/03). Amounts are decimal strings in `currency`; ages in milliseconds; thresholds decimal strings. */
+export interface RiskLimits {
+  currency: "USD";
+  /** All-in maximum per order including the conservative fee bound. */
+  orderBudget: string;
+  dailyCommitmentCap: string;
+  totalOpenRisk: string;
+  perMarket: string;
+  perEvent: string;
+  maxOpenMarkets: number;
+  dailyLossStop: string;
+  /** Exclusive: the chosen side's probability must be strictly greater. */
+  probabilityThreshold: string;
+  /** Inclusive minimum net edge per contract after rounding. */
+  minNetEdge: string;
+  bookMaxAgeMs: number;
+  syncMaxAgeMs: number;
+  forecastMaxAgeMs: number;
+  preEventBufferMs: number;
+}
+
+export type ForecastStatus = "experimental" | "qualified" | "expired" | "insufficient_data";
+
+export interface ForecastContribution {
+  id: string;
+  sourceKey: string;
+  clusterKey: string;
+  predictionId?: string;
+  /** +1 supports YES, −1 supports NO. */
+  stance: 1 | -1;
+  claimAt?: string;
+  n: number;
+  meanEdge?: string;
+  shrunkEdge?: string;
+  weight?: string;
+  ageDays?: number;
+  selected: boolean;
+  /** Why it was excluded, or how it was selected. */
+  reason: string;
+  /** The observations behind `n` (prediction ids), for inspection (FOR-04). */
+  history: { predictionId: string; marketId: string; side: "yes" | "no"; priceAtClaim: string; outcome: 0 | 1 }[];
+}
+
+export interface ForecastSnapshot {
+  id: string;
+  predictionId: string;
+  marketId: string;
+  linkId?: string;
+  verificationId?: string;
+  strategyVersion: string;
+  category?: string;
+  asOf: string;
+  pYes: string;
+  pNo: string;
+  prior: { p0: string; source: string; bookAt?: string; bid?: string; ask?: string };
+  status: ForecastStatus;
+  qualificationId?: string;
+  /** Versions of everything that went in (FOR-01). */
+  inputs: { predictionRevision: number; analysisVersion?: number; planVersion?: number; verificationVersion?: number; quoteHash?: string; rulesHash?: string; latestRunId?: string; params: Record<string, unknown> };
+  formula: { estimatorVersion: string; text: string; sumWeights: string; adjustment: string };
+  exclusions: { kind: string; count: number; detail?: string }[];
+  contributions: ForecastContribution[];
+  hash: string;
+  expiresAt?: string;
+  createdAt: string;
+}
+
+export interface StrategyQualification {
+  id: string;
+  strategyVersion: string;
+  category: string;
+  source: "production" | "fixture";
+  events: number;
+  brier?: string;
+  baselineBrier?: string;
+  qualified: boolean;
+  reasons: string[];
+  createdAt: string;
+}
+
+export interface ForecastEvaluation {
+  strategyVersion: string;
+  category: string;
+  events: number;
+  groups: number;
+  brier?: number;
+  baselineBrier?: number;
+  calibration: { lo: number; hi: number; count: number; meanForecast?: number; hitRate?: number }[];
+  feeAdjustedReturn?: number;
+  coverage: { decisions: number; traded: number; skipped: number; abstentionRate?: number };
+  drawdown?: number;
+  skipped: { reason: string; count: number }[];
+  gate: { qualified: boolean; reasons: string[] };
+}
+
+export type DecisionOutcome = "eligible" | "skipped" | "needs_review";
+
+export interface DecisionGate {
+  id: string;
+  label: string;
+  satisfied: boolean;
+  /** Stable reason code when unsatisfied. */
+  code?: string;
+  detail: string;
+}
+
+export interface DecisionSizing {
+  side: "yes" | "no";
+  sideId?: string;
+  sideLabel?: string;
+  pChosen: string;
+  quantity: string;
+  /** Chosen-side cost per contract at the marketable limit (what the user risks per contract). */
+  limitCost: string;
+  /** YES-denominated price sent to the venue (RSK-04: YES floor to tick; NO ceil of the complement). */
+  wirePrice: string;
+  feeBound: string;
+  worstCost: string;
+  netEdge: string;
+  estimatedEv: string;
+  /** Which cap bound the quantity. */
+  boundBy: string;
+}
+
+export interface TradeDecision {
+  id: string;
+  createdAt: string;
+  clockAt: string;
+  mode: TradingMode;
+  predictionId: string;
+  marketId: string;
+  venueMarketId: string;
+  eventId?: string;
+  linkId?: string;
+  verificationId?: string;
+  forecastId?: string;
+  policyVersion: string;
+  policyHash?: string;
+  currency: string;
+  budgetTimezone: string;
+  dailyBucket: string;
+  outcome: DecisionOutcome;
+  sizing?: DecisionSizing;
+  gates: DecisionGate[];
+  reasonCodes: string[];
+  /** Everything the decision saw: book, account ages, exposure, cutoff — immutable (RSK-07). */
+  inputs: Record<string, unknown>;
+  rationaleHash: string;
+  reservationId?: string;
+  intentId?: string;
+  /** Joined for display. */
+  question?: string;
+  marketUrl?: string;
+  intent?: TradeIntent;
+  paperPosition?: PaperUsPosition;
+}
+
+export type IntentState = "prepared" | "reserved" | "submitting" | "acknowledged" | "filled" | "partially_filled" | "canceled" | "rejected" | "rejected_local" | "skipped" | "expired" | "submission_unknown";
+
+export interface TradeIntent {
+  id: string;
+  decisionId: string;
+  reservationId: string;
+  mode: "paper" | "live";
+  accountKey: string;
+  provider: MarketProviderId;
+  venueMarketId: string;
+  side: "yes" | "no";
+  sideId?: string;
+  quantity: string;
+  wirePrice: string;
+  limitCost: string;
+  timeInForce: "IOC";
+  state: IntentState;
+  payloadHash: string;
+  filledQuantity: string;
+  createdAt: string;
+  updatedAt: string;
+  /** 1.13 — live lineage. */
+  bindingId?: string;
+  venueOrderId?: string;
+  previewId?: string;
+  decisionHash?: string;
+  dispatchMarkerAt?: string;
+  submittedAt?: string;
+  acknowledgedAt?: string;
+  unknownReason?: string;
+  lastError?: string;
+  /** Joined for display. */
+  order?: VenueOrderRecord;
+  executions?: ExecutionRecord[];
+}
+
+export interface RiskReservation {
+  id: string;
+  decisionId: string;
+  accountKey: string;
+  provider: MarketProviderId;
+  venueMarketId: string;
+  eventId?: string;
+  amount: string;
+  filledAmount: string;
+  dailyBucket: string;
+  state: "reserved" | "consumed" | "released" | "expired";
+  acknowledged: boolean;
+  createdAt: string;
+  releasedAt?: string;
+  note?: string;
+}
+
+export interface RiskExposure {
+  accountKey: string;
+  currency: string;
+  dailyBucket: string;
+  openRiskTotal: string;
+  dailyCommitted: string;
+  dailyRealizedLoss: string;
+  openMarkets: number;
+  perMarket: Record<string, string>;
+  perEvent: Record<string, string>;
+  pendingUnknown: number;
+}
+
+export interface PaperUsFill {
+  id: string;
+  seq: number;
+  quantity: string;
+  chosenCost: string;
+  yesPrice: string;
+  fee: string;
+  at: string;
+}
+
+export interface PaperUsPosition {
+  id: string;
+  intentId: string;
+  decisionId: string;
+  marketId: string;
+  venueMarketId: string;
+  side: "yes" | "no";
+  sideId?: string;
+  quantity: string;
+  avgCost: string;
+  costTotal: string;
+  fees: string;
+  status: "open" | "settled" | "void";
+  openedAt: string;
+  settledAt?: string;
+  outcome?: "win" | "loss" | "void";
+  pnl?: string;
+  method: "us-ioc-v1";
+  fills: PaperUsFill[];
+  question?: string;
+  marketUrl?: string;
+}
+
+export interface PaperUsBook {
+  method: "us-ioc-v1";
+  currency: "USD";
+  bankrollStart: string;
+  bankroll: string;
+  committed: string;
+  realizedPnl: string;
+  fees: string;
+  open: number;
+  settled: number;
+  wins: number;
+  losses: number;
+  voids: number;
+  positions: PaperUsPosition[];
+}
+
+// ---------------------------------------------------------------------------
+// Release 1.13 — manual-live execution: orders, executions, previews, holds, lease (paper unchanged)
+// ---------------------------------------------------------------------------
+
+/** Normalized venue order state (EXE-06). `cancel_pending` is local: a cancel was requested and not yet confirmed. */
+export type OrderState = "pending" | "open" | "partial" | "filled" | "cancel_pending" | "canceled" | "expired" | "rejected" | "unknown";
+
+export interface VenueOrderRecord {
+  id: string;
+  bindingId: string;
+  /** Undefined for orders the app did not place (external). */
+  intentId?: string;
+  external: boolean;
+  marketSlug: string;
+  venueMarketId?: string;
+  side?: "yes" | "no";
+  intentRaw?: string;
+  stateRaw?: string;
+  state: OrderState;
+  quantity?: string;
+  filledQuantity: string;
+  leavesQuantity?: string;
+  yesPrice?: string;
+  avgPrice?: string;
+  fees?: string;
+  venueCreatedAt?: string;
+  updatedAt: string;
+  firstSeenAt: string;
+  cancelRequestedAt?: string;
+  rejectReason?: string;
+}
+
+export interface ExecutionRecord {
+  id: string;
+  orderId: string;
+  intentId?: string;
+  tradeId?: string;
+  type: "new" | "partial_fill" | "fill" | "canceled" | "rejected" | "expired" | "replace" | "done_for_day" | "unknown";
+  quantity?: string;
+  yesPrice?: string;
+  chosenCost?: string;
+  fee?: string;
+  at?: string;
+  source: "create_response" | "stream" | "rest" | "activity";
+  note?: string;
+  receivedAt: string;
+}
+
+export interface OrderPreviewRecord {
+  id: string;
+  decisionId: string;
+  decisionHash: string;
+  request: Record<string, unknown>;
+  venue?: Record<string, unknown>;
+  display: {
+    side: "yes" | "no";
+    sideLabel?: string;
+    pChosen: string;
+    netEdge: string;
+    quantity: string;
+    chosenCost: string;
+    yesWirePrice: string;
+    worstCost: string;
+    feeBound: string;
+    estimatedEv: string;
+    deadlineAt?: string;
+    policyHash?: string;
+    question?: string;
+    marketUrl?: string;
+    evidenceUrl: string;
+  };
+  expiresAt: string;
+  createdAt: string;
+  consumedAt?: string;
+  consumedBy?: "submit" | "stale" | "expired";
+}
+
+export interface ReconciliationHold {
+  id: string;
+  bindingId: string;
+  kind: "submission_unknown" | "discrepancy" | "failed_cancel" | "stale_sync" | "stream_gap";
+  subject?: string;
+  detail: Record<string, unknown>;
+  openedAt: string;
+  resolvedAt?: string;
+  resolution?: string;
+}
+
+export interface LivePosition {
+  bindingId: string;
+  marketSlug: string;
+  venueMarketId?: string;
+  /** Venue-reported net contracts (positive long YES, negative short) from the latest authoritative snapshot. */
+  venueNet?: string;
+  venueAt?: string;
+  /** What our own acknowledged orders account for (signed, YES-denominated). */
+  localNet: string;
+  intentIds: string[];
+  discrepancy?: string;
+  settled?: { outcome: "win" | "loss" | "void" | "correction" | "external_exit"; at: string; pnl?: string };
+}
+
+export interface DispatchLease {
+  holder?: string;
+  acquiredAt?: string;
+  expiresAt?: string;
+  heldByThisProcess: boolean;
+}
+
+export interface SettlementEventRecord {
+  id: string;
+  marketId?: string;
+  venueMarketId: string;
+  kind: "resolved" | "void" | "correction" | "external_exit";
+  outcome?: string;
+  source: "venue_market_status" | "account_activity";
+  observedAt: string;
+  bindingId?: string;
+  intentId?: string;
+  amount?: string;
+  details: Record<string, unknown>;
 }

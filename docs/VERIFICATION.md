@@ -7,6 +7,125 @@ Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assist
 ## Legend
 **Executed** = the command/test ran and passed on that platform. **Static** = code and docs reviewed for that platform's behaviour, not run. **—** = not yet attempted.
 
+## Release 1.13.0 — Manual-live execution: preview → confirm, venue orders, reconciliation, settlement (2026-09-16)
+
+**Baseline.** 1.12.0 as executed in the sandbox: 138 · 138 passed · 0 failed (owner's Windows runs of 1.10–1.12 still pending, see below).
+
+**This release, executed.** Linux cloud sandbox, Node v22.22.2, sources compiled with `tsc` against the repository's `tsconfig.base.json` plus the same type stubs as 1.10–1.12 (`fastify` in-memory router, `zod` shim). New in this run: the **pinned `polymarket-us@0.1.1` package itself** (its published `dist` plus its `@noble/ed25519` dependency) was loaded for `polymarketUs.sdk.test.ts` with the global `fetch` replaced by a capturing stub — so the request bodies, URLs and signed headers below are what the real SDK produced, with no network. Every other trading test uses the fake venue adapter. **No real credential was used and no production order was placed.**
+
+| Command (sandbox equivalent) | Result |
+|---|---|
+| `node --test "dist/server/src/**/*.test.js"` (= `npm test`) | **161 tests · 161 passed · 0 failed · 0 skipped · 0 cancelled** (86.8 s). 1.12.0 had 138; the 23 new tests are listed below. |
+| `node --test dist/server/src/services/execution.test.js` | 19 · 19 passed (≈ 1 s) — E01–E12, D01/D03, D02, D04, R07 (live), O02, O03, O01 |
+| `node --test dist/server/src/analysis/orderState.test.js` | 3 · 3 passed |
+| `node --test dist/server/src/providers/trading/polymarketUs.sdk.test.js` | 1 · 1 passed (**not skipped**: the pinned SDK was loaded) |
+| `node --test dist/server/src/providers/trading/polymarketUs.test.js` | 4 · 4 passed (fake SDK module; assertion list updated for the 1.13 surface) |
+| `tsc -p tsconfig.json --noEmit` for `server/src` + `shared/src` (= `npm run typecheck`, server/shared) | **0 errors** (stub-only filter TS7006/TS2347/TS2307). |
+| `tsc -p tsconfig.json --noEmit` for `web/src` (= `npm run typecheck`, web) | **0 errors** (filter TS7006/TS2307 — React's own types are not installed in the sandbox). |
+| `npm run build` (Vite bundle) | **not executed** in the sandbox (no registry). Pending owner run. |
+
+**Owner machine (Windows 11, Node 26.7.0):** `npm install` (no new direct dependencies; `polymarket-us` already pinned), `npm run typecheck`, `npm run build`, `npm test` — **pending owner execution**; record counts here. On the owner's machine `polymarketUs.sdk.test.ts` runs against the installed package (it is not skipped there either).
+
+### Requirement → test matrix (fake venue for every order; the pinned SDK with stubbed fetch for the wire shape; nothing touched a real account)
+
+| Test id (03-Acceptance-Test-Plan) | Requirement | Where | Status |
+|---|---|---|---|
+| E01 | EXE-01/02 | `services/execution.test.ts` "E01 — preview shows the full rationale and cost…" → preview display = decision sizing (YES .50, 19 contracts, worst cost, fee bound, policy hash, evidence link), wire body `BUY_LONG` / `0.5` / `19` / IOC / manual, 60 s TTL, **zero** create calls until confirm; wrong hash `409 hash_mismatch` (service and route); strict body refuses `quantity`; right hash → one create call, `filled` 19, reservation consumed 9.5; a paper-mode decision cannot be previewed (`decision_not_live`) | ✓ executed |
+| E02 | EXE-02, RSK-01 | "E02 — a changed price, a changed account, a policy edit or an expired preview…" → book .50→.55 `preview_stale` (preview consumed, no intent); consumed preview refused; buying power $1 `preview_stale`; limits edit disarms (`mode_not_live`), re-armed → `preview_stale` (policy hash); 61 s → `preview_expired`; zero sends | ✓ executed |
+| E03 | EXE-01/06, MAT-05 | `analysis/orderState.test.ts` "E03 (pure)…" (NO .40 → YES .60 `BUY_SHORT`, YES .50 `BUY_LONG`, chosen cost 1 − YES, consumed-by-fills, guard rails); `polymarketUs.sdk.test.ts` (the **real SDK** posts `{"request":{…"intent":"ORDER_INTENT_BUY_SHORT","price":{"value":"0.6"…},"quantity":23…}}` to `/v1/order/preview` and the create body verbatim to `/v1/orders`, signed headers present, secret absent, no idempotency field); `execution.test.ts` "E03 — NO with a chosen-side limit of .40…" (book .60/.61 → cost .40, wire .60, 23 contracts = $10/(.40+.0244), fee bound .57, adapter called with `yesPrice 0.6`, fills recorded at chosen cost .40, position −23) | ✓ executed |
+| E04 | EXE-03 | "E04 — a double-click, concurrent API calls and a repeated submit…" → one intent, one reservation, one create call; losers get the same intent or `preview_consumed`; a re-delivered preview skips (`OPPORTUNITY_CONSUMED`); a repeated confirm returns the same id | ✓ executed (same process; cross-process is O03) |
+| E05 | EXE-04/05 | "E05 — a dropped POST response and a timeout before acceptance…" → both `submission_unknown`, marker committed, reservation `reserved`, one create call each, dispatch paused (`submissionAvailable false`, blockers listed), hold opened; repeat confirm returns the same intent; another decision's preview `dispatch_blocked`; reconcile lists **1 candidate** (external until proven) / **0 candidates**, never links, never resends; recovery adds nothing; owner links → `filled` 19, reservation consumed 9.88 (= 19 × .52); owner declares not submitted → `rejected_local`, reservation released, opportunity returned; pause lifted | ✓ executed |
+| E06 | EXE-03/04, OPS-03 | "E06 — crashes before reserve, after reserve, after the marker and after the POST…" (fault injector in the production path) → before reserve: nothing persisted, preview reusable; after reserve: `reserved` without marker → recovery `expired`, capacity and opportunity released, no POST; after marker: `submitting` → recovery `submission_unknown`, no POST, reconcile 0 candidates, owner clears; after POST: one create call, recovery `submission_unknown`, reconcile 1 candidate, owner links → `filled`, **no double order** | ✓ executed |
+| E07 | EXE-05 | "E07 — an unknown submission that resembles an external manual order…" → 2 same-looking candidates (the manual one from 11:59 and ours), no guessed association, no premature release, paused, hold note "not proof of identity"; both orders known through the stream so no discrepancy is invented; owner picks ours; the manual order stays `external` with no rationale | ✓ executed |
+| E08 | EXE-06 | "E08 — the venue returns an id and then a rejected event…" → intent `rejected`, order `rejected` with `ORD_REJECT_REASON_INSUFFICIENT_FUNDS`, 0 fills, no position, exposure 0, reservation released; the opportunity stays consumed (no IOC retry) | ✓ executed |
+| E09 | EXE-06 | `analysis/orderState.test.ts` "E09 (pure)…" and `execution.test.ts` "E09 — ten fills then an IOC cancel of the remainder, delivered twice with a stale open snapshot last…" → 10 fills once each (dedupe by execution/trade id), order `canceled` with 10 filled, fees .20, reservation consumed **5.2** exactly once, stale `open`/3 ignored, intent `partially_filled`, position 10 open, exposure 5.2; full redelivery changes nothing | ✓ executed |
+| E10 | EXE-06/07 | "E10 — a cancel requested while the final fill arrives…" → `cancel_pending` → fill of 4 counted → `canceled`, intent `partially_filled` 4, cancel `requested` with `cancelRequestedAt`, reservation 2.08; paged activities (page size 1) with a reset on page 2: every page read, the failed page fetched again **with the same cursor**, no new executions, no discrepancy | ✓ executed |
+| E11 | EXE-07 | "E11 — dropped stream events are recovered from REST…" → with the stream dropping everything, `GET /v1/order` + activities rebuild 10 filled (5 @ .50 + 5 @ .49, avg .495, fees .20), reservation 5.15, buying power 994.80 from the venue; replaying the dropped events adds only `new`/`canceled`, no fill twice; an external exit of 6 → venue 4 vs local 10 → `discrepancy` hold, paused; our fills are not rewritten; resolved → resumed | ✓ executed |
+| E12 | EXE-08 | "E12 — only official account activity settles a live position…" → a .99 snapshot and the paper path's market-status settlement leave the live position open (no live lineage on that event); resolution activity → 2 events (market + intent) `resolved yes` amount **+9.5**, position `win`, decision hash unchanged; loss −9.5; void 0; a correction is a **new** `correction` event beside the original (original amount intact); today's realized loss is the net of official amounts; re-reconcile adds nothing | ✓ executed |
+| D01 | DASH-01/02/04 | "D01/D03 — intents, orders (external labelled…)…" → intents in `filled`, `partially_filled`, `rejected`, `rejected_local`, `expired`; external orders without `intentId`; order detail with executions; settled vs open positions; lease held / stream open | ✓ executed (the remaining DASH filters/summaries are 1.14) |
+| D02 | DASH-03 | "D02 — editing the prediction after a live decision…" → decision `rationaleHash`/sizing, the preview display and the intent's hashes unchanged | ✓ executed (the dossier immutability itself is 1.11 S03/S07) |
+| D03 | DASH-02/05 | same test as D01: `/api/trading/export` and the JSON bundle counts match the tables; external order has no rationale; the canary secret appears nowhere; every audit stage present | ✓ executed |
+| D04 | DASH-05 | "D04 — a video, prediction or market linked to a live order cannot be deleted…" → `409 live_lineage` on all three routes; paper reset leaves live rows unchanged; an unlinked video still deletes | ✓ executed |
+| O01 | OPS-01, ACC-04 | "O01 — the canary secret never appears…" (status, intents, orders, holds, previews, audit, executions, exports, errors); `POST /api/trading/disarm` immediate and audited; no manual-live decision while disarmed; `polymarketUs.sdk.test.ts`: secret absent from URL/headers/body of every real-SDK request | ✓ executed (**partial**: Windows `secret.key` ACL, loopback and outbound-host checks are the 1.10 items, still owner-run) |
+| O02 | OPS-02 | "O02 — a backup taken while armed with live lineage…" → no secret, mode `paper` / no authorization in the copy, every live intent/execution kept, binding `needs_rebind`; the live database untouched | ✓ executed |
+| O03 | OPS-03 | "O03 — two processes on one database…" → the second process (`createContext` on the same directory, which disarms at start per OPS-02 — re-armed deliberately) cannot acquire a held lease; its submit is refused **before any POST** (`dispatch_blocked`, `rejected_local`, reservation released, opportunity returned); lease expiry hands over; the previous holder's marker transaction then refuses; the holder dispatches and the per-contract opportunity uniqueness holds across processes | ✓ executed |
+| R07 (live) | RSK-05 | "R07 (live) — two confirmations racing on different contracts with capacity for one…" → the exposure is re-read and the pure decision re-run **inside the reserving transaction**; exactly one create call, the loser gets `preview_stale` with no reservation and no intent, open risk never exceeds the cap | ✓ executed (same process; cross-process is O03) |
+| — | migrations | `core.test.ts` (schema version 15; six new tables; 015 applies after 014) | ✓ executed |
+
+### API assumptions verified (2026-09-16, docs.polymarket.us + `polymarket-us@0.1.1` source)
+`POST /v1/orders` body `{marketSlug, intent, type, price{value,currency}, quantity(number), tif, manualOrderIndicator}` → `{id, executions?}`; `price.value` is the **YES** price for `BUY_SHORT` too; `POST /v1/order/preview {request}` → `{order}`; `GET /v1/order/{id}` → `{order}` with `state ORDER_STATE_*`, `cumQuantity`, `avgPx`, `commissionNotionalTotalCollected`; `GET /v1/orders/open`; `GET /v1/portfolio/activities` `{activities[], nextCursor, eof}` where a **trade carries no order id and no side**; `positionResolution` `{beforePosition, afterPosition, side LONG|SHORT|NEUTRAL, updateTime}`; private stream `wss://api.polymarket.us/v1/ws/private` via `client.ws.private()` (`subscribeOrders/Positions/AccountBalance`, events `orderSnapshot`, `orderUpdate`, `positionUpdate`, `accountBalanceUpdate`, `heartbeat`, `close`); the SDK uses the global `fetch`, signs `timestamp+method+path` with Ed25519, maps AbortError → `APIError(408)`, other fetch failures → `APIError(0)`; **no client order id, idempotency key, sandbox or account-identity endpoint exists** — none is invented. Invalid prices (outside 0.01–0.99) still receive an id and are rejected later, so they are refused client-side.
+
+### Regression checks
+All 138 tests of 1.12.0 still pass; five assertions were updated for the 1.13 contract: `polymarketUs.test.ts` (the adapter now has `previewOrder/createOrder/getOrder/activities/openPrivateStream/classifySubmitFailure`; reads still never touch them), `routes/trading.test.ts` and `services/decisions.test.ts` (`POST /api/trading/orders` → `409 preview_required` instead of `501`; manual-live without the acknowledgement → `live_authorization` gate; auto-live → `strategy_qualified`), `services/trading.test.ts` (`features.submission` is `true`; `submission_feature` and `no_holds` gates satisfied on a fresh account).
+
+### Remaining gate failures / pending items for 1.13
+
+1. Owner `npm install` / `typecheck` / `build` / `test` on Windows with the real packages (sandbox used stubs for fastify/zod).
+2. **Capped owner-run smoke test** ([docs/SETUP.md §4.14](SETUP.md)): one verified contract, quantity 1, a few cents, manual-live, preview → confirm → reconcile → (optionally) settlement. **Not performed during development; no live fill has been verified.** A successful HTTP response in any test is not a verified fill.
+3. Exit demo on the owner's machine with the fake venue (`npm test -- execution`), then the smoke test above.
+4. Upgrade rehearsal from the owner's real 1.12 data directory (015 rebuilds `trade_intents`; verify the row count before/after).
+5. The 1.10–1.12 items still open: real-key read check, Windows `secret.key` ACL, Setup walk-through, 1.11/1.12 exit demos on a real US event, strategy qualification (auto-live stays gated).
+
+The release is **not marked "accepted"** until 1–2 are recorded here.
+
+## Release 1.12.0 — Immutable forecasts, decisions, risk reservations, US paper execution (2026-09-16)
+
+**Baseline.** 1.11.0 as executed in the sandbox: 112 · 112 passed · 0 failed (owner's Windows runs of 1.10/1.11 still pending, see below).
+
+**This release, executed.** Linux cloud sandbox, Node v22.22.2, sources compiled with `tsc` against the repository's `tsconfig.base.json` plus the same type stubs as 1.10/1.11 (`fastify` in-memory router, `zod` shim; `polymarket-us` never loaded; the fake trading adapter is installed in every decision test and asserts **zero** calls):
+
+| Command (sandbox equivalent) | Result |
+|---|---|
+| `node --test "dist/server/src/**/*.test.js"` (= `npm test`) | **138 tests · 138 passed · 0 failed · 0 skipped · 0 cancelled** (84.5 s). 1.11.0 had 112; the 26 new tests are listed below. |
+| `node --test dist/server/src/analysis/forecast.test.js` | 8 · 8 passed |
+| `node --test dist/server/src/analysis/tradeDecision.test.js` | 11 · 11 passed |
+| `node --test dist/server/src/services/decisions.test.js` | 7 · 7 passed (0.5 s) |
+| `tsc -p tsconfig.json --noEmit` for `server/src` + `shared/src` (= `npm run typecheck`, server/shared) | **0 errors** (stub-only filter TS7006/TS2347/TS2307). |
+| `tsc -p tsconfig.json --noEmit` for `web/src` (= `npm run typecheck`, web) | **0 errors** (filter TS7006/TS2307 — React's own types are not installed in the sandbox). |
+| `npm run build` (Vite bundle) | **not executed** in the sandbox (no registry). Pending owner run. |
+
+**Owner machine (Windows 11, Node 26.7.0):** `npm install` (no new dependencies in 1.12), `npm run typecheck`, `npm run build`, `npm test` — **pending owner execution**; record counts here.
+
+### Requirement → test matrix (fake venue, fake adapter; no order endpoint exists to call)
+
+| Test id (03-Acceptance-Test-Plan) | Requirement | Where | Status |
+|---|---|---|---|
+| F01 | FOR-01/04 | `analysis/forecast.test.ts` "F01 — one source, n=20, mean edge .12…" → d .08, adjustment .04, pYes `0.540000` / pNo `0.460000`, formula text | ✓ executed |
+| F02 | FOR-03/04 | "F02 — ten videos from the same creator and ten reuploads…" → 20 inputs, 2 contributions; one creator = one video; representative = most recent claim; `clustered_duplicate ×9` | ✓ executed (the service clusters by creator key and by quote hash; `decisions.test.ts` F06 shows a second creator on the same contract as a separate cluster) |
+| F03 | FOR-01/03 | "F03 — two independent sources… one YES one NO" → adjustments cancel, pYes `0.500000`, both stances on record; R01 shows .50 abstains | ✓ executed |
+| F04 | FOR-02 | `services/decisions.test.ts` "F04/F05 — the trading cohort…" → 4 observations from 9 claims; `void ×1`, `outcome_pending ×2`, `no_price_at_or_before_claim ×1`, `link_not_verified_equivalent ×1`, `duplicate_creator_contract ×1`; assessments are structurally never read (the cohort consults `markets.resolved` only) | ✓ executed (**partial**: no `supported`/`partially_supported` assessment row is inserted; exclusion is by construction, not by a fixture row) |
+| F05 | FOR-05 | same test: midday-only price on a date-only claim excluded; a resolution observed after T excluded at T and included at a later instant; `analysis/forecast.test.ts` rejects a claim made after `asOf` | ✓ executed |
+| F06 | FOR-05 | "F06 — a forecast replayed at T is byte-identical…" → same hash after a later resolution, later wins and an edit; a later instant changes it; `forecast_snapshots` refuses UPDATE | ✓ executed |
+| F07 | FOR-01/06 | `analysis/forecast.test.ts` "F07 — NaN, Infinity, 1.2, inconsistent sums and expiry…"; `analysis/tradeDecision.test.ts` gate matrix (FORECAST_INVALID / INSUFFICIENT / EXPIRED / MISSING; auto-live needs `qualified`) | ✓ executed |
+| F08 | FOR-06/07 | "F08 — qualification gates apply exactly…" (99 vs 100, Brier vs baseline, 20 per creator, 2 clusters); `decisions.test.ts` F11: a fixture-sourced evaluation passes the numbers yet never qualifies; no production row exists; trading gate stays unmet | ✓ executed |
+| F09 | FOR-07 | "F09 — Brier over [.8,.3]…" = .065; baseline .25 on the same events; skipped reasons and bin counts retained | ✓ executed |
+| F10 | FOR-08 | `analysis/tradeDecision.test.ts` fill maths and `services/decisions.test.ts` "F10 — paper mode, F0 book with only 10 contracts…" → 10 fills, $5.00 + $0.20 fees, 9 canceled (IOC), reservation `consumed` 5.20 of 9.88, exposure 5.20, bankroll 94.80, zero adapter calls, second entry refused (`OPPORTUNITY_CONSUMED`) | ✓ executed |
+| F11 | FOR-08, DASH-01 | "F11 — legacy paper (USDC + mana), the US paper book and live account balances…" → legacy `byCurrency` {USDC, MANA}, no USD there; US book USD only; routes: strict decision body (400 on `budget`), `/orders` 501 | ✓ executed (live account balances are the 1.10 sync rows; the Trades page shows them as a separate, never-summed figure) |
+| R01 | RSK-01/03 | `analysis/tradeDecision.test.ts` "R01 — exactly .50 skips; .5001 passes…; every other gate still required" | ✓ executed |
+| R02 | RSK-01/03 | "R02 — pChosen .60: all-in .75 → negative; .58 → .02 skips; .57 → .03 passes" | ✓ executed |
+| R03 | RSK-02/04 | "R03 — candidate 20 → 19 / $9.88; hint only lowers"; route test refuses a client `budget` | ✓ executed |
+| R04 | RSK-04/07 | "R04 — .435 → YES .43 / NO .57 (risk .43); half-cent tick; fee bounds incl. announced later schedule; unknown fee fails closed; fractional increments; no valid quantity" | ✓ executed |
+| R05 | RSK-03 | "R05 — book 10 s vs 10.001 s; sync 30 s vs 30.001 s; forecast 30 m vs 30 m + 1 ms" (exact boundaries; a stale input blocks until re-evaluated with fresh inputs) | ✓ executed |
+| R06 | RSK-03, MAT-06 | "R06 — 12:54:59.999 pre-cutoff; 12:55:00 and .001 block with the market open; same instant in Eastern time; unknown cutoff blocks"; `dailyBucket` timezone | ✓ executed |
+| R07 | RSK-05 | `services/decisions.test.ts` "R07 — two concurrent workers with $15 unused capacity…" → one reservation/dispatch, the other `NO_VALID_QUANTITY`, bankroll never negative | ✓ executed (same-process concurrency: the reservation is inserted in the decision's SQLite transaction; cross-process locking is OPS-03, 1.13) |
+| R08 | RSK-02/05 | pure sizing test + "R08 — daily remainder sizes down (9 / $4.68); event cap; open-market count; loss stop (net −3.48 trips $3, not $4); winning settlement leaves the day's committed amount unchanged" | ✓ executed |
+| R09 | RSK-06 | `analysis/tradeDecision.test.ts` "R09 (checks) — opposing exposure / open order blocks; unreflected reservation subtracted once" | ✓ executed at the pure level (**partial**: no live account exists in paper mode, so the service path with a real sync is exercised only through the 1.10 sync rows; acknowledgement of reservations by the venue arrives with 1.13) |
+| R10 | RSK-05/07 | "R10 — reservation keeps its bucket across midnight; limit/timezone edits hashed and audited, no reset of consumption; unknown timezone refused; consumed opportunity survives a bigger budget" | ✓ executed (**partial by construction**: "while armed" cannot occur — live modes are refused; the disarm branch of `setLimits` is exercised by static review only) |
+| — | migrations | `core.test.ts` (schema version 14; new tables; 014 applies after 013) | ✓ executed |
+
+### Regression checks
+All 112 tests of 1.11.0 still pass unchanged except one deliberate contract change: `routes/trading.test.ts` no longer expects `POST /api/trading/decisions` to answer 501 (it is the paper decision route now); `/arm`, `/emergency-stop` and `/orders` still do.
+
+### Remaining gate failures / pending items for 1.12
+
+1. Owner `npm install` / `typecheck` / `build` / `test` on Windows with the real packages (sandbox used stubs).
+2. Exit demo on the owner's machine: the same verified contract with the book at .50 → *Evaluate paper decision* eligible (19 × .52 ≤ $10); with a .75 offer → skipped `EDGE_NEGATIVE`; `$10` cap under two concurrent evaluations. The sandbox demo used the synthetic F0 book and contracts.
+3. **Strategy qualification is unmet** (FOR-06/07): no production qualification record can exist until ≥ 100 settled paper decisions with a market baseline accumulate; auto-live stays gated. Reported as incomplete scope, not waived.
+4. Upgrade rehearsal from the owner's real 1.11 data directory (migration 014 is additive).
+5. The 1.10/1.11 items still open: real-key read check, Windows `secret.key` ACL, Setup walk-through, 1.11 exit demo on a real US event.
+
+The release is **not marked "accepted"** until 1–2 are recorded here.
+
 ## Release 1.11.0 — Source subscriptions, evidence provenance, verified market contracts (2026-09-16)
 
 **Baseline.** 1.10.0 as executed in the sandbox: 98 · 98 passed · 0 failed (owner's Windows run of 1.10 still pending, see below).

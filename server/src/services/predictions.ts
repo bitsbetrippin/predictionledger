@@ -307,8 +307,10 @@ export class PredictionService {
   }
 
   /** 1.11 — number of stored revisions (0 = never edited); a verification records it so later edits are detectable. */
-  revisionCount(id: string): number {
-    return this.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM prediction_revisions WHERE prediction_id = ?", id)?.n ?? 0;
+  revisionCount(id: string, asOf?: string): number {
+    return asOf
+      ? this.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM prediction_revisions WHERE prediction_id = ? AND created_at <= ?", id, asOf)?.n ?? 0
+      : this.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM prediction_revisions WHERE prediction_id = ?", id)?.n ?? 0;
   }
 
   /** 1.11 — the extraction pass number the next run over this video should carry. */

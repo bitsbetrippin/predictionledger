@@ -33,6 +33,12 @@ import { makePlaylistImportHandler } from "./youtube/playlist.js";
 import { TradingAccountService } from "./services/tradingAccounts.js";
 import { SubscriptionService, makeSubscriptionPollHandler, type VideoLister } from "./services/subscriptions.js";
 import { ContractService } from "./services/contracts.js";
+import { ForecastService } from "./services/forecasts.js";
+import { RiskService } from "./services/riskReservations.js";
+import { PaperUsService } from "./services/paperUs.js";
+import { TradeDecisionService } from "./services/tradeDecisions.js";
+import { DispatchLeaseService } from "./services/dispatchLease.js";
+import { ExecutionService, type FaultInjector } from "./services/execution.js";
 import { createTradingAdapter } from "./providers/trading/registry.js";
 import { GuardedFetcher, type SourceFetcher } from "./research/fetcher.js";
 import { makeAudioExtractHandler, makeModelDownloadHandler, makeTranscribeHandler } from "./jobs/handlers/media.js";
@@ -69,12 +75,20 @@ export interface AppContext {
   /** 1.11: saved channel/playlist subscriptions and contract verification. */
   subscriptions: SubscriptionService;
   contracts: ContractService;
+  /** 1.12: immutable forecasts, risk reservations, US paper book and decisions (paper dispatch; the live path is `execution`). */
+  forecasts: ForecastService;
+  risk: RiskService;
+  paperUs: PaperUsService;
+  decisions: TradeDecisionService;
+  /** 1.13: one dispatcher per data directory and the manual-live execution path (preview → confirm → reconcile). */
+  lease: DispatchLeaseService;
+  execution: ExecutionService;
   fetcher: SourceFetcher;
   /** Builds the transcription engine selected in Setup (or a test override). */
   transcription: () => TranscriptionProvider;
 }
 
-export function createContext(overrides: Partial<Pick<AppContext, "fetcher" | "transcription">> & { lister?: VideoLister } = {}): AppContext {
+export function createContext(overrides: Partial<Pick<AppContext, "fetcher" | "transcription">> & { lister?: VideoLister; now?: () => Date; faults?: FaultInjector; leaseHolder?: string } = {}): AppContext {
   const paths = resolveDataPaths();
   ensureDataDirs(paths);
   const { db, schemaVersion } = openDatabase(paths);
@@ -103,9 +117,15 @@ export function createContext(overrides: Partial<Pick<AppContext, "fetcher" | "t
     consensus: new ConsensusService(db, new SignalService(db)),
     paper: new PaperService(db),
     // The vault handle is created here and handed to exactly one service; nothing else can read trading.* secrets.
-    trading: new TradingAccountService(db, secrets.openVault("trading."), () => createTradingAdapter("polymarket_us"), { allowInternet: () => settings.getPersisted().privacy.allowInternet }),
+    trading: new TradingAccountService(db, secrets.openVault("trading."), () => createTradingAdapter("polymarket_us"), { allowInternet: () => settings.getPersisted().privacy.allowInternet, now: overrides.now }),
     subscriptions: new SubscriptionService(db),
     contracts: undefined as unknown as ContractService,
+    forecasts: undefined as unknown as ForecastService,
+    risk: new RiskService(db),
+    paperUs: new PaperUsService(db),
+    decisions: undefined as unknown as TradeDecisionService,
+    lease: new DispatchLeaseService(db, overrides.now, overrides.leaseHolder),
+    execution: undefined as unknown as ExecutionService,
     fetcher: overrides.fetcher ?? new GuardedFetcher(),
     transcription:
       overrides.transcription ??
@@ -118,6 +138,9 @@ export function createContext(overrides: Partial<Pick<AppContext, "fetcher" | "t
   };
 
   ctx.contracts = new ContractService(ctx);
+  ctx.forecasts = new ForecastService(ctx);
+  ctx.decisions = new TradeDecisionService(ctx, { now: overrides.now });
+  ctx.execution = new ExecutionService(ctx, { now: overrides.now, faults: overrides.faults });
 
   // Job handlers (Release 0.2). Later releases register audio/transcript/research/assessment kinds.
   jobs.register("prediction.extract", makeExtractHandler(ctx));

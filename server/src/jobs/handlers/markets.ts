@@ -64,6 +64,10 @@ export function makeMarketSnapshotHandler(ctx: AppContext) {
       const m = ctx.paper.markAll();
       if (m.closed > 0) failed.push(`(info) ${m.closed} paper position(s) closed on resolution`);
     }
+    // 1.12: settle US paper positions only from the venue's published resolution (never from a research verdict).
+    let settledUs = 0;
+    for (const m of targets) if (m.provider === "polymarket_us") settledUs += ctx.decisions.settleResolved(m.id);
+    if (settledUs > 0) failed.push(`(info) ${settledUs} US paper position(s) settled from the venue resolution`);
     // 1.8: watch rules run over the fresh snapshots.
     if (ctx.settings.getPersisted().markets.watch.enabled && ok > 0) ctx.jobs.enqueue({ kind: "market.watch", subjectType: "market", subjectId: "all", payload: {}, dedupeKey: "market.watch:all", maxAttempts: 1 });
     job.progress(100, `${ok} market(s) refreshed${failed.length ? `, ${failed.length} failed` : ""}`);

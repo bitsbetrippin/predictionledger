@@ -13,7 +13,7 @@ import { APP_VERSION } from "../config.js";
 import { timeStatus } from "../analysis/dates.js";
 
 /** JSON export: content, research, games, markets and (1.10) the secret-free trading audit trail. Never settings or secrets. */
-export function buildExportBundle(ctx: Pick<AppContext, "videos" | "predictions" | "plans" | "research" | "games" | "markets" | "trading">): ExportBundle {
+export function buildExportBundle(ctx: Pick<AppContext, "videos" | "predictions" | "plans" | "research" | "games" | "markets" | "trading" | "db" | "forecasts" | "decisions" | "paperUs" | "execution">): ExportBundle {
   const predictions = ctx.predictions.list({ includeDismissed: true });
   const status = ctx.trading.status();
   return {
@@ -31,6 +31,15 @@ export function buildExportBundle(ctx: Pick<AppContext, "videos" | "predictions"
     marketLinks: ctx.markets.allLinks(),
     tradingBindings: [...(status.binding ? [status.binding] : []), ...status.previousBindings],
     tradingAudit: ctx.trading.auditEvents(1000),
+    forecasts: ctx.db.all<{ id: string }>("SELECT id FROM forecast_snapshots ORDER BY created_at").map((r) => ctx.forecasts.get(r.id)!),
+    tradeDecisions: ctx.decisions.list({ limit: 10_000 }),
+    paperUsPositions: ctx.paperUs.list(),
+    // 1.13: live lineage (secret-free; external orders are labelled, never given an invented rationale).
+    tradeIntents: ctx.execution.intents({ limit: 10_000 }),
+    venueOrders: ctx.execution.orders({ limit: 10_000 }),
+    executions: ctx.execution.allExecutions(),
+    settlementEvents: ctx.execution.settlements(),
+    reconciliationHolds: ctx.execution.holds(),
   };
 }
 

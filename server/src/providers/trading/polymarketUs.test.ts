@@ -42,7 +42,7 @@ function fakeSdk(routes: Record<string, unknown | (() => never)>, log: Recorded[
   };
 }
 
-test("adapter reads go through the SDK as authenticated requests on the fixed production hosts; fixtures normalise to decimal strings; there is no order-creation method", async () => {
+test("adapter reads go through the SDK as authenticated requests on the fixed production hosts; fixtures normalise to decimal strings; reads never touch the order-creation surface", async () => {
   const log: Recorded[] = [];
   const sdk = fakeSdk({ "/v1/account/balances": load("balances.json"), "/v1/portfolio/positions": load("positions.json"), "/v1/orders/open": load("open-orders.json"), "/v1/order/ord-synthetic-1/cancel": {} }, log);
   const adapter = new PolymarketUsTradingAdapter({ loadSdk: async () => sdk, minIntervalMs: 0 });
@@ -73,8 +73,12 @@ test("adapter reads go through the SDK as authenticated requests on the fixed pr
   assert.deepEqual(log[2].query, { slugs: ["cpc-btc-100k-10-31-2026"] });
   assert.deepEqual(log[3].body, { marketSlug: "cpc-btc-100k-10-31-2026" });
   assert.ok(!log.some((l) => l.method === "POST" && /\/v1\/orders$|preview|batched|modify|close-position/.test(l.path)));
-  for (const name of ["createOrder", "create", "preview", "previewOrder", "submit", "modify", "closePosition", "cancelAll"]) {
-    assert.equal((adapter as unknown as Record<string, unknown>)[name], undefined, `no ${name} method exists in 1.10`);
+  // 1.13: the adapter has exactly the verified order surface (preview / create / read / cancel) and nothing batched or modifying.
+  for (const name of ["create", "submit", "modify", "closePosition", "cancelAll", "replaceOrder", "batchOrders"]) {
+    assert.equal((adapter as unknown as Record<string, unknown>)[name], undefined, `no ${name} method exists`);
+  }
+  for (const name of ["previewOrder", "createOrder", "getOrder", "cancelOrder", "activities", "openPrivateStream", "classifySubmitFailure"]) {
+    assert.equal(typeof (adapter as unknown as Record<string, unknown>)[name], "function", `${name} is part of the 1.13 adapter`);
   }
 });
 

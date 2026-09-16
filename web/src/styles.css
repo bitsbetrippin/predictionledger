@@ -226,3 +226,18 @@ details summary { cursor: pointer; }
 .checklist-table tr.fs-not_applicable { opacity: 0.6; }
 .evidence-card.excluded { opacity: 0.55; }
 .dossier h4 { margin: 12px 0 4px; }
+
+/* 1.12 — trades / decisions */
+.chip.outcome-eligible { background: var(--ok, #2f9e44); color: #fff; text-transform: none; letter-spacing: 0; }
+.chip.outcome-skipped { background: #eef2f7; color: #3b4a5c; text-transform: none; letter-spacing: 0; }
+.chip.outcome-needs_review { background: #e8a33d; color: #fff; text-transform: none; letter-spacing: 0; }
+@media (prefers-color-scheme: dark) { .chip.outcome-skipped { background: #263040; color: #b8c6d8; } }
+tr.selected td { background: var(--surface); }
+
+/* 1.13 — live intent states: unknown is visually distinct from every other state */
+.chip.intent-filled, .chip.intent-partially_filled { background: var(--chip-local); }
+.chip.intent-acknowledged, .chip.intent-submitting { background: var(--chip-cloud); }
+.chip.intent-rejected, .chip.intent-rejected_local, .chip.intent-canceled, .chip.intent-expired { background: var(--bg); }
+.chip.intent-submission_unknown { background: #fdecec; color: var(--error); border: 1px solid var(--error); }
+.warn { color: #c98a1a; }
+.ok { color: var(--ok); }

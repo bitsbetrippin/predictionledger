@@ -4,6 +4,15 @@ All notable changes to Prediction Ledger. Format follows [Keep a Changelog](http
 
 Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
 
+## [1.5.0] — 2026-09-15 — Prediction markets: read-only Polymarket connector
+First step of the market integration described in [docs/PREDICTION_MARKETS.md](docs/PREDICTION_MARKETS.md) (releases 1.5 → 1.8: connector → markets in the ledger → creator-vs-market signals → multi-channel consensus and watchlists). Nothing is stored yet and nothing can trade.
+### Added
+- `MarketProvider` interface (`server/src/providers/markets/types.ts`): `search`, `get`, `list`, `book` — read-only, probabilities 0–1, snapshots stamped with `retrievedAt`.
+- Polymarket adapter over the public Gamma and CLOB APIs (no account, no key; verified live 2026-09-15): normalises Gamma's JSON-string fields (`outcomes`, `outcomePrices`, `clobTokenIds`), flattens events → markets for search and tag listings, reads order books and midpoints. Trading endpoints are deliberately not wrapped. Stubbed-fetch tests.
+- `npm run markets -- search|tag|market|book …` probe script.
+- `GET /api/markets/search?q=`, `GET /api/markets?tag=`, `GET /api/markets/:provider/market/:id`, `GET /api/markets/:provider/book/:tokenId` — pass-through, gated by Setup → Privacy → internet; venue errors surface as `502 market_api`.
+- ADR-025.
+
 ## [1.4.0] — 2026-09-14 — Game records: winner, score, date — one look-up per matchup
 Owner rule: in Sports Mode, validation is just "who won, what was the score, on what day". Four picks on "Bills vs Chiefs" should reconcile against one fact — *Bills and Chiefs played on X, final Y–Z* — and each pick is then matched to it. Nobody publishes a false final score, so no deep research.
 ### Added

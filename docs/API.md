@@ -120,6 +120,15 @@ Provider calls made by every job now go through a resilience wrapper: 120 s per-
 
 Settings gain `sports: { enabled, trackSpreads }`.
 
+## Release 1.5 — markets (read-only)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/markets/search?q=&provider=polymarket&limit=10&all=1` | Free-text search; active markets unless `all=1`. `409 offline` when internet is off; `502 market_api` on venue errors. |
+| GET | `/api/markets?tag=nfl&limit=20&offset=0` | Markets under a venue tag (events flattened), by 24 h volume. |
+| GET | `/api/markets/:provider/market/:idOrSlug` | One market: `{ provider, id, conditionId, slug, url, question, description, event?, outcomes[{label, tokenId, price, bestBid, bestAsk}], liquidity, volume, volume24h, endDate, active, closed, restricted, retrievedAt }`. |
+| GET | `/api/markets/:provider/book/:tokenId` | `{ bids[{price,size}], asks[…], midpoint, retrievedAt }` — best price first. |
+
 ## Release 1.4
 
 `Prediction` gains `gameId?`. Assessments made by settlement report `provider: "app"`, `model: "rule"`, `templateVersion: "sports_settlement.v1"`; their run has `evidenceTemplate: "sports_settlement.v1"` and coverage note `Settled from game record <id>`. The JSON export includes `games`.

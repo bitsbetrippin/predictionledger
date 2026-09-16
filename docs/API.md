@@ -120,6 +120,44 @@ Provider calls made by every job now go through a resilience wrapper: 120 s per-
 
 Settings gain `sports: { enabled, trackSpreads }`.
 
+## Release 1.11 — source subscriptions, evidence dossier, contract verification (no execution)
+
+All mutations: CSRF header + same origin; bodies `.strict()`. Nothing in this release previews, creates or prepares an order.
+
+### Source subscriptions (SRC-01)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/source-subscriptions` | `SourceSubscription[]` (`kind`, canonical `url`, `enabled`, `pollIntervalHours`, `lookbackDays`, `maxVideosPerRun`, `autoExtract`, `categoryAllowlist[]`, `researchBudget?`, `lastRunAt?`, `lastResult?`, `nextRunAt?`). |
+| POST | `/api/source-subscriptions` | `{ url, title?, enabled?, pollIntervalHours? (1–720), lookbackDays? (0–3650), maxVideosPerRun? (1–50), autoExtract?, categoryAllowlist?[], researchBudget? {maxSearches?, maxSources?} }` → `201`. The URL is canonicalised (channel `@handle`/`/channel/…`/`/c/…` → `…/videos`; playlist → `?list=`); the same channel returns the existing row. `400 invalid_url`. |
+| GET | `/api/source-subscriptions/:id` | the subscription plus `runs[]` (`SubscriptionRunSummary`: `listed, queued, alreadyKnown, skippedLookback, skippedAllowlist, skippedBudget, error?, queuedVideoIds[]`). |
+| PATCH | `/api/source-subscriptions/:id` | any create field except `url`; `researchBudget: null` clears it. |
+| DELETE | `/api/source-subscriptions/:id` | `{ ok: true }`; imported videos stay (their `subscriptionId` is kept for provenance). |
+| POST | `/api/source-subscriptions/:id/run` | `202 { jobId }` — queues `subscription.poll` with `force: true` (runs even when disabled). `409 offline` when internet is off. |
+
+### Evidence dossier and sources (SRC-02…06)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/predictions/:id/dossier?asOf=<ISO>&assumePublished=1` | `EvidenceDossier`: `quote {text, hash, startS, endS, videoId, videoUrl?, timestampUrl?}`, `versions {prediction, analysis?, plan?, latestRun?, latestAssessment?}`, `supporting[]` / `contradicting[]` / `context[]` (`DossierItem` with the source's `url, title, publisher, publishedAt, retrievedAt, firstSeenAt, contentHash, status, independenceGroup, syndicatedOf`), `dissent[]`, `independenceGroups[]`, `coverageLimitations[]`, `rationale?`. With `asOf`, items not known to the app by that instant are dropped (`excludedAsOf`), basis `first_seen`; `assumePublished=1` also counts items by publication date, labelled `published_assumption`. |
+| POST | `/api/sources/:id/withdraw` | `{ note?, restore? }` → the source with `status` `withdrawn` (or `available` when restoring). Status only: text, hash, excerpts and evidence rows never change. |
+| POST | `/api/sources/:id/recheck` | Re-fetches the URL; `404`/`410` → `status: "missing"`; records `lastCheckedAt` / `lastHttpStatus`. Returns `{ …source, checked: { status, httpStatus, outcome } }`. `409 offline`. |
+| POST | `/api/predictions/:id/research` | now accepts `purpose: "verdict" \| "forecast"` (default `verdict`). A forecast run requires an existing plan (`409 plan_required`), stores evidence with `purpose = forecast` and never chains `assessment.run`. |
+
+`VideoSummary` gains `channelId?, publishedPrecision?, firstSeenAt?, transcriptHash?, subscriptionId?`; `Prediction` gains `quoteHash?, transcriptHash?, analysisVersion?`; `SourceRecord` gains `contentHash?, firstSeenAt?, status, statusChangedAt?, statusNote?, independenceGroup?, lastCheckedAt?, lastHttpStatus?`; `ResearchRun` gains `purpose, cutoffAt?`.
+
+### Contract verification (MAT-01…06)
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/predictions/:id/us-candidates` | `{ url?, limit? (1–20) }` → `UsCandidateSearch { outcome: "none" \| "one" \| "multiple", candidates[{market, score, rationale, relation?, side?, linkId?}], researchOnly[{linkId, provider, question}], queries[], notes[] }`. Searches Polymarket US only (or the event behind a pasted `polymarket.us/event/<slug>` URL) and proposes links; never accepts one. `409 markets_disabled|offline`, `404`. |
+| POST | `/api/market-links/:id/verify-contract` | `{ facts?: { [fieldId]: { value, source } }, notes? }` → `201 ContractVerification` (new version). Facts fill **missing, non-gate** fields only; hard gates (`venue`, `market_open`, `rules_hash`, `side`, `teams`, `question`, `settlement_conditions`) and `incompatible` fields are never overridden. A link on any venue other than Polymarket US verifies to status `research_only`. `400 invalid_facts` when a fact lacks its source. |
+| GET | `/api/market-links/:id/verifications` | `{ link, verifications[] }` newest first — every version is kept. |
+| POST | `/api/market-links/:id/revalidate` | Refreshes the market from the venue when online, compares with the latest verification → `{ verification?, reasons[], refreshed }`; any material change marks it `stale` (link `verificationStatus: "stale"`). |
+| PUT / PATCH | `/api/market-links/:id/verification-status` | **`405 status_is_computed`** — status is never asserted. |
+
+`PredictionMarketLink` gains `verificationStatus` (`unverified` \| `incomplete` \| `incompatible` \| `research_only` \| `verified_equivalent` \| `stale`) and `verificationId?`. `ContractVerification`: `fields[{id, label, status: verified\|incompatible\|missing\|not_applicable, expected?, found?, note?, fact?, required}]`, `sideId?`, `sideLabel?`, `sideBasis?`, `rulesHash?`, `cutoffAt?`, `cutoffBasis?`, `cutoffUnknown`, `quoteHash?`, `predictionRevision`, `facts`, `reviewer`, `notes?`, `staleAt?`, `staleReasons?`.
+
 ## Release 1.10 — Polymarket US account connection (reads only)
 
 Application routes, distinct from venue routes. All mutations require the CSRF header and same origin; bodies are `.strict()` — an unknown key (a base URL, a mode, a budget) is a `400`. No route in this release creates, previews or modifies an order; the live-control paths exist only to answer `501 feature_disabled`.
@@ -212,7 +250,8 @@ Settings gain `markets.paper { enabled, bankroll, sizing, fixedStake, kellyFract
 |---|---|---|---|
 | `prediction.extract` | `{ videoId }` | `video` | `{ windows, candidates, created, matchedExisting, notes[] }` |
 | `plan.generate` | `{ predictionId, thenResearch? }` | `prediction` | `{ planId, version, attempts }` — with `thenResearch` it enqueues `research.run` |
-| `research.run` | `{ predictionId, planId }` | `prediction` | `{ runId, searches, sources, evidence, rejected, coverage[] }` — enqueues `assessment.run` on completion |
+| `research.run` | `{ predictionId, planId, purpose? }` | `prediction` | `{ runId, purpose, searches, sources, evidence, rejected, coverage[] }` — enqueues `assessment.run` on completion **unless** `purpose = "forecast"` (1.11) |
+| `subscription.poll` | `{ subscriptionId, force? }` | `subscription` | `SubscriptionRunSummary` — lists the channel/playlist, queues `video.import` for new videos within the lookback / allowlist / budget (1.11) |
 | `sports.resolve_game` | `{ predictionId, recheck? }` | `prediction` (the seed pick; dedupe key is the matchup) | `{ gameId, status, summary, picks, outcomes: { [predictionId]: "hit (assessment v1)" \| "miss …" \| "push …" \| "pending" }, notes[] }`. Progress: "Looking up A vs B (1/2)", "Reading espn.com (1/3)", "Settling pick k of n". Fails with `Could not find a final score for A vs B …` when no snippet or page states one. |
 | `assessment.run` | `{ predictionId, runId }` | `prediction` | `{ assessmentId, version, guardNotes[] }` or `{ …, deterministic: true }` for zero-evidence runs |
 | `video.import` | `{ videoId, userSupplied: { title?, publishedAt?, language? }, forceAudio? }` | `video` | `{ source: "captions-manual"\|"captions-auto", lang, segments }` or `{ source: "audio", bytes, ext }` — the latter enqueues `audio.extract`. `maxAttempts` 1: failures are explained, not retried blindly. |

@@ -28,6 +28,7 @@ import { registerMediaRoutes } from "./routes/media.js";
 import { registerYouTubeRoutes } from "./routes/youtube.js";
 import { registerMarketRoutes } from "./routes/markets.js";
 import { registerTradingRoutes } from "./routes/trading.js";
+import { registerSubscriptionRoutes } from "./routes/subscriptions.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const webDist = path.resolve(here, "..", "..", "web", "dist");
@@ -69,6 +70,7 @@ async function main(): Promise<void> {
   registerYouTubeRoutes(app, ctx);
   registerMarketRoutes(app, ctx);
   registerTradingRoutes(app, ctx);
+  registerSubscriptionRoutes(app, ctx);
 
   if (fs.existsSync(webDist)) {
     await app.register(fastifyStatic, { root: webDist, prefix: "/", wildcard: false });
@@ -90,6 +92,7 @@ async function main(): Promise<void> {
 
   ctx.jobs.start();
   startMarketRefresh(ctx);
+  startSubscriptionPolling(ctx);
 
   // This exact line is what scripts/start.mjs waits for before opening the browser.
   console.log(`PREDICTION_LEDGER_READY ${origin}`);
@@ -123,6 +126,25 @@ function startMarketRefresh(ctx: AppContext): void {
   const timer = setInterval(tick, 10 * 60_000);
   timer.unref();
   setTimeout(tick, 30_000).unref();
+}
+
+/**
+ * 1.11 — saved channel/playlist subscriptions are polled on their own interval while the app runs.
+ * Checked every 10 minutes; each due subscription gets one deduped `subscription.poll` job. Nothing
+ * runs while the computer sleeps or the app is closed — there are no catch-up floods, the next tick
+ * simply lists what is new within the lookback window.
+ */
+function startSubscriptionPolling(ctx: AppContext): void {
+  const tick = () => {
+    const s = ctx.settings.getPersisted();
+    if (!s.privacy.allowInternet) return;
+    for (const sub of ctx.subscriptions.due()) {
+      ctx.jobs.enqueue({ kind: "subscription.poll", subjectType: "subscription", subjectId: sub.id, payload: { subscriptionId: sub.id }, dedupeKey: `subscription.poll:${sub.id}`, maxAttempts: 1 });
+    }
+  };
+  const timer = setInterval(tick, 10 * 60_000);
+  timer.unref();
+  setTimeout(tick, 45_000).unref();
 }
 
 /**

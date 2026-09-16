@@ -14,6 +14,7 @@ import { z } from "zod";
 import { MarketApiError, type MarketProvider } from "../providers/markets/types.js";
 import { createMarketProvider, isMarketProviderId } from "../providers/markets/registry.js";
 import { stakeFor } from "../services/paper.js";
+import { ContractVerifyError } from "../services/contracts.js";
 
 /** Accept an id, a slug, or a venue URL (polymarket.com/event/<slug>, manifold.markets/<user>/<slug>). */
 export function marketKeyFromInput(input: string): string {
@@ -232,4 +233,52 @@ export function registerMarketRoutes(app: FastifyInstance, ctx: AppContext): voi
   });
   app.post<{ Params: { id: string } }>("/api/market-links/:id/reject", async (req, reply) => ctx.markets.setLinkStatus(req.params.id, "rejected") ?? reply.code(404).send({ error: "not_found" }));
   app.delete<{ Params: { id: string } }>("/api/market-links/:id", async (req, reply) => (ctx.markets.deleteLink(req.params.id) ? { ok: true } : reply.code(404).send({ error: "not_found" })));
+
+  // ---- 1.11: contract verification (MAT-01…06). Discovery scores are research inputs; only a verified checklist can ever execute. ----
+  const contractError = (reply: { code: (n: number) => { send: (b: unknown) => unknown } }, err: unknown) => {
+    if (err instanceof ContractVerifyError) return reply.code(err.httpStatus).send({ error: err.code, message: err.message });
+    return reply.code(500).send({ error: "contract_error", message: (err as Error).message?.slice(0, 300) });
+  };
+  const factsSchema = z.record(z.object({ value: z.string().min(1).max(300), source: z.string().min(1).max(500) }).strict());
+  const verifySchema = z.object({ facts: factsSchema.optional(), notes: z.string().max(1000).optional() }).strict();
+
+  app.post<{ Params: { id: string } }>("/api/predictions/:id/us-candidates", async (req, reply) => {
+    const parsed = z.object({ url: z.string().max(500).optional(), limit: z.number().int().min(1).max(20).optional() }).strict().safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", issues: parsed.error.issues });
+    try {
+      return await ctx.contracts.findUsCandidates(req.params.id, parsed.data);
+    } catch (err) {
+      return contractError(reply, err);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/api/market-links/:id/verify-contract", async (req, reply) => {
+    const parsed = verifySchema.safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", issues: parsed.error.issues });
+    try {
+      const v = ctx.contracts.verifyLink(req.params.id, { facts: parsed.data.facts, notes: parsed.data.notes });
+      return reply.code(201).send(v);
+    } catch (err) {
+      return contractError(reply, err);
+    }
+  });
+
+  app.get<{ Params: { id: string } }>("/api/market-links/:id/verifications", async (req, reply) => {
+    const link = ctx.markets.getLink(req.params.id);
+    if (!link) return reply.code(404).send({ error: "not_found" });
+    return { link, verifications: ctx.markets.verificationsForLink(link.id) };
+  });
+
+  app.post<{ Params: { id: string } }>("/api/market-links/:id/revalidate", async (req, reply) => {
+    try {
+      return await ctx.contracts.revalidateLink(req.params.id);
+    } catch (err) {
+      return contractError(reply, err);
+    }
+  });
+
+  /** Any attempt to set a verification status directly is refused: status is computed, never asserted (M09). */
+  for (const method of ["put", "patch"] as const) {
+    app[method]<{ Params: { id: string } }>("/api/market-links/:id/verification-status", async (_req, reply) => reply.code(405).send({ error: "status_is_computed", message: "A contract's verification status is computed from the checklist. Supply documented facts to /verify-contract; missing or incompatible required fields cannot be overridden." }));
+  }
 }

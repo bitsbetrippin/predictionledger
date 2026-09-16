@@ -31,12 +31,14 @@ interface RunRow {
   id: string; prediction_id: string; validation_plan_id: string; plan_version: number | null; status: ResearchRun["status"];
   search_provider: string; cutoff_date: string; queries_json: string; coverage_notes_json: string; searches_used: number;
   sources_fetched: number; sources_failed: number; evidence_provider: string | null; evidence_model: string | null;
-  error: string | null; started_at: string; finished_at: string | null; evidence_count: number;
+  error: string | null; started_at: string; finished_at: string | null; evidence_count: number; purpose: ResearchRun["purpose"]; cutoff_at: string | null;
 }
 interface SourceRow {
   id: string; url: string; canonical_url: string; title: string | null; publisher: string | null; published_at: string | null;
   retrieved_at: string; fetch_status: SourceRecord["fetchStatus"]; http_status: number | null; content_path: string | null;
   content_hash: string | null; content_chars: number | null; syndicated_of: string | null; access_notes: string | null;
+  first_seen_at: string | null; status: SourceRecord["status"]; status_changed_at: string | null; status_note: string | null; independence_group: string | null;
+  last_checked_at: string | null; last_http_status: number | null;
 }
 interface EvidenceRow {
   id: string; run_id: string; source_id: string; component_id: string | null; stance: Stance; excerpt: string; fact: string | null;
@@ -58,11 +60,11 @@ export class ResearchService {
 
   // ---- runs -----------------------------------------------------------------
 
-  createRun(input: { predictionId: string; planId: string; searchProvider: string; cutoffDate: string; jobId?: string }): ResearchRun {
+  createRun(input: { predictionId: string; planId: string; searchProvider: string; cutoffDate: string; jobId?: string; purpose?: ResearchRun["purpose"]; cutoffAt?: string }): ResearchRun {
     const id = crypto.randomUUID();
     this.db.run(
-      `INSERT INTO research_runs (id, prediction_id, validation_plan_id, search_provider, cutoff_date, job_id) VALUES (?, ?, ?, ?, ?, ?)`,
-      id, input.predictionId, input.planId, input.searchProvider, input.cutoffDate, input.jobId ?? null,
+      `INSERT INTO research_runs (id, prediction_id, validation_plan_id, search_provider, cutoff_date, job_id, purpose, cutoff_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      id, input.predictionId, input.planId, input.searchProvider, input.cutoffDate, input.jobId ?? null, input.purpose ?? "verdict", input.cutoffAt ?? `${input.cutoffDate}T23:59:59Z`,
     );
     return this.getRun(id)!;
   }
@@ -197,15 +199,16 @@ export class ResearchService {
       }
     }
     this.db.run(
-      `INSERT INTO sources (id, url, canonical_url, title, publisher, published_at, retrieved_at, fetch_status, http_status, content_type, content_path, content_hash, content_chars, syndicated_of, access_notes)
-       VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO sources (id, url, canonical_url, title, publisher, published_at, retrieved_at, fetch_status, http_status, content_type, content_path, content_hash, content_chars, syndicated_of, access_notes, first_seen_at, last_checked_at, last_http_status)
+       VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?)
        ON CONFLICT(canonical_url) DO UPDATE SET url = excluded.url, title = COALESCE(excluded.title, sources.title), publisher = COALESCE(excluded.publisher, sources.publisher),
          published_at = COALESCE(excluded.published_at, sources.published_at), retrieved_at = excluded.retrieved_at, fetch_status = excluded.fetch_status,
          http_status = excluded.http_status, content_type = excluded.content_type, content_path = COALESCE(excluded.content_path, sources.content_path),
          content_hash = COALESCE(excluded.content_hash, sources.content_hash), content_chars = COALESCE(excluded.content_chars, sources.content_chars),
-         syndicated_of = excluded.syndicated_of, access_notes = excluded.access_notes`,
+         syndicated_of = excluded.syndicated_of, access_notes = excluded.access_notes,
+         first_seen_at = COALESCE(sources.first_seen_at, excluded.first_seen_at), last_checked_at = excluded.last_checked_at, last_http_status = excluded.last_http_status`,
       id, input.url, input.canonicalUrl, input.title ?? null, input.publisher ?? null, input.publishedAt ?? null, input.fetchStatus, input.httpStatus ?? null,
-      input.contentType ?? null, contentPath, contentHash, chars, dup?.id ?? null, input.accessNotes ?? null,
+      input.contentType ?? null, contentPath, contentHash, chars, dup?.id ?? null, input.accessNotes ?? null, input.httpStatus ?? null,
     );
     if (repointAfterInsert) this.db.run("UPDATE sources SET syndicated_of = ? WHERE id = ?", id, repointAfterInsert);
     return this.findSourceByCanonical(input.canonicalUrl)!;
@@ -224,6 +227,34 @@ export class ResearchService {
   getSource(id: string): SourceRecord | undefined {
     const r = this.db.get<SourceRow>("SELECT * FROM sources WHERE id = ?", id);
     return r ? toSource(r) : undefined;
+  }
+
+  /** 1.11 (SRC-06): withdraw / mark missing / restore. Never touches text, hash, excerpts or evidence rows. */
+  setSourceStatus(id: string, status: SourceRecord["status"], note?: string): SourceRecord | undefined {
+    this.db.run("UPDATE sources SET status = ?, status_changed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), status_note = ? WHERE id = ?", status, note ?? null, id);
+    return this.getSource(id);
+  }
+
+  /** 1.11: a liveness re-check result. Content is never replaced by a re-check. */
+  recordSourceCheck(id: string, httpStatus: number | undefined, outcome: "ok" | "missing" | "error"): SourceRecord | undefined {
+    this.db.run("UPDATE sources SET last_checked_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), last_http_status = ? WHERE id = ?", httpStatus ?? null, id);
+    if (outcome === "missing") return this.setSourceStatus(id, "missing", `URL answered ${httpStatus ?? "no content"} on re-check`);
+    const cur = this.getSource(id);
+    if (outcome === "ok" && cur?.status === "missing") return this.setSourceStatus(id, "available", "URL answers again");
+    return cur;
+  }
+
+  /** 1.11 (SRC-03): store computed independence groups for a set of sources. */
+  setIndependenceGroups(groups: Map<string, string>): void {
+    for (const [id, group] of groups) this.db.run("UPDATE sources SET independence_group = ? WHERE id = ?", group, id);
+  }
+
+  sourcesForRun(runId: string): SourceRecord[] {
+    return this.db.all<SourceRow>("SELECT DISTINCT s.* FROM sources s JOIN evidence_items e ON e.source_id = s.id WHERE e.run_id = ? ORDER BY s.retrieved_at", runId).map(toSource);
+  }
+
+  sourcesFetchedForRun(runId: string): SourceRecord[] {
+    return this.db.all<SourceRow>("SELECT DISTINCT s.* FROM sources s JOIN run_results rr ON rr.source_id = s.id WHERE rr.run_id = ? AND rr.fetched = 1 ORDER BY s.retrieved_at", runId).map(toSource);
   }
 
   // ---- evidence ----------------------------------------------------------------------
@@ -399,6 +430,8 @@ function toRun(r: RunRow): ResearchRun {
     startedAt: r.started_at,
     finishedAt: r.finished_at ?? undefined,
     evidenceCount: Number(r.evidence_count),
+    purpose: r.purpose ?? "verdict",
+    cutoffAt: r.cutoff_at ?? undefined,
   };
 }
 
@@ -416,5 +449,13 @@ function toSource(r: SourceRow): SourceRecord {
     contentChars: r.content_chars ?? undefined,
     syndicatedOf: r.syndicated_of ?? undefined,
     accessNotes: r.access_notes ?? undefined,
+    contentHash: r.content_hash ?? undefined,
+    firstSeenAt: r.first_seen_at ?? undefined,
+    status: r.status ?? "available",
+    statusChangedAt: r.status_changed_at ?? undefined,
+    statusNote: r.status_note ?? undefined,
+    independenceGroup: r.independence_group ?? undefined,
+    lastCheckedAt: r.last_checked_at ?? undefined,
+    lastHttpStatus: r.last_http_status ?? undefined,
   };
 }

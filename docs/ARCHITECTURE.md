@@ -357,6 +357,7 @@ Design rules baked into the schema:
 - **Deletion is cascading and explicit.** Deleting a video deletes its segments, predictions, plans, runs, evidence links, and media/artifact files; `sources` rows are reference-counted and removed when orphaned.
 - **Exports** (JSON, CSV) come from these tables only; `secrets` is never joined into an export path.
 - **Indexes**: `(video_id, seq)` on segments; `(video_id, user_status)` and `deadline_date` on predictions; `(prediction_id, version)` unique on plans; `(status, created_at)` on jobs; `canonical_url` unique on sources.
+- **1.11 additions (migration 013).** `videos`: `channel_id`, `published_precision`, `first_seen_at`, `transcript_hash`, `subscription_id`. `predictions`: `quote_hash`, `transcript_hash`, `analysis_version`. `sources`: `first_seen_at`, `status` (`available|withdrawn|missing`), `status_changed_at`, `status_note`, `independence_group`, `last_checked_at`, `last_http_status`. `research_runs`: `purpose` (`verdict|forecast`), `cutoff_at`. New tables `source_subscriptions` (unique canonical `url`), `subscription_runs`, `contract_verifications` (unique `(link_id, version)`; status CHECK; JSON checklist and facts; rules/quote hashes; stale fields); `prediction_market_links.verification_status` (default `unverified`) and `verification_id`. All additive; earlier rows are backfilled, never rewritten.
 
 ### 5.3 Where the "untrusted content" line is
 
@@ -404,6 +405,27 @@ interface TradingAdapter { balances(); positions(); openOrders(); cancelOrder() 
 | Polymarket US | `polymarket_us` | gateway.polymarket.us (public) · api.polymarket.us (signed) | USD | optional, key ID + Ed25519 secret | the only one — after the 1.11 → 1.13 gates |
 
 Rules that hold across the whole track (ADR-030/031): records are namespaced by provider and never converted; the `TradingAdapter` is the only code that may hold a venue credential, and it takes the credential per call from the trading service, which is the only holder of the `trading.` secret vault; the official `polymarket-us` SDK is pinned and used as the signed transport only — business logic never imports SDK types; production hosts are fixed in the adapter (base-URL overrides are constructor-only, test-only); the trading mode lives in `trading_policy`, not in settings, so a settings save cannot arm anything; every automated test uses the fake adapter; LLMs never call the adapter (there is no tool for it) and never modify policy. What the adapter *cannot* do in 1.10 is the point: there is no method that creates, previews or modifies an order, so submission is impossible by construction until the release that adds it passes its gate.
+
+### 6.2 Source provenance and the contract-verification boundary (1.11)
+
+1.11 adds the two things later releases consume and nothing that consumes them yet.
+
+```
+subscription.poll ──▶ video.import (ordinary) ──▶ transcript_hash ──▶ prediction.extract ──▶ analysis_version, quote_hash
+                                                                                   │
+research.run (purpose = verdict) ──▶ assessment.run ──▶ verdict                    │
+research.run (purpose = forecast) ──▶ evidence only (cutoff_at) ── never chains ───┘
+sources: first_seen_at · content_hash · status · independence_group   ──▶ dossier (asOf replay, dissent)
+prediction_market_links ──▶ contract_verifications (versioned, computed) ──▶ verification_status on the link
+```
+
+- **`analysis/independence.ts`** — pure: content sketch + Jaccard, publisher key, union-find grouping, `knownBy(item, asOf)`. Called by the research handler after fetching; the dossier recomputes from stored hashes when a run predates the column.
+- **`analysis/contractVerification.ts`** — pure: `verifyContract({prediction, game?, market, facts?})` → field checklist + derived status + side id + cutoff; `revalidate({previous, market, prediction})` → reasons. No I/O, no SDK types, fixture-tested against exact and near-match contracts.
+- **`services/contracts.ts`** — the only writer of `contract_verifications`: `findUsCandidates` (US provider only; pasted event URL), `verifyLink` (new version every time), `revalidateLink` (venue refresh when online → stale with reasons), `invalidateForPrediction` (called from every prediction edit/merge/split route). There is no code path that assigns a status: the routes for that answer 405.
+- **`services/subscriptions.ts`** — canonical URL, dedupe, `classifyEntry` (known → lookback → allowlist → budget → queue), `makeSubscriptionPollHandler(ctx, lister)`; the lister is injectable so tests never run yt-dlp.
+- **`services/dossier.ts`** — read-only join over evidence, sources, runs and assessments; `asOf` filtering uses `first_seen_at` (publication date only under `assumePublished`).
+
+Trust rules unchanged from §5.3 and §7.6, with two additions: model output in a research run is validated against the fetched pages (an excerpt that appears in no page is discarded; an unknown component id is dropped; a missing date stays missing) and has no path to the trading service, the policy row or settings; and a verification is a *precondition record* — it authorizes nothing by itself, and 1.12/1.13 will read it only when `verified_equivalent` and not stale.
 
 ---
 

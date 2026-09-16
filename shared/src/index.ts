@@ -219,6 +219,8 @@ export type JobKind =
   | "market.snapshot"
   /** 1.6: propose market links for one prediction. */
   | "market.match"
+  /** 1.11: poll a saved channel/playlist subscription and queue new videos. */
+  | "subscription.poll"
   /** 1.7: fetch the venue price nearest a prediction's made-on date for a link. */
   | "market.backfill"
   /** 1.8: evaluate watch rules over stored markets and signals. */
@@ -298,6 +300,13 @@ export interface VideoSummary {
   chunksTotal?: number;
   /** YouTube imports (0.5+). */
   youtubeId?: string;
+  /** 1.11 provenance: channel id when the venue exposes it; how precise `publishedAt` is; when the app first learned of the video. */
+  channelId?: string;
+  publishedPrecision?: "datetime" | "date" | "unknown";
+  firstSeenAt?: string;
+  /** sha256 over the original (uncorrected) transcript text; changes only when the transcript is regenerated. */
+  transcriptHash?: string;
+  subscriptionId?: string;
   channel?: string;
   /** How the transcript was obtained. */
   transcriptSource?: TranscriptSource;
@@ -474,6 +483,10 @@ export interface Prediction {
   extractionProvider?: string;
   extractionModel?: string;
   extractionTemplate?: string;
+  /** 1.11: sha256 of `quoteExact` and of the transcript it was located in; `analysisVersion` counts extraction passes over the video. */
+  quoteHash?: string;
+  transcriptHash?: string;
+  analysisVersion?: number;
   components: PredictionComponent[];
   /** Latest plan version number, if any. */
   latestPlanVersion?: number;
@@ -578,6 +591,17 @@ export interface SourceRecord {
   contentChars?: number;
   syndicatedOf?: string;
   accessNotes?: string;
+  /** 1.11 provenance: sha256 of the stored text; when the app first fetched it (vs. when it says it was published). */
+  contentHash?: string;
+  firstSeenAt?: string;
+  /** available | withdrawn (by the user) | missing (URL no longer answers). Excerpts and hashes are never rewritten. */
+  status: "available" | "withdrawn" | "missing";
+  statusChangedAt?: string;
+  statusNote?: string;
+  /** Sources with the same group are one voice (same publisher, or the same/near-identical text). */
+  independenceGroup?: string;
+  lastCheckedAt?: string;
+  lastHttpStatus?: number;
 }
 
 export interface EvidenceItem {
@@ -616,6 +640,10 @@ export interface ResearchRun {
   startedAt: string;
   finishedAt?: string;
   evidenceCount?: number;
+  /** 1.11: `verdict` runs settle the past (they chain an assessment); `forecast` runs gather evidence about a future event and never produce a settlement. */
+  purpose: "verdict" | "forecast";
+  /** Instant after which nothing may be treated as known to this run (`cutoffDate` end of day when unset). */
+  cutoffAt?: string;
 }
 
 export interface ComponentAssessment {
@@ -757,7 +785,7 @@ export interface MarketContractConstraints {
   /** Fee coefficient Θ published on the market at retrieval time. Effective-dated by the venue; never frozen in code. */
   feeCoefficient?: string;
   /** Durable side identifiers. `long` marks the YES-denominated instrument; NO is synthetic (1 − YES). */
-  sides: { id: string; label: string; long: boolean; tradable?: boolean }[];
+  sides: { id: string; label: string; long: boolean; tradable?: boolean; team?: { id?: string; name: string; abbreviation?: string; league?: string; alias?: string } }[];
   category?: string;
   sportsMarketType?: string;
   line?: string;
@@ -807,6 +835,9 @@ export interface PredictionMarketLink {
   createdAt: string;
   updatedAt: string;
   market?: MarketRecord;
+  /** 1.11 (MAT-03): execution eligibility, independent of `score`/`status`. Only `verified_equivalent` can ever qualify. */
+  verificationStatus: ContractVerificationStatus;
+  verificationId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -1155,4 +1186,144 @@ export interface TradingStatus {
   identityNote: string;
   hosts: { gateway: string; api: string };
   sdk: { package: string; version: string };
+}
+
+// ---------------------------------------------------------------------------
+// Release 1.11 — source subscriptions, provenance, evidence dossier, contract verification
+// ---------------------------------------------------------------------------
+
+export interface SourceSubscription {
+  id: string;
+  kind: "channel" | "playlist";
+  url: string;
+  title?: string;
+  enabled: boolean;
+  pollIntervalHours: number;
+  /** Ignore videos published more than this many days before the poll (0 = no limit). */
+  lookbackDays: number;
+  maxVideosPerRun: number;
+  autoExtract: boolean;
+  /** Title keywords; when non-empty a listed video must contain one of them (case-insensitive) to be queued. */
+  categoryAllowlist: string[];
+  /** Research budget applied to predictions from this subscription (searches / sources per run); undefined = Setup defaults. */
+  researchBudget?: { maxSearches?: number; maxSources?: number };
+  lastRunAt?: string;
+  lastResult?: SubscriptionRunSummary;
+  nextRunAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SubscriptionRunSummary {
+  runId: string;
+  at: string;
+  listed: number;
+  queued: number;
+  alreadyKnown: number;
+  skippedLookback: number;
+  skippedAllowlist: number;
+  skippedBudget: number;
+  error?: string;
+  queuedVideoIds: string[];
+}
+
+export type ContractFieldStatus = "verified" | "incompatible" | "missing" | "not_applicable";
+
+export interface ContractField {
+  id: string;
+  label: string;
+  status: ContractFieldStatus;
+  /** What the claim requires. */
+  expected?: string;
+  /** What the venue contract states. */
+  found?: string;
+  note?: string;
+  /** Present when a documented user fact filled this field. */
+  fact?: { value: string; source: string };
+  required: boolean;
+}
+
+export type ContractVerificationStatus = "unverified" | "incomplete" | "incompatible" | "research_only" | "verified_equivalent" | "stale";
+
+export interface ContractVerification {
+  id: string;
+  linkId: string;
+  predictionId: string;
+  marketId: string;
+  version: number;
+  status: ContractVerificationStatus;
+  fields: ContractField[];
+  /** Durable venue side id + display label for the claim's side (MAT-05); undefined until the side is verified. */
+  sideId?: string;
+  sideLabel?: string;
+  sideBasis?: string;
+  /** sha256 of the venue rules text at verification time. */
+  rulesHash?: string;
+  /** Earliest applicable pre-event cutoff (event start, observation cutoff, trading close) and which one it was. */
+  cutoffAt?: string;
+  cutoffBasis?: string;
+  cutoffUnknown: boolean;
+  /** Hashes of the claim as verified, so a later edit or re-extraction is detectable. */
+  quoteHash?: string;
+  predictionRevision: number;
+  facts: Record<string, { value: string; source: string }>;
+  reviewer: "app" | "user";
+  notes?: string;
+  createdAt: string;
+  staleAt?: string;
+  staleReasons?: string[];
+}
+
+export interface UsCandidateSearch {
+  outcome: "none" | "one" | "multiple";
+  candidates: { market: MarketRecord; score: number; rationale: string; relation?: MarketLinkRelation; side?: string; linkId?: string }[];
+  /** Links on other venues, informational only (never executable). */
+  researchOnly: { linkId: string; provider: MarketProviderId; question: string }[];
+  queries: string[];
+  notes: string[];
+}
+
+export interface DossierItem {
+  evidenceId: string;
+  runId: string;
+  runPurpose: ResearchRun["purpose"];
+  stance: Stance;
+  componentId?: string;
+  excerpt: string;
+  fact?: string;
+  eventDate?: string;
+  inWindow?: boolean;
+  source: {
+    id: string;
+    url: string;
+    title?: string;
+    publisher?: string;
+    publishedAt?: string;
+    retrievedAt: string;
+    firstSeenAt?: string;
+    contentHash?: string;
+    status: SourceRecord["status"];
+    statusChangedAt?: string;
+    independenceGroup?: string;
+    syndicatedOf?: string;
+  };
+  /** For `asOf` replays: whether this item was actually known to the app by that instant, and on what basis. */
+  knownAtAsOf?: boolean;
+  availabilityBasis?: "first_seen" | "published_assumption" | "unknown";
+}
+
+export interface EvidenceDossier {
+  predictionId: string;
+  quote: { text: string; hash?: string; startS?: number; endS?: number; videoId: string; videoUrl?: string; timestampUrl?: string };
+  versions: { prediction: number; analysis?: number; plan?: number; latestRun?: string; latestAssessment?: number };
+  supporting: DossierItem[];
+  contradicting: DossierItem[];
+  context: DossierItem[];
+  /** Contradicting items and their sources, listed even when the verdict went the other way. */
+  dissent: { evidenceId: string; sourceUrl: string; excerpt: string }[];
+  independenceGroups: { group: string; sourceIds: string[]; publishers: string[] }[];
+  coverageLimitations: string[];
+  rationale?: { assessment: EvidenceAssessment; explanation: string; guardNotes: string[]; version: number };
+  asOf?: string;
+  excludedAsOf: number;
 }

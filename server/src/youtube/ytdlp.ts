@@ -186,6 +186,9 @@ export interface YtInfo {
   id: string;
   title: string;
   channel?: string;
+  /** 1.11 provenance: the venue's channel id and whether the publication time carried a clock. */
+  channelId?: string;
+  publishedPrecision?: "datetime" | "date";
   durationS?: number;
   /** YYYY-MM-DD from upload_date / release_date. */
   publishedAt?: string;
@@ -207,7 +210,11 @@ export function parseInfoJson(json: string): YtInfo {
   if (!id) throw new YtError("yt-dlp returned no video id.", "failed");
   const str = (k: string) => (typeof o[k] === "string" && (o[k] as string).trim() ? (o[k] as string).trim() : undefined);
   const date = str("upload_date") ?? str("release_date");
-  const publishedAt = date && /^\d{8}$/.test(date) ? `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}` : undefined;
+  // `timestamp`/`release_timestamp` (Unix seconds) carry a clock; upload_date is a day. Keep the day for `publishedAt`
+  // (the rest of the app compares dates) and record the precision so the dossier can say which it was.
+  const ts = typeof o.release_timestamp === "number" ? o.release_timestamp : typeof o.timestamp === "number" ? o.timestamp : undefined;
+  const publishedAt = ts && ts > 0 ? new Date(ts * 1000).toISOString().slice(0, 10) : date && /^\d{8}$/.test(date) ? `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}` : undefined;
+  const publishedPrecision: "datetime" | "date" | undefined = ts && ts > 0 ? "datetime" : publishedAt ? "date" : undefined;
   const captions: CaptionTrack[] = [];
   for (const [kind, key] of [["manual", "subtitles"], ["auto", "automatic_captions"]] as const) {
     const map = o[key];
@@ -225,6 +232,8 @@ export function parseInfoJson(json: string): YtInfo {
     id,
     title: str("title") ?? `YouTube video ${id}`,
     channel: str("channel") ?? str("uploader"),
+    channelId: str("channel_id") ?? str("uploader_id"),
+    publishedPrecision,
     durationS: typeof o.duration === "number" && o.duration > 0 ? o.duration : undefined,
     publishedAt,
     language: str("language"),

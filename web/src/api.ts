@@ -149,7 +149,7 @@ export const content = {
   validateScore: (id: string, recheck = false) => request<{ jobId: string; stage: "game" }>("POST", `/api/predictions/${id}/validate-score`, { recheck }),
   validateVideoScores: (videoId: string, recheck = false) => request<{ jobs: { matchup: string; jobId: string }[]; picks: number; skipped: number }>("POST", `/api/videos/${videoId}/validate-scores`, { recheck }),
   game: (id: string) => request<import("@prediction-ledger/shared").Game>("GET", `/api/games/${id}`),
-  research: (id: string, planId?: string) => request<{ jobId: string; stage: "plan" | "research"; planVersion?: number }>("POST", `/api/predictions/${id}/research`, { planId, autoPlan: true }),
+  research: (id: string, planId?: string, purpose: "verdict" | "forecast" = "verdict") => request<{ jobId: string; stage: "plan" | "research"; planVersion?: number; purpose?: "verdict" | "forecast" }>("POST", `/api/predictions/${id}/research`, { planId, autoPlan: true, purpose }),
   run: (id: string) => request<RunDetail>("GET", `/api/runs/${id}`),
   topics: () => request<string[]>("GET", "/api/predictions/topics"),
   getPrediction: (id: string) => request<PredictionFull>("GET", `/api/predictions/${id}`),
@@ -315,3 +315,45 @@ export const tradingApi = {
   setMode: (mode: TradingMode) => request<{ policy: TradingPolicy; gates: TradingGate[] }>("PUT", "/api/trading/policy", { mode }),
 };
 export const fmtAmount = (a?: DecimalAmount) => (a ? `${a.currency === "USD" ? "$" : `${a.currency} `}${a.value}` : "—");
+
+// ---------------------------------------------------------------------------
+// 1.11 — source subscriptions, evidence dossier, contract verification (no execution)
+// ---------------------------------------------------------------------------
+
+import type { ContractVerification, EvidenceDossier, SourceRecord, SourceSubscription, SubscriptionRunSummary, UsCandidateSearch } from "@prediction-ledger/shared";
+
+export interface SubscriptionInput {
+  url: string; title?: string; enabled?: boolean; pollIntervalHours?: number; lookbackDays?: number; maxVideosPerRun?: number; autoExtract?: boolean; categoryAllowlist?: string[];
+  researchBudget?: { maxSearches?: number; maxSources?: number };
+}
+export const subscriptionsApi = {
+  list: () => request<SourceSubscription[]>("GET", "/api/source-subscriptions"),
+  get: (id: string) => request<SourceSubscription & { runs: SubscriptionRunSummary[] }>("GET", `/api/source-subscriptions/${id}`),
+  create: (body: SubscriptionInput) => request<SourceSubscription>("POST", "/api/source-subscriptions", body),
+  update: (id: string, patch: Partial<Omit<SubscriptionInput, "url">> & { researchBudget?: SubscriptionInput["researchBudget"] | null }) => request<SourceSubscription>("PATCH", `/api/source-subscriptions/${id}`, patch),
+  remove: (id: string) => request<{ ok: true }>("DELETE", `/api/source-subscriptions/${id}`),
+  runNow: (id: string) => request<{ jobId: string }>("POST", `/api/source-subscriptions/${id}/run`),
+};
+
+export const dossierApi = {
+  get: (predictionId: string, opts: { asOf?: string; assumePublished?: boolean } = {}) => request<EvidenceDossier>("GET", `/api/predictions/${predictionId}/dossier${qs({ asOf: opts.asOf, assumePublished: opts.assumePublished })}`),
+  withdrawSource: (sourceId: string, note?: string) => request<SourceRecord & { note: string }>("POST", `/api/sources/${sourceId}/withdraw`, note ? { note } : {}),
+  restoreSource: (sourceId: string) => request<SourceRecord & { note: string }>("POST", `/api/sources/${sourceId}/withdraw`, { restore: true }),
+  recheckSource: (sourceId: string) => request<SourceRecord & { checked: { status: string; httpStatus?: number; outcome: "ok" | "missing" | "error" } }>("POST", `/api/sources/${sourceId}/recheck`),
+};
+
+export interface VerifyFacts { [fieldId: string]: { value: string; source: string } }
+export const contractsApi = {
+  usCandidates: (predictionId: string, opts: { url?: string; limit?: number } = {}) => request<UsCandidateSearch>("POST", `/api/predictions/${predictionId}/us-candidates`, opts),
+  verify: (linkId: string, body: { facts?: VerifyFacts; notes?: string } = {}) => request<ContractVerification>("POST", `/api/market-links/${linkId}/verify-contract`, body),
+  verifications: (linkId: string) => request<{ link: PredictionMarketLink; verifications: ContractVerification[] }>("GET", `/api/market-links/${linkId}/verifications`),
+  revalidate: (linkId: string) => request<{ verification?: ContractVerification; reasons: string[]; refreshed: boolean }>("POST", `/api/market-links/${linkId}/revalidate`),
+};
+export const VERIFICATION_LABEL: Record<ContractVerification["status"], string> = {
+  unverified: "Unverified",
+  incomplete: "Incomplete",
+  incompatible: "Incompatible",
+  research_only: "Research only",
+  verified_equivalent: "Verified equivalent",
+  stale: "Stale",
+};

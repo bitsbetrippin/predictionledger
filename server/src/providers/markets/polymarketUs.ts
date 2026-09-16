@@ -51,7 +51,9 @@ export function extractConstraints(m: Raw, event: Raw | undefined, retrievedAt: 
     const o = obj(s);
     const id = o && (str(o.id) ?? undefined);
     if (!o || !id) return [];
-    return [{ id, label: str(o.description) ?? (o.long === true ? "Yes" : "No"), long: o.long === true, tradable: typeof o.tradable === "boolean" ? o.tradable : undefined }];
+    const t = obj(o.team);
+    const team = t && str(t.name) ? { id: t.id !== undefined ? String(t.id) : undefined, name: str(t.name)!, abbreviation: str(t.displayAbbreviation) ?? str(t.abbreviation), league: str(t.league), alias: str(t.alias) } : undefined;
+    return [{ id, label: str(o.description) ?? (o.long === true ? "Yes" : "No"), long: o.long === true, tradable: typeof o.tradable === "boolean" ? o.tradable : undefined, ...(team ? { team } : {}) }];
   });
   return {
     venue: "polymarket_us",
@@ -167,6 +169,13 @@ export class PolymarketUsProvider implements MarketProvider {
       if (err instanceof MarketApiError && err.status === 404) return undefined;
       throw err;
     }
+  }
+
+  /** 1.11 (MAT-01): every market under one event slug — what a pasted polymarket.us/event/<slug> URL points at. */
+  async eventMarkets(eventSlug: string, signal?: AbortSignal): Promise<MarketSummary[]> {
+    const q = new URLSearchParams({ slug: eventSlug, limit: "1" });
+    const res = await this.getJson<Raw>(`${this.base}/v1/events?${q}`, signal);
+    return this.flattenEvents(arr(res.events), new Date().toISOString());
   }
 
   async list(opts: { tag?: string; limit?: number; offset?: number; activeOnly?: boolean; signal?: AbortSignal }): Promise<MarketSummary[]> {

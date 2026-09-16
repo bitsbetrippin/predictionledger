@@ -35,6 +35,11 @@ interface VideoRow {
   youtube_id: string | null;
   channel: string | null;
   transcript_source: VideoSummary["transcriptSource"] | null;
+  channel_id: string | null;
+  published_precision: VideoSummary["publishedPrecision"] | null;
+  first_seen_at: string | null;
+  transcript_hash: string | null;
+  subscription_id: string | null;
   segment_count: number;
   prediction_count: number;
   pending_count: number;
@@ -86,6 +91,7 @@ export class VideoService {
         req.language ?? null,
         parsed.warnings.length ? parsed.warnings.join("\n") : null,
       );
+      this.db.run("UPDATE videos SET first_seen_at = imported_at, published_precision = ? WHERE id = ?", req.publishedAt ? (req.publishedAt.length > 10 ? "datetime" : "date") : "unknown", id);
       parsed.segments.forEach((s, i) => {
         this.db.run(
           `INSERT INTO transcript_segments (id, video_id, seq, start_s, end_s, text_original, speaker, engine)
@@ -100,6 +106,7 @@ export class VideoService {
           `import:${parsed.format}`,
         );
       });
+      this.recomputeTranscriptHash(id);
     });
     return { video: this.get(id)!, warnings: parsed.warnings };
   }
@@ -112,18 +119,20 @@ export class VideoService {
        VALUES (?, ?, 'local', ?, ?, ?, ?, 'importing', ?, ?, ?, ?)`,
       id, input.title, input.mediaHash, input.durationS, input.publishedAt ?? null, input.language ?? null, input.notes ?? null, input.mediaPath, input.mediaHash, input.mediaSize,
     );
+    this.db.run("UPDATE videos SET first_seen_at = imported_at, published_precision = ? WHERE id = ?", input.publishedAt ? (input.publishedAt.length > 10 ? "datetime" : "date") : "unknown", id);
     return this.get(id)!;
   }
 
   // ---- YouTube (Release 0.5) ----
 
   /** Register a YouTube import before anything is fetched; the video.import job fills in the rest. */
-  createFromYouTube(input: { youtubeId: string; url: string; title?: string; publishedAt?: string; language?: string }): VideoDetail {
+  createFromYouTube(input: { youtubeId: string; url: string; title?: string; publishedAt?: string; language?: string; channel?: string; channelId?: string; subscriptionId?: string; firstSeenAt?: string }): VideoDetail {
     const id = crypto.randomUUID();
     this.db.run(
-      `INSERT INTO videos (id, title, source_kind, source_ref, published_at, language, status, youtube_id)
-       VALUES (?, ?, 'youtube', ?, ?, ?, 'importing', ?)`,
-      id, input.title?.trim() || `YouTube ${input.youtubeId}`, input.url, input.publishedAt ?? null, input.language ?? null, input.youtubeId,
+      `INSERT INTO videos (id, title, source_kind, source_ref, published_at, language, status, youtube_id, channel, channel_id, subscription_id, first_seen_at, published_precision)
+       VALUES (?, ?, 'youtube', ?, ?, ?, 'importing', ?, ?, ?, ?, COALESCE(?, strftime('%Y-%m-%dT%H:%M:%fZ','now')), ?)`,
+      id, input.title?.trim() || `YouTube ${input.youtubeId}`, input.url, input.publishedAt ?? null, input.language ?? null, input.youtubeId, input.channel ?? null, input.channelId ?? null, input.subscriptionId ?? null, input.firstSeenAt ?? null,
+      input.publishedAt ? (input.publishedAt.length > 10 ? "datetime" : "date") : "unknown",
     );
     return this.get(id)!;
   }
@@ -139,18 +148,36 @@ export class VideoService {
   }
 
   /** Apply metadata reported by YouTube without overwriting values the user supplied. */
-  applyYouTubeInfo(id: string, info: { title?: string; channel?: string; durationS?: number; publishedAt?: string; language?: string }, userSupplied: { title?: boolean; publishedAt?: boolean; language?: boolean } = {}): void {
+  applyYouTubeInfo(id: string, info: { title?: string; channel?: string; channelId?: string; publishedPrecision?: "datetime" | "date"; durationS?: number; publishedAt?: string; language?: string }, userSupplied: { title?: boolean; publishedAt?: boolean; language?: boolean } = {}): void {
     const cur = this.db.get<VideoRow>("SELECT * FROM videos WHERE id = ?", id);
     if (!cur) return;
+    const publishedAt = userSupplied.publishedAt || !info.publishedAt ? cur.published_at : info.publishedAt;
     this.db.run(
-      "UPDATE videos SET title = ?, channel = ?, duration_s = COALESCE(?, duration_s), published_at = ?, language = ? WHERE id = ?",
+      "UPDATE videos SET title = ?, channel = ?, channel_id = COALESCE(?, channel_id), duration_s = COALESCE(?, duration_s), published_at = ?, published_precision = ?, language = ? WHERE id = ?",
       userSupplied.title ? cur.title : info.title?.trim() || cur.title,
       info.channel ?? cur.channel,
+      info.channelId ?? null,
       info.durationS ?? null,
-      userSupplied.publishedAt || !info.publishedAt ? cur.published_at : info.publishedAt,
+      publishedAt,
+      !publishedAt ? "unknown" : userSupplied.publishedAt ? (cur.published_precision ?? "date") : (info.publishedPrecision ?? "date"),
       userSupplied.language || !info.language ? cur.language : info.language,
       id,
     );
+  }
+
+  /** 1.11 — sha256 over the original segment texts (seq order). Corrections never change it. */
+  recomputeTranscriptHash(id: string): string | undefined {
+    const rows = this.db.all<{ seq: number; text_original: string }>("SELECT seq, text_original FROM transcript_segments WHERE video_id = ? ORDER BY seq", id);
+    if (rows.length === 0) { this.db.run("UPDATE videos SET transcript_hash = NULL WHERE id = ?", id); return undefined; }
+    const h = crypto.createHash("sha256");
+    for (const r of rows) h.update(`${r.seq}\u0001${r.text_original}\n`);
+    const hash = h.digest("hex");
+    this.db.run("UPDATE videos SET transcript_hash = ? WHERE id = ?", hash, id);
+    return hash;
+  }
+
+  transcriptHash(id: string): string | undefined {
+    return this.db.get<{ transcript_hash: string | null }>("SELECT transcript_hash FROM videos WHERE id = ?", id)?.transcript_hash ?? undefined;
   }
 
   /** Attach a downloaded media file (YouTube audio) so the 0.4 audio/transcription jobs can run. */
@@ -179,6 +206,7 @@ export class VideoService {
       });
       const last = segments[segments.length - 1];
       if (last) this.db.run("UPDATE videos SET duration_s = COALESCE(duration_s, ?) WHERE id = ?", last.endS, id);
+      this.recomputeTranscriptHash(id);
     });
     return segments.length;
   }
@@ -234,6 +262,7 @@ export class VideoService {
         );
       });
       this.db.run("UPDATE transcription_chunks SET status = 'done', segment_count = ?, error = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE video_id = ? AND chunk_index = ?", segments.length, videoId, chunkIndex);
+      this.recomputeTranscriptHash(videoId);
     });
   }
 
@@ -323,6 +352,11 @@ function toSummary(r: VideoRow): VideoSummary {
     chunksTotal: Number(r.chunks_total),
     youtubeId: r.youtube_id ?? undefined,
     channel: r.channel ?? undefined,
+    channelId: r.channel_id ?? undefined,
+    publishedPrecision: r.published_precision ?? undefined,
+    firstSeenAt: r.first_seen_at ?? undefined,
+    transcriptHash: r.transcript_hash ?? undefined,
+    subscriptionId: r.subscription_id ?? undefined,
     transcriptSource: r.transcript_source ?? undefined,
   };
 }

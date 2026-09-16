@@ -43,6 +43,9 @@ export interface NewPrediction {
   extractionModel?: string;
   extractionTemplate?: string;
   extractionJobId?: string;
+  /** 1.11 provenance: transcript the quote was located in, and which extraction pass over the video produced it. */
+  transcriptHash?: string;
+  analysisVersion?: number;
   components: { kind: ComponentKind; statement: string; deadlineDate?: string; notes?: string }[];
 }
 
@@ -81,6 +84,9 @@ interface PredictionRow {
   extraction_provider: string | null;
   extraction_model: string | null;
   extraction_template: string | null;
+  quote_hash: string | null;
+  transcript_hash: string | null;
+  analysis_version: number;
   latest_plan_version: number | null;
   created_at: string;
   updated_at: string;
@@ -111,14 +117,15 @@ export class PredictionService {
         `INSERT INTO predictions (id, video_id, kind, sports_json, quote_exact, context_before, context_after, start_s, end_s, speaker,
            normalized_statement, entities_json, topic, geography, scope, conditions_json, thresholds_json, modality,
            made_on_date, made_on_basis, time_expression, deadline_date, deadline_basis, ambiguities_json,
-           extraction_confidence, occurrences_json, extraction_provider, extraction_model, extraction_template, extraction_job_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           extraction_confidence, occurrences_json, extraction_provider, extraction_model, extraction_template, extraction_job_id, quote_hash, transcript_hash, analysis_version)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         id, n.videoId, n.kind ?? "general", n.sportsPick ? JSON.stringify(n.sportsPick) : null, n.quoteExact, n.contextBefore ?? null, n.contextAfter ?? null, n.startS ?? null, n.endS ?? null, n.speaker ?? null,
         n.normalizedStatement, JSON.stringify(n.entities), n.topic ?? null, n.geography ?? null, n.scope ?? null,
         JSON.stringify(n.conditions), JSON.stringify(n.thresholds), n.modality ?? null,
         n.madeOnDate ?? null, n.madeOnBasis, n.timeExpression ?? null, n.deadlineDate ?? null, n.deadlineBasis ?? null,
         JSON.stringify(n.ambiguities), n.extractionConfidence ?? null, JSON.stringify(n.occurrences),
         n.extractionProvider ?? null, n.extractionModel ?? null, n.extractionTemplate ?? null, n.extractionJobId ?? null,
+        crypto.createHash("sha256").update(n.quoteExact).digest("hex"), n.transcriptHash ?? null, n.analysisVersion ?? 1,
       );
       this.replaceComponents(id, n.components);
     });
@@ -299,6 +306,16 @@ export class PredictionService {
     return { parent: this.get(id)!, child: child! };
   }
 
+  /** 1.11 — number of stored revisions (0 = never edited); a verification records it so later edits are detectable. */
+  revisionCount(id: string): number {
+    return this.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM prediction_revisions WHERE prediction_id = ?", id)?.n ?? 0;
+  }
+
+  /** 1.11 — the extraction pass number the next run over this video should carry. */
+  nextAnalysisVersion(videoId: string): number {
+    return (this.db.get<{ n: number | null }>("SELECT MAX(analysis_version) AS n FROM predictions WHERE video_id = ?", videoId)?.n ?? 0) + 1;
+  }
+
   revisions(id: string): { version: number; reason: string | null; createdAt: string; snapshot: unknown }[] {
     return this.db
       .all<{ version: number; reason: string | null; created_at: string; snapshot_json: string }>(
@@ -381,6 +398,9 @@ export class PredictionService {
       extractionProvider: r.extraction_provider ?? undefined,
       extractionModel: r.extraction_model ?? undefined,
       extractionTemplate: r.extraction_template ?? undefined,
+      quoteHash: r.quote_hash ?? undefined,
+      transcriptHash: r.transcript_hash ?? undefined,
+      analysisVersion: r.analysis_version,
       components,
       latestPlanVersion: r.latest_plan_version ?? undefined,
       createdAt: r.created_at,

@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { EVIDENCE_ASSESSMENT_LABEL, TIME_STATUS_LABEL, type Assessment, type ComponentKind, type EvidenceItem, type Game, type JobSummary, type PredictionEdit, type ValidationPlan } from "@prediction-ledger/shared";
 import { content, fmtClock, type PredictionFull, type RunDetail } from "../api";
 import { MarketLinks } from "./MarketLinks";
+import { DossierView } from "./DossierView";
 
 const KIND_LABEL: Record<ComponentKind, string> = { future_claim: "future claim", premise: "premise", causal_link: "causal link" };
 
@@ -17,12 +18,14 @@ export function PredictionDetail(props: {
   researchJob?: JobSummary;
   onGeneratePlan: () => void;
   onResearch: () => void;
+  /** 1.11 (SRC-04): prospective research — evidence only, never a verdict. */
+  onForecast?: () => void;
   onValidateScore: () => void;
   onChanged: () => Promise<void> | void;
   onClose: () => void;
 }) {
   const p = props.prediction;
-  const [tab, setTab] = useState<"plan" | "evidence" | "history" | "markets">(p.assessments?.length ? "evidence" : "plan");
+  const [tab, setTab] = useState<"plan" | "evidence" | "dossier" | "history" | "markets">(p.assessments?.length ? "evidence" : "plan");
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const planRunning = props.planJob && (props.planJob.status === "queued" || props.planJob.status === "running");
@@ -54,6 +57,7 @@ export function PredictionDetail(props: {
         <mark>“{p.quoteExact}”</mark>
         {p.contextAfter && <span className="muted"> {p.contextAfter}…</span>}
         {p.occurrences.length > 1 && <div className="muted small">Said {p.occurrences.length} times: {p.occurrences.map((o) => fmtClock(o.startS)).join(", ")}</div>}
+        {(p.quoteHash || p.analysisVersion) && <div className="muted small">quote hash {p.quoteHash?.slice(0, 12) ?? "—"}… · transcript hash {p.transcriptHash?.slice(0, 12) ?? "—"}… · analysis v{p.analysisVersion ?? 1}</div>}
       </div>
 
       {editing ? (
@@ -144,6 +148,9 @@ export function PredictionDetail(props: {
             {researchRunning ? props.researchJob?.stage ?? "Researching…" : latest ? "Recheck" : "Research"}
           </button>
         )}
+        {props.onForecast && p.kind !== "sports_pick" && p.plans.length > 0 && (
+          <button type="button" onClick={props.onForecast} disabled={!!researchRunning || !!planRunning} title="Gather current evidence about the future event using the plan's queries. Stored as a forecast run; it never produces a verdict.">Forecast research</button>
+        )}
       </div>
       {props.planJob?.status === "failed" && <div className="banner error">{props.planJob.error}</div>}
       {props.researchJob?.status === "failed" && <div className="banner error">{props.researchJob.error}</div>}
@@ -165,6 +172,7 @@ export function PredictionDetail(props: {
       <div className="tabs">
         <button type="button" className={tab === "plan" ? "tab active" : "tab"} onClick={() => setTab("plan")}>Validation plan {p.plans.length ? `(v${p.plans[0].version})` : ""}</button>
         <button type="button" className={tab === "evidence" ? "tab active" : "tab"} onClick={() => setTab("evidence")}>Evidence {latest ? `(${latest.supportingIds.length + latest.contradictingIds.length} cited)` : ""}</button>
+        <button type="button" className={tab === "dossier" ? "tab active" : "tab"} onClick={() => setTab("dossier")}>Dossier</button>
         <button type="button" className={tab === "history" ? "tab active" : "tab"} onClick={() => setTab("history")}>History ({p.revisions.length + p.plans.length + (p.assessments?.length ?? 0)})</button>
         <button type="button" className={tab === "markets" ? "tab active" : "tab"} onClick={() => setTab("markets")}>Markets</button>
       </div>
@@ -177,11 +185,16 @@ export function PredictionDetail(props: {
       {tab === "evidence" && (latest ? <EvidenceView prediction={p} assessment={latest} /> : (
         <div className="empty-state"><p className="muted">No research yet. Research runs the plan's queries through your configured search provider, fetches the pages, and stores every excerpt it cites.</p></div>
       ))}
+      {tab === "dossier" && ((p.runs?.length ?? 0) === 0 ? (
+        <div className="empty-state"><p className="muted">No research runs yet. The dossier lists every excerpt with its source provenance, independence group and status once research has run.</p></div>
+      ) : (
+        <DossierView predictionId={p.id} onChanged={props.onChanged} />
+      ))}
       {tab === "markets" && <MarketLinks predictionId={p.id} kind={p.kind} />}
       {tab === "history" && (
         <ul className="plain history">
           {(p.assessments ?? []).map((a) => <li key={a.id}>{a.createdAt.slice(0, 16).replace("T", " ")} — assessment v{a.version}: <strong>{EVIDENCE_ASSESSMENT_LABEL[a.evidenceAssessment]}</strong> ({a.confidence}) · plan v{a.planVersion} · {a.provider}{a.model ? ` (${a.model})` : ""}</li>)}
-          {(p.runs ?? []).map((r) => <li key={r.id}>{r.startedAt.slice(0, 16).replace("T", " ")} — research run ({r.status}): {r.searchesUsed} searches, {r.sourcesFetched} sources, {r.evidenceCount} evidence items via {r.searchProvider}{r.error ? ` — ${r.error}` : ""}</li>)}
+          {(p.runs ?? []).map((r) => <li key={r.id}>{r.startedAt.slice(0, 16).replace("T", " ")} — {r.purpose === "forecast" ? "forecast run" : "research run"} ({r.status}): {r.searchesUsed} searches, {r.sourcesFetched} sources, {r.evidenceCount} evidence items via {r.searchProvider}{r.error ? ` — ${r.error}` : ""}</li>)}
           {p.plans.map((pl) => <li key={pl.id}>{pl.createdAt.slice(0, 16).replace("T", " ")} — plan v{pl.version} by {pl.provider}{pl.model ? ` (${pl.model})` : ""} · {pl.templateVersion}</li>)}
           {p.revisions.map((r) => <li key={r.version}>{r.createdAt.slice(0, 16).replace("T", " ")} — revision {r.version}: {r.reason}</li>)}
           <li className="muted">{p.createdAt.slice(0, 16).replace("T", " ")} — extracted by {p.extractionProvider} ({p.extractionModel})</li>

@@ -47,7 +47,7 @@ gantt
 | **1.3 → 1.4** | Sports settlement | Validate scores from trusted sources; one game record per matchup settles every pick by rule. | 1.2 |
 | **1.5 → 1.9** | Prediction markets (read-only) | Polymarket/Manifold data, stored links and snapshots, creator signals, consensus and alerts, paper trading. | 1.4 |
 | **1.10** | Polymarket US foundation (delivered) | Connect a Polymarket US account (reads only), discover US markets with contract constraints, masked credentials in a protected vault, portable backups. No submission path. | 1.9 |
-| **1.11** | Source subscriptions + verified contracts | Bounded channel subscriptions with provenance; execution-specific contract verification that blocks every near-match. | 1.10 gate |
+| **1.11** | Source subscriptions + verified contracts (delivered) | Bounded channel subscriptions with provenance and independence metadata; evidence dossier with as-of replay; forecast-purpose research kept apart from verdicts; execution-specific contract verification that blocks every near-match and cannot be overridden. No execution. | 1.10 gate |
 | **1.12** | Forecasts, decisions, US paper engine | Immutable forecasts (versioned estimator), pure trade/no-trade decisions, atomic reservations, execution-aware paper fills. | 1.11 gate |
 | **1.13** | Manual-live execution | Preview → one bounded IOC order → reconciliation; NO-price conversion; `submission_unknown` drills. Owner-run capped smoke test. | 1.12 gate |
 | **1.14** | Bounded automation + Trades dashboard | Explicit arming with a policy hash, scheduler, emergency stop, evidence drill-downs, secret-free export. | 1.13 gate |
@@ -396,6 +396,23 @@ The 1.0 backlog split in two: 0.6 is everything that could be built and verified
 | ADR-030 / ADR-031 with dated evidence; README, SETUP, API, ARCHITECTURE, PREDICTION_MARKETS, VERIFICATION | §14 | AG-02, AG-16 | ✓ |
 | Tests: 17 new (credentials, adapters, service A01–A08/OPS-02, routes), fake venue only; regression 98/98 in the sandbox | 03 §1.10 | AG-14 | ✓ |
 | Owner-run read-only account check (`npm run trading:read-check`) | ACC-02 live | owner | **pending** |
+
+## 10b. Release 1.11 — Source subscriptions, provenance, verified contracts (delivered)
+
+| Item | Req. | Agent | Done |
+|---|---|---|---|
+| `source_subscriptions` / `subscription_runs`; `SubscriptionService` (canonical URL, dedupe, lookback / allowlist / budget); `subscription.poll` job with injectable lister; 10-minute scheduler; routes; Library card (S01, S02 bookkeeping) | SRC-01 | AG-05, AG-11, AG-10 | ✓ |
+| Provenance columns on videos / predictions / sources; transcript and quote hashes; analysis versions; re-extraction leaves reviewed and linked rows untouched (S03) | SRC-02, SRC-06 | AG-11, AG-05 | ✓ |
+| Independence groups (sketch + publisher + hash) written after each run; dossier with dissent, versions, coverage, `asOf` replay and labelled published assumption (S04, S05) | SRC-03, SRC-04 | AG-05 | ✓ |
+| `purpose = forecast` research runs with `cutoff_at`; assessment refuses them; hostile model output validated against fetched pages, no path to policy / settings / adapter (S06) | SRC-04, SRC-05 | AG-05, AG-15 | ✓ |
+| Source withdraw / recheck as status changes only; excerpts, hashes and evidence rows frozen (S07) | SRC-06 | AG-05 | ✓ |
+| Pure `verifyContract` / `revalidate` checklist: sports and general fields, hard gates, documented facts, durable side ids, earliest cutoff (M01, M04–M07, M09 core) | MAT-02, MAT-04, MAT-05, MAT-06 | AG-05, AG-13 | ✓ |
+| `ContractService`: US-only candidate discovery incl. pasted event URL (`none` / `one` / `multiple`, research-only for other venues), versioned verifications, revalidation with venue refresh, invalidation on edit / merge / split; 405 on status writes (M02, M03, M08, M09) | MAT-01, MAT-03, MAT-06 | AG-05, AG-13 | ✓ |
+| Migration 013 (additive; backfills); `core.test` schema 13 | OPS-05 | AG-11 | ✓ |
+| Web: Subscriptions card, Dossier tab, Contract panel (candidates, badge, checklist, facts, verify / revalidate, history), forecast button, provenance lines | SRC, MAT | AG-10 | ✓ (typechecked; browser walk-through pending owner) |
+| ADR-032; README, CHANGELOG, SETUP, API, ARCHITECTURE, PREDICTION_MARKETS, VERIFICATION | — | AG-02, AG-16 | ✓ |
+| Tests: 14 new (verifier, independence, provenance end to end, contract routes); regression 112/112 in the sandbox | 03 §1.11 | AG-14 | ✓ |
+| Exit demo on a real US event page; Windows install / typecheck / build / test with real packages | 03 §1.11 exit | owner | **pending** |
 
 ## 11. Working agreements
 

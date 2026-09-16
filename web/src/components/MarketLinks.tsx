@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 import type { PredictionMarketLink } from "@prediction-ledger/shared";
 import { fmtMoney, fmtPct, marketsApi, pollJob } from "../api";
+import { ContractPanel, VerificationBadge } from "./ContractPanel";
 
 const RELATION_LABEL: Record<string, string> = { exact: "exact matchup", same: "same claim", narrower: "claim is narrower", broader: "market is broader", different: "different" };
 
@@ -55,6 +56,7 @@ export function MarketLinks(props: { predictionId: string; kind: "general" | "sp
           <a href={m?.url} target="_blank" rel="noreferrer noopener"><strong>{m?.question ?? "(market removed)"}</strong></a>{m && <span className="muted small"> · {m.provider}</span>}
           {m?.event && m.event.title !== m.question && <span className="muted small"> · {m.event.title}</span>}
           {m?.restricted && <span className="chip small" title="The venue restricts trading in some regions; prices are still public">restricted</span>}
+          {m?.provider === "polymarket_us" ? <> <VerificationBadge status={l.verificationStatus} /></> : m ? <span className="chip small" title="Not the US execution venue: informs research only">research only</span> : null}
         </div>
         <div className="small">
           {l.side ? <>Implied side <strong>{l.side}</strong> at <strong>{fmtPct(price)}</strong></> : <span className="muted">no side implied</span>}
@@ -93,6 +95,7 @@ export function MarketLinks(props: { predictionId: string; kind: "general" | "sp
           {rejected.length > 0 && <details><summary className="muted small">{rejected.length} rejected</summary><ul className="plain">{rejected.map(row)}</ul></details>}
         </>
       )}
+      <ContractPanel predictionId={props.predictionId} links={links ?? []} onChanged={load} />
       <details>
         <summary className="small">Link a market by hand</summary>
         <div className="row small">

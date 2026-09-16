@@ -198,3 +198,31 @@ details summary { cursor: pointer; }
 .stat { flex: 1 1 160px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); display: flex; flex-direction: column; gap: 2px; }
 .stat .label { font-size: 12px; color: var(--muted, #667); }
 .stat strong { font-size: 20px; }
+
+/* 1.11 — subscriptions, dossier, contract verification */
+.subscriptions li { padding: 6px 0; border-top: 1px solid var(--border); }
+.chip.verification { text-transform: none; letter-spacing: 0; }
+.chip.verification.v-unverified { background: var(--bg); }
+.chip.verification.v-incomplete { background: #fff4e5; color: #7a3e00; }
+.chip.verification.v-incompatible { background: #fdecec; color: var(--error); }
+.chip.verification.v-research_only { background: #eef2f7; color: #3b4a5c; }
+.chip.verification.v-verified_equivalent { background: var(--ok, #2f9e44); color: #fff; }
+.chip.verification.v-stale { background: #e8a33d; color: #fff; }
+@media (prefers-color-scheme: dark) {
+  .chip.verification.v-incomplete { background: #3a2a10; color: #f5c27b; }
+  .chip.verification.v-incompatible { background: #3a1616; color: #f5a3a3; }
+  .chip.verification.v-research_only { background: #263040; color: #b8c6d8; }
+}
+.contract-panel { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--border); }
+.candidate-result { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; margin: 8px 0; background: var(--surface); }
+.candidate-result.outcome-one { border-left: 3px solid var(--ok, #2f9e44); }
+.candidate-result.outcome-multiple { border-left: 3px solid #e8a33d; }
+.checklist { margin-top: 8px; }
+.checklist-table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 12px; }
+.checklist-table th, .checklist-table td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.checklist-table tr.fs-incompatible td:nth-child(2) { color: var(--error); font-weight: 600; }
+.checklist-table tr.fs-missing td:nth-child(2) { color: #7a3e00; }
+.checklist-table tr.fs-verified td:nth-child(2) { color: var(--ok, #2f9e44); }
+.checklist-table tr.fs-not_applicable { opacity: 0.6; }
+.evidence-card.excluded { opacity: 0.55; }
+.dossier h4 { margin: 12px 0 4px; }

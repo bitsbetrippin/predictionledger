@@ -1,4 +1,4 @@
-# Prediction markets — integration framework (1.5 → 1.10)
+# Prediction markets — integration framework (1.5 → 1.11)
 
 Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
 
@@ -117,6 +117,12 @@ A third venue behind the same `MarketProvider` interface, and the only one with 
 Shapes worth knowing: one instrument per market (YES); NO is synthetic and `price.value` is always the YES price (buy NO at $0.40 = `ORDER_INTENT_BUY_SHORT` at `0.60`). `marketSides[]` carry durable ids and a `long` flag — the deprecated `outcomes` array's order varies, so it is never used for orientation. Markets publish `orderPriceMinTickSize`, `minimumTradeQty` (contracts; `0.01` = partial contracts), `feeCoefficient` (Θ in `Θ·C·p·(1−p)`; 0.06 on 2026-09-16 with a published change to 0.0695), `status`, `sportsMarketTypeV2`, `line`, `gameStartTime`. Books come wrapped as `{ marketData: { bids, offers, state } }`; price history takes a slug and needs `fidelity=1` for timestamp ranges. Balances arrive as JSON numbers, positions as decimal strings. No stable account identifier, no idempotency key, no retail sandbox — ADR-031 records the evidence and the resulting design.
 
 Try it: tick **Polymarket US** under Setup → Venues and search from the Markets page; `GET /api/markets/search?q=bitcoin&provider=polymarket_us`; with an account, Setup → Polymarket US account → Test connection.
+
+## Verified contracts (1.11)
+
+Similarity got a link *proposed* and a human got it *accepted*; neither says the contract settles on the claim's terms. 1.11 adds a **contract verification** per link: a computed checklist over the venue's rules text and constraints against the stored claim (and the stored game record for sports picks). Sports: league, both teams, game date and start, market type, line and sign, period, overtime and tie/void rules, side. General: subject, proposition semantics (touches vs closes above vs cumulative), comparator, threshold, units, observation window, geography, measurement source, side. Always: venue, market open, rules hash, question, settlement conditions, trading close and the earliest pre-event cutoff. The status is derived — `verified_equivalent` only when every required field verified — and no route can set it; a documented fact with its source may fill a missing non-gate field, never an incompatible one. Revalidation marks a version stale when the rules hash, schedule, market status, side ids or the claim itself change; editing the prediction does the same immediately. Only Polymarket US links can verify at all; Polymarket international and Manifold links are `research_only` by construction. `POST /api/predictions/:id/us-candidates` finds US contracts (or reads a pasted event URL) and answers none / one / multiple; `POST /api/market-links/:id/verify-contract` runs the checklist; ADR-032 records the rules, including the "unqualified pick = full game" convention.
+
+Provenance landed in the same release: subscriptions (Library → *Follow a channel or playlist*) with per-poll budgets, first-seen times and content hashes on videos and sources, independence groups after every research run, an evidence dossier with dissent and an as-of replay, and forecast-purpose research that never becomes a verdict. Nothing in 1.11 places, previews or prepares an order.
 
 ## Open questions for the product owner
 

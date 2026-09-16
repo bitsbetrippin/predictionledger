@@ -1,6 +1,6 @@
 {
   "name": "@prediction-ledger/web",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
@@ -10,7 +10,7 @@
     "dev": "vite"
   },
   "dependencies": {
-    "@prediction-ledger/shared": "1.10.0",
+    "@prediction-ledger/shared": "1.11.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"
   },

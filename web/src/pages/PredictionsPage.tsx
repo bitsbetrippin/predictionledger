@@ -81,9 +81,9 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
   };
 
   /** Research (or recheck). Follows the chain plan → research → assessment by polling each job. */
-  const research = async (id: string, mode: "research" | "validate" = "research") => {
+  const research = async (id: string, mode: "research" | "validate" | "forecast" = "research") => {
     try {
-      const { jobId } = mode === "validate" ? await content.validateScore(id, !!rows?.find((r) => r.id === id)?.result) : await content.research(id);
+      const { jobId } = mode === "validate" ? await content.validateScore(id, !!rows?.find((r) => r.id === id)?.result) : await content.research(id, undefined, mode === "forecast" ? "forecast" : "verdict");
       let done = await pollJob(jobId, (j) => setResearchJobs((m) => ({ ...m, [id]: j })));
       // Chained jobs (research after plan, assessment after research) show up in the job list for this subject.
       for (let hops = 0; hops < 4 && done.status === "completed"; hops++) {
@@ -197,6 +197,7 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
                 planJob={planJobs[selected.id]}
                 onGeneratePlan={() => generatePlan(selected.id)}
                 onResearch={() => research(selected.id)}
+                onForecast={() => research(selected.id, "forecast")}
                 onValidateScore={() => research(selected.id, "validate")}
                 researchJob={researchJobs[selected.id]}
                 onChanged={async () => { await reload(); await loadSelected(selected.id); }}

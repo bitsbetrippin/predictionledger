@@ -10,7 +10,7 @@ Prediction Ledger is an open-source, localhost-only application with two halves.
 
 Everything lives on your computer in a SQLite database. Cloud AI providers, web research, and market data are opt-in and clearly labelled; a fully local workflow (LM Studio + local Whisper + transcript import) is supported.
 
-> **Status: 1.10.0.** Feature-complete against the original specification (releases 0.1 → 1.1), the sports rule (1.2 → 1.4), the prediction-market plan (1.5 → 1.9, see [docs/PREDICTION_MARKETS.md](docs/PREDICTION_MARKETS.md)), and the first release of the Polymarket US track (1.10: account connection and read-only US market data — no submission path exists). 98 automated tests, all using a fake venue adapter; the one owner-run live check (`npm run trading:read-check`) is read-only and **pending owner execution**. What has actually been executed on which platform is tracked in [docs/VERIFICATION.md](docs/VERIFICATION.md) and [docs/FIRST_RUN.md](docs/FIRST_RUN.md) — releases 1.4 → 1.10 have been tested against fixtures and live public venue APIs, not yet end to end on real videos, so expect the parsers and matchers to need tuning on the first real run. Release-by-release detail: [CHANGELOG.md](CHANGELOG.md).
+> **Status: 1.11.0.** Feature-complete against the original specification (releases 0.1 → 1.1), the sports rule (1.2 → 1.4), the prediction-market plan (1.5 → 1.9, see [docs/PREDICTION_MARKETS.md](docs/PREDICTION_MARKETS.md)), and the first two releases of the Polymarket US track: 1.10 (account connection and read-only US market data) and 1.11 (source subscriptions, evidence provenance and an execution-specific contract verifier — see [ADR-032](docs/DECISIONS.md)). **No submission path exists in this build.** 112 automated tests, all using fake venue adapters; the one owner-run live check (`npm run trading:read-check`) is read-only and **pending owner execution**, as is the 1.11 exit demo on a real US event page. What has actually been executed on which platform is tracked in [docs/VERIFICATION.md](docs/VERIFICATION.md) and [docs/FIRST_RUN.md](docs/FIRST_RUN.md) — releases 1.4 → 1.11 have been tested against fixtures and live public venue APIs, not yet end to end on real videos, so expect the parsers, matchers and the contract checklist to need tuning on the first real run. Release-by-release detail: [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -82,6 +82,9 @@ Three more principles govern that side: a link is a *proposal* until you accept 
 | **Consensus & alerts** | Signals → *Consensus across channels*; alerts list with a nav badge. | Same claim grouped by linked market or by statement overlap, weighted by record × recency, splits shown as splits. Watch rules after every snapshot: moved, diverged, resolving soon. |
 | **Paper trading** | Paper page; *Paper buy* on a Signals row; optional auto-open. | Hypothetical positions at the snapshot price, fixed or fractional-Kelly stakes, marked at every refresh, closed at 1/0 on venue resolution; estimate Brier vs market Brier. Never touches a venue account. |
 | **Polymarket US account (1.10)** | Setup → *Polymarket US account*: paste key ID + secret from the developer portal, *Test connection*, *Save*, *Refresh account*, *Disconnect*. | Ed25519-signed reads through the pinned official SDK: balances, positions, open orders. Credentials live in a protected vault; only a fingerprint and masked hints come back. The trading mode stays *paper*; this build has no order-submission code. |
+| **Follow a channel (1.11)** | Library → *Follow a channel or playlist*: poll interval, lookback, title keywords, per-poll budget, *Run now*. | Each poll lists newest-first, skips what the ledger has, and queues ordinary imports within the budget; videos and sources record when the app first saw them and a hash of what it saw. |
+| **Dossier (1.11)** | Prediction → *Dossier*: every excerpt with provenance, independence group and status; dissent; *Replay as of*; withdraw / recheck a source; *Forecast research*. | Sources cluster into independent groups (syndicated copies and same-publisher pages are one voice); replay counts a source from its first fetch, a publication date only as a labelled assumption; forecast runs never become verdicts; withdrawal never rewrites stored text. |
+| **Verified contracts (1.11)** | Prediction → *Markets* → *Find US contracts* → *Run checklist* → *Revalidate*. | A computed rule-by-rule checklist against the Polymarket US contract (league, teams, date and start, market type, line, period, overtime; or subject, touch-vs-close semantics, comparator, threshold, units, window, geography, source; plus venue, status, rules hash, settlement, cutoff). *Verified equivalent* only when every required rule matches; a near-match is rejected with the difference named; status cannot be set by hand; a changed contract or claim marks it stale. Authorizes nothing by itself. |
 | **Keep the receipts** | JSON / CSV export; backups; job list with retry. | Export carries videos, predictions, plans, runs, sources, evidence, assessments, games, markets and links — never credentials. |
 
 ---
@@ -198,7 +201,7 @@ flowchart TB
 | Runtime | Node.js ≥ 22.13 (24 LTS recommended; runs on 26), TypeScript | One runtime on Windows/macOS; `node:sqlite` built in — no native compile step. |
 | Server | Fastify 5 on `127.0.0.1` | Loopback only, schema-validated routes, redacted logs. Occupied port → walks to the next one, never kills anything. |
 | Frontend | React 18 + Vite | Built once to static files served by the same process; no separate web server in normal use. |
-| Database | SQLite (WAL) + forward-only migrations (001 → 012) | Single file, crash-safe, backed up before every migration. Drizzle ORM evaluated in 0.3 (ADR-012). |
+| Database | SQLite (WAL) + forward-only migrations (001 → 013) | Single file, crash-safe, backed up before every migration. Drizzle ORM evaluated in 0.3 (ADR-012). |
 | Jobs | Rows in a `jobs` table + in-process worker | Transcription, research, score look-ups, market matching and snapshots survive restarts; bounded retries; cancellation; dedupe keys. |
 | Secrets | AES-256-GCM, key file with owner-only permissions; `trading.*` names readable only through a vault handle held by the trading service | Never in the browser, logs, exports, or git; model/search code cannot reach venue credentials. Portable backups omit them. |
 | Local transcription | Whisper (ONNX) inside Node via Transformers.js | Pure npm — no Python, no compiled binary. Models download once. |
@@ -206,7 +209,9 @@ flowchart TB
 | Search | Replaceable `SearchProvider` (Brave first; SearXNG; Tavily; Anthropic/OpenAI native) | Only app-executed searches count as evidence. |
 | Sports settlement | Code-written plan, deterministic score/date parsers, rule settlement (`analysis/sports.ts`) | A final score is a fact, not a judgement; the model only reads pages the parser could not. |
 | Markets | Replaceable `MarketProvider` (Polymarket, Manifold, Polymarket US) — read-only, unauthenticated | Snapshots and price history stored locally; links are proposals; US records carry the venue's contract constraints (tick, min quantity, fee coefficient, durable side ids). |
-| Polymarket US account | Separate `TradingAdapter` (`providers/trading/`) behind the pinned official `polymarket-us@0.1.1` SDK; fake adapter in every test | Reads + targeted cancel only in 1.10 — no create/preview method exists; hosts are fixed; live modes are refused until their release gates (ADR-030/031). |
+| Polymarket US account | Separate `TradingAdapter` (`providers/trading/`) behind the pinned official `polymarket-us@0.1.1` SDK; fake adapter in every test | Reads + targeted cancel only in 1.10/1.11 — no create/preview method exists; hosts are fixed; live modes are refused until their release gates (ADR-030/031). |
+| Contract verification | Pure `analysis/contractVerification.ts` checklist over the venue's rules text and constraints; versioned rows written only by `services/contracts.ts` | Status is derived, never asserted (405 on writes); documented facts fill missing non-gate fields only; stale on any material change (ADR-032). |
+| Provenance | Hashes (transcript, quote, source text), first-seen times, analysis versions, independence groups (`analysis/independence.ts`) | What the app knew, and when, is a stored fact; a publication date is only a labelled assumption. |
 | Signals | Pure functions with fixture tests (`analysis/signals.ts`); computed on read | Realized edge, shrinkage and gates are inspectable numbers, not a model opinion. |
 
 **Security posture in one paragraph.** Loopback binding is not treated as a security boundary: mutating requests need a custom header a cross-origin page cannot send; outbound research fetches refuse private/loopback/link-local addresses and re-check on every redirect; uploads are stored under content-hash names and validated with ffprobe; transcripts, fetched pages, and generated prompts are treated as untrusted data that cannot change budgets, tools, or verdict rules. See [ARCHITECTURE §7](docs/ARCHITECTURE.md#7-security-model).
@@ -247,18 +252,20 @@ prediction-ledger/
 │       ├── youtube/          yt-dlp wrapper, single-video importer, playlist/channel importer
 │       ├── transcripts/      SRT / VTT / TXT / JSON parsers
 │       ├── analysis/         windowing, quote locator, date resolver, dedupe, prompts, schemas, structured completion,
-│       │                     sports (score/date parsers, settlement), markets (matching), signals (edge, shrinkage, gates)
+│       │                     sports (score/date parsers, settlement), markets (matching), signals (edge, shrinkage, gates),
+│       │                     independence (source clustering, known-by replay), contractVerification (rule checklist, revalidation)
 │       ├── research/         SearchProvider adapters, guarded SourceFetcher, HTML extractor, verdict guard
-│       ├── services/         videos, predictions, plans, templates, research, games, markets, signals, consensus, alerts, paper, tradingAccounts, backup, export
-│       ├── routes/           /api/* — content, research, media, youtube, markets (+ signals, consensus, alerts, paper), trading; see docs/API.md
-│       └── **/*.test.ts      node:test suites (98): core, analysis, sports, markets, signals, watch/consensus, paper, trading (fake venue), media, youtube, pipelines
+│       ├── services/         videos, predictions, plans, templates, research, games, markets, signals, consensus, alerts, paper, tradingAccounts,
+│       │                     subscriptions, dossier, contracts, backup, export
+│       ├── routes/           /api/* — content, research (+ dossier, sources), media, youtube, markets (+ signals, consensus, alerts, paper, contracts), subscriptions, trading; see docs/API.md
+│       └── **/*.test.ts      node:test suites (112): core, analysis, sports, markets, signals, watch/consensus, paper, trading (fake venue), provenance, contracts, media, youtube, pipelines
 ├── fixtures/                 human-reviewed transcripts (incl. a 30-minute one and NFL picks), expected outcomes, canned model outputs, research pages,
 │                             trading/ (captured public Polymarket US responses + synthetic account shapes; no credentials)
 ├── evals/                    Promptfoo configuration, prompts and assertions for the extraction/plan/assessment templates
 ├── web/                      @prediction-ledger/web — React + Vite dashboard
 │   └── src/
 │       ├── pages/            Library · Video · Predictions · Markets · Signals · Paper · Jobs · Setup
-│       └── components/       PredictionDetail (quote, components, plan, evidence, history, Markets tab) · MarketLinks · PolymarketUsCard
+│       └── components/       PredictionDetail (quote, components, plan, evidence, dossier, history, Markets tab) · MarketLinks · ContractPanel · DossierView · SubscriptionsCard · PolymarketUsCard
 ├── docs/                     see the table below
 ├── LICENSE                   Apache-2.0
 ├── NOTICE                    attribution
@@ -327,18 +334,18 @@ Delivered, in order:
 | **1.8.0** ✓ | Playlist/channel bulk import with auto-extract, consensus across channels, watch rules with local alerts, Manifold as a second venue. |
 | **1.9.0** ✓ | Paper trading: hypothetical positions (manual or auto on labelled signals), fixed / fractional-Kelly sizing, marks, resolution close, estimate-vs-market Brier. |
 | **1.10.0** ✓ | Polymarket US foundation: distinct `polymarket_us` market provider with contract constraints, separate read-only trading adapter (pinned SDK), account connection with masked credentials and local binding, protected credential vault, portable backups, policy row that a settings save cannot arm, dated ADRs answering the integration questions. No submission path. |
+| **1.11.0** ✓ | Source subscriptions with per-poll budgets; provenance (first-seen times, transcript / quote / source hashes, analysis versions, independence groups); evidence dossier with dissent and as-of replay; forecast-purpose research kept apart from verdicts; execution-specific contract verification with a computed, non-overridable checklist and staleness on any material change. Still no submission path. |
 
 The Polymarket US execution track (proposed specification, September 2026) continues gate by gate — each release depends on the previous one passing its acceptance tests, and live features stay disabled until then:
 
 | Release | Delivers | Gate |
 |---|---|---|
-| **1.11.0** | Source subscriptions with provenance; execution-specific contract verification (exact event, rules hash, line, period, side) — accepted links stay research-only until verified. | Every adversarial near-match blocked. |
 | **1.12.0** | Immutable forecasts (versioned estimator), pure trade/no-trade decisions with reason codes, atomic budget reservations, execution-aware US paper engine. | Leakage, duplicate-source and budget-concurrency tests. |
 | **1.13.0** | Manual-live execution: preview → one bounded IOC order → reconciliation; NO-price conversion tested; `submission_unknown` handling. Owner-run capped smoke test only. | Timeout/crash/partial-fill drills, no duplicate orders. |
 | **1.14.0** | Bounded automatic decisions behind explicit arming and a policy hash; Trades dashboard; emergency stop. | Source-to-order end-to-end and soak tests. |
 | **2.0.0** | Upgrade/restore drills, Windows verification on real content, qualification evidence. | No open P0/P1; insufficient calibration data = auto-live gate unmet. |
 
-Other next steps: first end-to-end run of 1.4 → 1.10 on real videos and real venue pages (parser and matcher tuning); the owner-run read-only account check; per-speaker creator records once diarisation exists; per-venue paper books; the remaining first-run verification in [docs/FIRST_RUN.md](docs/FIRST_RUN.md) on Windows and macOS.
+Other next steps: first end-to-end run of 1.4 → 1.11 on real videos and real venue pages (parser, matcher and checklist tuning); the 1.11 exit demo on a real Polymarket US event; the owner-run read-only account check; per-speaker creator records once diarisation exists; per-venue paper books; the remaining first-run verification in [docs/FIRST_RUN.md](docs/FIRST_RUN.md) on Windows and macOS.
 
 Full backlog with acceptance criteria: [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md).
 

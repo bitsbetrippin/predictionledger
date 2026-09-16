@@ -31,6 +31,8 @@ import { PaperService } from "./services/paper.js";
 import { makeMarketWatchHandler } from "./jobs/handlers/watch.js";
 import { makePlaylistImportHandler } from "./youtube/playlist.js";
 import { TradingAccountService } from "./services/tradingAccounts.js";
+import { SubscriptionService, makeSubscriptionPollHandler, type VideoLister } from "./services/subscriptions.js";
+import { ContractService } from "./services/contracts.js";
 import { createTradingAdapter } from "./providers/trading/registry.js";
 import { GuardedFetcher, type SourceFetcher } from "./research/fetcher.js";
 import { makeAudioExtractHandler, makeModelDownloadHandler, makeTranscribeHandler } from "./jobs/handlers/media.js";
@@ -64,12 +66,15 @@ export interface AppContext {
   paper: PaperService;
   /** 1.10: Polymarket US account connection (reads only; owns the trading secret vault). */
   trading: TradingAccountService;
+  /** 1.11: saved channel/playlist subscriptions and contract verification. */
+  subscriptions: SubscriptionService;
+  contracts: ContractService;
   fetcher: SourceFetcher;
   /** Builds the transcription engine selected in Setup (or a test override). */
   transcription: () => TranscriptionProvider;
 }
 
-export function createContext(overrides: Partial<Pick<AppContext, "fetcher" | "transcription">> = {}): AppContext {
+export function createContext(overrides: Partial<Pick<AppContext, "fetcher" | "transcription">> & { lister?: VideoLister } = {}): AppContext {
   const paths = resolveDataPaths();
   ensureDataDirs(paths);
   const { db, schemaVersion } = openDatabase(paths);
@@ -99,6 +104,8 @@ export function createContext(overrides: Partial<Pick<AppContext, "fetcher" | "t
     paper: new PaperService(db),
     // The vault handle is created here and handed to exactly one service; nothing else can read trading.* secrets.
     trading: new TradingAccountService(db, secrets.openVault("trading."), () => createTradingAdapter("polymarket_us"), { allowInternet: () => settings.getPersisted().privacy.allowInternet }),
+    subscriptions: new SubscriptionService(db),
+    contracts: undefined as unknown as ContractService,
     fetcher: overrides.fetcher ?? new GuardedFetcher(),
     transcription:
       overrides.transcription ??
@@ -110,8 +117,11 @@ export function createContext(overrides: Partial<Pick<AppContext, "fetcher" | "t
       }),
   };
 
+  ctx.contracts = new ContractService(ctx);
+
   // Job handlers (Release 0.2). Later releases register audio/transcript/research/assessment kinds.
   jobs.register("prediction.extract", makeExtractHandler(ctx));
+  jobs.register("subscription.poll", makeSubscriptionPollHandler(ctx, overrides.lister));
   jobs.register("plan.generate", makePlanHandler(ctx));
   jobs.register("research.run", makeResearchHandler(ctx));
   jobs.register("sports.resolve_game", makeGameHandler(ctx));

@@ -28,6 +28,8 @@ export function makeAssessHandler(ctx: AppContext) {
     const run = ctx.research.getRun(runId);
     if (!p || !run) throw new Error("Prediction or research run no longer exists.");
     if (run.status !== "completed") throw new Error(`Research run is ${run.status}; nothing to assess.`);
+    // SRC-04: forecast-time research informs a forecast; it can never be recorded as a settlement.
+    if (run.purpose === "forecast") throw new Error("This research run has purpose 'forecast'; forecast evidence is never turned into a verdict.");
     const plan = ctx.plans.get(run.validationPlanId)!;
     const settings = ctx.settings.getPersisted();
     const today = new Date().toISOString().slice(0, 10);

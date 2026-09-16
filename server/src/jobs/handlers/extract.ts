@@ -116,12 +116,16 @@ export function makeExtractHandler(ctx: AppContext) {
       job.progress(95, "Saving predictions");
       let created = 0;
       let matchedExisting = 0;
+      // 1.11 provenance: every prediction from this pass carries the transcript hash it was read from and the pass number.
+      const transcriptHash = ctx.videos.transcriptHash(videoId) ?? ctx.videos.recomputeTranscriptHash(videoId);
+      const analysisVersion = ctx.predictions.nextAnalysisVersion(videoId);
       ctx.db.transaction(() => {
         // Remove untouched predictions from earlier automatic runs (see header comment).
         ctx.db.run(
           `DELETE FROM predictions WHERE video_id = ? AND user_status = 'pending'
              AND NOT EXISTS (SELECT 1 FROM prediction_revisions r WHERE r.prediction_id = predictions.id)
-             AND NOT EXISTS (SELECT 1 FROM validation_plans vp WHERE vp.prediction_id = predictions.id)`,
+             AND NOT EXISTS (SELECT 1 FROM validation_plans vp WHERE vp.prediction_id = predictions.id)
+             AND NOT EXISTS (SELECT 1 FROM prediction_market_links l WHERE l.prediction_id = predictions.id)`,
           videoId,
         );
         // Predictions the user has touched survive; don't re-create their duplicates.
@@ -190,6 +194,8 @@ export function makeExtractHandler(ctx: AppContext) {
             extractionModel: target.model,
             extractionTemplate: template.effectiveVersion,
             extractionJobId: job.id,
+            transcriptHash,
+            analysisVersion,
             components,
           });
           created++;

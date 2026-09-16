@@ -157,6 +157,8 @@ export function registerContentRoutes(app: FastifyInstance, ctx: AppContext): vo
     const parsed = editSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", issues: parsed.error.issues });
     const p = ctx.predictions.edit(req.params.id, parsed.data);
+    // MAT-06: a material change to the claim invalidates any contract verification built on it.
+    if (p) ctx.contracts.invalidateForPrediction(p.id, "prediction edited");
     return p ?? reply.code(404).send({ error: "not_found" });
   });
 
@@ -179,6 +181,7 @@ export function registerContentRoutes(app: FastifyInstance, ctx: AppContext): vo
     const parsed = mergeSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", issues: parsed.error.issues });
     const p = ctx.predictions.merge(req.params.id, parsed.data.sourceIds);
+    if (p) ctx.contracts.invalidateForPrediction(p.id, "prediction merged");
     return p ?? reply.code(404).send({ error: "not_found" });
   });
 
@@ -187,6 +190,7 @@ export function registerContentRoutes(app: FastifyInstance, ctx: AppContext): vo
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", issues: parsed.error.issues });
     try {
       const r = ctx.predictions.split(req.params.id, parsed.data.componentId);
+      if (r) ctx.contracts.invalidateForPrediction(r.parent.id, "prediction split");
       return r ?? reply.code(404).send({ error: "not_found" });
     } catch (err) {
       return reply.code(409).send({ error: "cannot_split", message: (err as Error).message });

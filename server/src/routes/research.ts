@@ -10,6 +10,7 @@ import { z } from "zod";
 import type { ExportBundle } from "@prediction-ledger/shared";
 import type { AppContext } from "../context.js";
 import { buildCsv, buildExportBundle } from "../services/export.js";
+import { buildDossier } from "../services/dossier.js";
 import { matchupKey } from "../analysis/sports.js";
 
 const researchSchema = z.object({
@@ -17,6 +18,8 @@ const researchSchema = z.object({
   planId: z.string().uuid().optional(),
   /** Generate a plan first when none exists (auto-continue, VP-04). */
   autoPlan: z.boolean().default(true),
+  /** 1.11 (SRC-04): "forecast" gathers prospective evidence and never chains a verdict; requires an existing plan. */
+  purpose: z.enum(["verdict", "forecast"]).default("verdict"),
 });
 
 export function registerResearchRoutes(app: FastifyInstance, ctx: AppContext): void {
@@ -86,6 +89,9 @@ export function registerResearchRoutes(app: FastifyInstance, ctx: AppContext): v
     if (plan && plan.predictionId !== p.id) return reply.code(400).send({ error: "invalid_request", message: "Plan does not belong to this prediction." });
 
     if (!plan) {
+      if (parsed.data.purpose === "forecast") {
+        return reply.code(409).send({ error: "plan_required", message: "Forecast research uses the saved validation plan's queries; generate the plan first." });
+      }
       if (s.research.reviewPlanBeforeResearch || !parsed.data.autoPlan) {
         return reply.code(409).send({ error: "plan_required", message: "Generate and review the validation plan first (Setup → Research has 'review plan before research' on)." });
       }
@@ -93,15 +99,16 @@ export function registerResearchRoutes(app: FastifyInstance, ctx: AppContext): v
       const planJob = ctx.jobs.enqueue({ kind: "plan.generate", subjectType: "prediction", subjectId: p.id, payload: { predictionId: p.id, thenResearch: true }, dedupeKey: `plan.generate:${p.id}`, maxAttempts: 2 });
       return reply.code(202).send({ jobId: planJob, stage: "plan" });
     }
+    const purpose = parsed.data.purpose;
     const jobId = ctx.jobs.enqueue({
       kind: "research.run",
       subjectType: "prediction",
       subjectId: p.id,
-      payload: { predictionId: p.id, planId: plan.id },
-      dedupeKey: `research.run:${p.id}`,
+      payload: { predictionId: p.id, planId: plan.id, purpose },
+      dedupeKey: purpose === "forecast" ? `research.forecast:${p.id}` : `research.run:${p.id}`,
       maxAttempts: 1,
     });
-    return reply.code(202).send({ jobId, stage: "research", planVersion: plan.version });
+    return reply.code(202).send({ jobId, stage: "research", planVersion: plan.version, purpose });
   });
 
   app.get<{ Params: { id: string } }>("/api/predictions/:id/runs", async (req) => ctx.research.runsForPrediction(req.params.id));
@@ -119,6 +126,33 @@ export function registerResearchRoutes(app: FastifyInstance, ctx: AppContext): v
     if (!s) return reply.code(404).send({ error: "not_found" });
     const text = ctx.research.sourceText(s);
     return { ...s, text: text?.slice(0, 200_000) };
+  });
+
+  // ---- 1.11: evidence dossier and source immutability (SRC-03/04/06) ----
+  app.get<{ Params: { id: string }; Querystring: { asOf?: string; assumePublished?: string } }>("/api/predictions/:id/dossier", async (req, reply) => {
+    const asOf = req.query.asOf && Number.isFinite(Date.parse(req.query.asOf)) ? new Date(Date.parse(req.query.asOf)).toISOString() : undefined;
+    const d = buildDossier(ctx, req.params.id, { asOf, assumePublished: req.query.assumePublished === "1" });
+    return d ?? reply.code(404).send({ error: "not_found" });
+  });
+
+  app.post<{ Params: { id: string } }>("/api/sources/:id/withdraw", async (req, reply) => {
+    const parsed = z.object({ note: z.string().max(500).optional(), restore: z.boolean().optional() }).strict().safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", issues: parsed.error.issues });
+    const cur = ctx.research.getSource(req.params.id);
+    if (!cur) return reply.code(404).send({ error: "not_found" });
+    const s = ctx.research.setSourceStatus(cur.id, parsed.data.restore ? "available" : "withdrawn", parsed.data.note ?? (parsed.data.restore ? "restored by user" : "withdrawn by user"));
+    return { ...s, note: "Status only: the stored excerpt, text hash and every evidence item citing this source are unchanged." };
+  });
+
+  /** Re-check that the URL still answers. Never replaces stored text; 404/410 marks the source missing. */
+  app.post<{ Params: { id: string } }>("/api/sources/:id/recheck", async (req, reply) => {
+    const cur = ctx.research.getSource(req.params.id);
+    if (!cur) return reply.code(404).send({ error: "not_found" });
+    if (!ctx.settings.getPersisted().privacy.allowInternet) return reply.code(409).send({ error: "offline", message: "Internet access is disabled in Setup → Privacy." });
+    const out = await ctx.fetcher.fetch(cur.url);
+    const outcome = out.status === "ok" ? "ok" : out.httpStatus === 404 || out.httpStatus === 410 ? "missing" : "error";
+    const s = ctx.research.recordSourceCheck(cur.id, out.httpStatus, outcome);
+    return { ...s, checked: { status: out.status, httpStatus: out.httpStatus, outcome } };
   });
 
   // ---- Export (never includes settings or secrets) ----

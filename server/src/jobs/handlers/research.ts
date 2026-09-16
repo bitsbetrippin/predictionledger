@@ -14,6 +14,7 @@
 
 import type { QueryGroup, SearchResult, ValidationPlan } from "@prediction-ledger/shared";
 import type { JobContext } from "../queue.js";
+import { contentSketch, independenceGroups } from "../../analysis/independence.js";
 import type { AppContext } from "../../context.js";
 import { isTrustedScoreHost, SPORTS_RESEARCH_BUDGET } from "../../analysis/sports.js";
 import { render } from "../../analysis/prompts.js";
@@ -46,8 +47,11 @@ export function makeResearchHandler(ctx: AppContext) {
 
     const target = resolveStageTarget("assessment", ctx.settings, ctx.secrets);
     const template = ctx.templates.effective("evidence");
-    const cutoff = new Date().toISOString().slice(0, 10);
-    const run = ctx.research.createRun({ predictionId, planId: plan.id, searchProvider: settings.search.provider, cutoffDate: cutoff, jobId: job.id });
+    const cutoffAt = new Date().toISOString();
+    const cutoff = cutoffAt.slice(0, 10);
+    // 1.11 (SRC-04): a forecast-purpose run gathers evidence about a future event and never chains a settlement.
+    const purpose: "verdict" | "forecast" = job.payload.purpose === "forecast" ? "forecast" : "verdict";
+    const run = ctx.research.createRun({ predictionId, planId: plan.id, searchProvider: settings.search.provider, cutoffDate: cutoff, cutoffAt, purpose, jobId: job.id });
 
     try {
       // ---- 1. search (budgeted, cached, round-robin across groups so each group gets coverage) ----
@@ -224,6 +228,14 @@ export function makeResearchHandler(ctx: AppContext) {
       if (rejected > 0) coverage.push(`${rejected} evidence item(s) were discarded because their excerpts could not be found in the retrieved page text.`);
       if (fetched.length === 0) coverage.push("No source pages could be read; the assessment will be 'insufficient evidence' by rule.");
 
+      // ---- 3b. independence groups (SRC-03): same publisher / same or near-identical text = one voice ----
+      const grouped = independenceGroups(fetched.map((f) => ({ id: f.sourceId, url: f.url, publisher: ctx.research.getSource(f.sourceId)?.publisher, contentHash: ctx.research.getSource(f.sourceId)?.contentHash, sketch: contentSketch(f.text), orderKey: f.publishedAt ?? "9999" })));
+      ctx.research.setIndependenceGroups(grouped.groups);
+      const distinctVoices = new Set(grouped.groups.values()).size;
+      if (fetched.length > 0 && distinctVoices < fetched.length) coverage.push(`${fetched.length} source(s) fetched from ${distinctVoices} independent group(s) (same publisher or near-identical text counted once).`);
+      const undated = fetched.filter((f) => !f.publishedAt).length;
+      if (undated > 0) coverage.push(`${undated} source(s) carry no publication date; their items cannot prove what was knowable when.`);
+
       ctx.research.updateRun(run.id, {
         status: "completed",
         coverageNotes: coverage,
@@ -233,10 +245,14 @@ export function makeResearchHandler(ctx: AppContext) {
         finished: true,
       });
 
-      // ---- 4. hand off to assessment ----
+      // ---- 4. hand off to assessment — never for a forecast-purpose run (SRC-04) ----
+      if (purpose === "forecast") {
+        job.progress(100, `${items} evidence item(s) from ${fetched.length} source(s); forecast research — no verdict is produced`);
+        return { runId: run.id, purpose, searches: used, sources: fetched.length, evidence: items, rejected, coverage };
+      }
       ctx.jobs.enqueue({ kind: "assessment.run", subjectType: "prediction", subjectId: predictionId, payload: { predictionId, runId: run.id }, dedupeKey: `assessment.run:${run.id}`, maxAttempts: 2 });
       job.progress(100, `${items} evidence item(s) from ${fetched.length} source(s); assessing…`);
-      return { runId: run.id, searches: used, sources: fetched.length, evidence: items, rejected, coverage };
+      return { runId: run.id, purpose, searches: used, sources: fetched.length, evidence: items, rejected, coverage };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const current = ctx.research.getRun(run.id);

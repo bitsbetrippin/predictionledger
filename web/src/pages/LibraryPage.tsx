@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { JobSummary, MediaStatus, ToolsStatus, VideoSummary } from "@prediction-ledger/shared";
 import { api, content, fmtClock, media, pollJob, youtube, ApiError } from "../api";
 import { navigate } from "../App";
+import { SubscriptionsCard } from "../components/SubscriptionsCard";
 
 export function LibraryPage() {
   const [videos, setVideos] = useState<VideoSummary[] | null>(null);
@@ -87,6 +88,7 @@ export function LibraryPage() {
       <div className="import-grid">
         <ImportYouTubeCard onImported={reload} tools={tools} onToolsChanged={reloadTools} />
         <ImportListCard onImported={reload} tools={tools} />
+        <SubscriptionsCard onImported={reload} tools={tools} />
         <UploadMediaCard onImported={reload} disabled={mediaStatus ? !mediaStatus.ffmpeg.ok : false} />
         <ImportTranscriptCard onImported={reload} />
       </div>

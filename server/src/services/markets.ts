@@ -6,7 +6,7 @@
  */
 
 import crypto from "node:crypto";
-import type { MarketLinkRelation, MarketLinkStatus, MarketRecord, MarketSnapshot, PredictionMarketLink } from "@prediction-ledger/shared";
+import type { ContractField, ContractVerification, ContractVerificationStatus, MarketLinkRelation, MarketLinkStatus, MarketRecord, MarketSnapshot, PredictionMarketLink } from "@prediction-ledger/shared";
 import type { Database } from "../db/index.js";
 import type { MarketSummary } from "../providers/markets/types.js";
 
@@ -19,6 +19,12 @@ interface SnapshotRow { id: string; market_id: string; retrieved_at: string; pri
 interface LinkRow {
   id: string; prediction_id: string; market_id: string; side: string | null; score: number; relation: string | null; rationale: string | null; status: MarketLinkStatus;
   matched_by: PredictionMarketLink["matchedBy"]; price_at_made: number | null; price_at_made_at: string | null; price_at_made_source: string | null; created_at: string; updated_at: string;
+  verification_status: ContractVerificationStatus | null; verification_id: string | null;
+}
+interface VerificationRow {
+  id: string; link_id: string; prediction_id: string; market_id: string; version: number; status: ContractVerificationStatus; fields_json: string; side_id: string | null; side_label: string | null; side_basis: string | null;
+  rules_hash: string | null; cutoff_at: string | null; cutoff_basis: string | null; cutoff_unknown: number; quote_hash: string | null; prediction_revision: number; facts_json: string; reviewer: ContractVerification["reviewer"]; notes: string | null;
+  created_at: string; stale_at: string | null; stale_reasons_json: string | null;
 }
 
 export class MarketService {
@@ -195,8 +201,60 @@ export class MarketService {
       rationale: r.rationale ?? undefined, status: r.status, matchedBy: r.matched_by, priceAtMade: r.price_at_made ?? undefined,
       priceAtMadeAt: r.price_at_made_at ?? undefined, priceAtMadeSource: (r.price_at_made_source ?? undefined) as "history" | "snapshot" | undefined, createdAt: r.created_at, updatedAt: r.updated_at,
       market: withMarket ? this.get(r.market_id) : undefined,
+      verificationStatus: r.verification_status ?? "unverified", verificationId: r.verification_id ?? undefined,
     };
   }
+
+  // ---- 1.11 contract verifications (immutable versions) ------------------------------------
+
+  addVerification(input: Omit<ContractVerification, "id" | "version" | "createdAt" | "staleAt" | "staleReasons">): ContractVerification {
+    const id = crypto.randomUUID();
+    const version = (this.db.get<{ n: number | null }>("SELECT MAX(version) AS n FROM contract_verifications WHERE link_id = ?", input.linkId)?.n ?? 0) + 1;
+    this.db.transaction(() => {
+      this.db.run(
+        `INSERT INTO contract_verifications (id, link_id, prediction_id, market_id, version, status, fields_json, side_id, side_label, side_basis, rules_hash, cutoff_at, cutoff_basis, cutoff_unknown, quote_hash, prediction_revision, facts_json, reviewer, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, input.linkId, input.predictionId, input.marketId, version, input.status, JSON.stringify(input.fields), input.sideId ?? null, input.sideLabel ?? null, input.sideBasis ?? null, input.rulesHash ?? null,
+        input.cutoffAt ?? null, input.cutoffBasis ?? null, input.cutoffUnknown ? 1 : 0, input.quoteHash ?? null, input.predictionRevision, JSON.stringify(input.facts), input.reviewer, input.notes ?? null,
+      );
+      this.db.run("UPDATE prediction_market_links SET verification_status = ?, verification_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?", input.status, id, input.linkId);
+    });
+    return this.getVerification(id)!;
+  }
+
+  /** MAT-06: the one allowed transition on a stored verification — it stops being valid. Everything else stays as written. */
+  markVerificationStale(id: string, reasons: string[]): ContractVerification | undefined {
+    const v = this.getVerification(id);
+    if (!v || v.status === "stale") return v;
+    this.db.transaction(() => {
+      this.db.run("UPDATE contract_verifications SET status = 'stale', stale_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), stale_reasons_json = ? WHERE id = ?", JSON.stringify(reasons), id);
+      this.db.run("UPDATE prediction_market_links SET verification_status = 'stale', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND verification_id = ?", v.linkId, id);
+    });
+    return this.getVerification(id);
+  }
+
+  getVerification(id: string): ContractVerification | undefined {
+    const r = this.db.get<VerificationRow>("SELECT * FROM contract_verifications WHERE id = ?", id);
+    return r ? hydrateVerification(r) : undefined;
+  }
+
+  verificationsForLink(linkId: string): ContractVerification[] {
+    return this.db.all<VerificationRow>("SELECT * FROM contract_verifications WHERE link_id = ? ORDER BY version DESC", linkId).map(hydrateVerification);
+  }
+
+  /** Links whose latest verification is currently `verified_equivalent` — the only execution candidates (MAT-03). */
+  executableLinks(predictionId: string): PredictionMarketLink[] {
+    return this.db.all<LinkRow>("SELECT * FROM prediction_market_links WHERE prediction_id = ? AND status = 'accepted' AND verification_status = 'verified_equivalent'", predictionId).map((r) => this.hydrateLink(r));
+  }
+}
+
+function hydrateVerification(r: VerificationRow): ContractVerification {
+  return {
+    id: r.id, linkId: r.link_id, predictionId: r.prediction_id, marketId: r.market_id, version: r.version, status: r.status, fields: JSON.parse(r.fields_json) as ContractField[],
+    sideId: r.side_id ?? undefined, sideLabel: r.side_label ?? undefined, sideBasis: r.side_basis ?? undefined, rulesHash: r.rules_hash ?? undefined, cutoffAt: r.cutoff_at ?? undefined, cutoffBasis: r.cutoff_basis ?? undefined,
+    cutoffUnknown: r.cutoff_unknown === 1, quoteHash: r.quote_hash ?? undefined, predictionRevision: r.prediction_revision, facts: JSON.parse(r.facts_json) as ContractVerification["facts"], reviewer: r.reviewer, notes: r.notes ?? undefined,
+    createdAt: r.created_at, staleAt: r.stale_at ?? undefined, staleReasons: r.stale_reasons_json ? (JSON.parse(r.stale_reasons_json) as string[]) : undefined,
+  };
 }
 
 function hydrateSnapshot(r: SnapshotRow): MarketSnapshot {

@@ -85,7 +85,7 @@ export function VideoPage({ id }: { id: string }) {
         <>
           <h1>{video.title}</h1>
           <p className="muted">
-            {video.sourceKind === "youtube" && video.sourceRef ? <a href={video.sourceRef} target="_blank" rel="noreferrer noopener">YouTube ↗</a> : video.sourceKind}{video.channel ? ` · ${video.channel}` : video.sourceRef && video.sourceKind !== "youtube" ? ` · ${video.sourceRef}` : ""} · {fmtClock(video.durationS)} · published {video.publishedAt ?? "unknown"} · {video.language ?? "language unknown"} · imported {video.importedAt.slice(0, 10)}
+            {video.sourceKind === "youtube" && video.sourceRef ? <a href={video.sourceRef} target="_blank" rel="noreferrer noopener">YouTube ↗</a> : video.sourceKind}{video.channel ? ` · ${video.channel}` : video.sourceRef && video.sourceKind !== "youtube" ? ` · ${video.sourceRef}` : ""} · {fmtClock(video.durationS)} · published {video.publishedAt ?? "unknown"}{video.publishedPrecision && video.publishedPrecision !== "datetime" ? ` (${video.publishedPrecision === "date" ? "date only" : "precision unknown"})` : ""} · {video.language ?? "language unknown"} · imported {video.importedAt.slice(0, 10)}{video.firstSeenAt ? ` · first seen ${video.firstSeenAt.slice(0, 16).replace("T", " ")}` : ""}{video.transcriptHash ? ` · transcript hash ${video.transcriptHash.slice(0, 12)}…` : ""}{video.subscriptionId ? " · via subscription" : ""}
             {" "}<button type="button" className="link" onClick={() => setEditingMeta(true)}>edit</button>
           </p>
         </>

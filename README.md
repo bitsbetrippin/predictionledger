@@ -2,17 +2,22 @@
 
 **Import a video. Find the predictions it makes. Write the test before looking at the answer. Research what actually happened. Keep the receipts.**
 
-Prediction Ledger is an open-source, localhost-only application. It takes a local MP4/MPEG file, a YouTube URL, or an existing transcript, produces a timestamped transcript, extracts the forward-looking claims the speaker made, generates an inspectable **validation plan** for each claim *before* any research happens, runs real web searches, stores the evidence, and records a two-part verdict — evidence assessment and time status — with citations and history.
+Prediction Ledger is an open-source, localhost-only application with two halves.
 
-Everything lives on your computer in a SQLite database. Cloud AI providers and web research are opt-in and clearly labelled; a fully local workflow (LM Studio + local Whisper + transcript import) is supported.
+**The ledger.** It takes a local MP4/MPEG file, a YouTube URL (single video, playlist, or channel), or an existing transcript; produces a timestamped transcript; extracts the forward-looking claims the speaker made; writes an inspectable **validation plan** for each claim *before* any research happens; runs real web searches; stores the evidence; and records a two-part verdict — evidence assessment and time status — with citations and history. Game picks (NFL, NBA, NHL, MLB, soccer, …) take a shorter road: one look-up per matchup for *winner, score, date*, then every pick on that game settles by rule.
 
-> **Status:** **1.9.0** — Paper trading: hypothetical positions opened from signals (by hand or automatically), marked at every snapshot, closed on venue resolution, with the estimate-vs-market Brier as the scoreboard. Still no orders, ever. 1.8.0: consensus across channels (bulk playlist/channel import, propositions with split sides), watch rules with local alerts, Manifold as a second venue. 1.7.0: signals: creator records (realized edge vs the market price when the claim was made, via venue price history), gated strong/moderate/lean labels per market side, Signals page. 1.6.0: markets in the ledger: stored markets and price snapshots, proposal-only prediction↔market links (exact sports matchups auto-link), Markets tab and page, scheduled refresh. 1.5.0: read-only Polymarket connector (`npm run markets`, `/api/markets…`) and the integration framework in [docs/PREDICTION_MARKETS.md](docs/PREDICTION_MARKETS.md). 1.4.0: game records: each matchup is looked up once (winner, score, date) and every pick on it is settled by rule; **Validate all scores** per video. 1.3.x: schedule look-up for unknown game dates, Sports Mode switch, one-click **Validate scores** from trusted box-score sources, point-spread toggle. Sports rule (1.2): picks on a single game (win, spread, total) are settled from the final score with a code-written plan and a capped look-up budget instead of open-ended research. Also: feature-complete for the MVP as specified and building cleanly on real hardware (Windows 11, Node 26); the remaining first-run verification steps are tracked in (see [docs/FIRST_RUN.md](docs/FIRST_RUN.md) and [docs/VERIFICATION.md](docs/VERIFICATION.md) for exactly what has and has not been executed). Every import path is in: paste a **YouTube link** (creator captions → auto captions → audio download, via a consent-installed, checksum-verified yt-dlp), drop a **local MP4/MPEG or audio file** (ffmpeg + resumable chunked Whisper/OpenAI transcription), or **import a transcript**. The analysis loop then runs on the result: extract predictions → versioned validation plan → real web research → verified evidence → two-field verdict with citations, recheck history, JSON/CSV export. The verification matrix is filled in as each platform completes the first-run checklist. See [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) and the [worked example](docs/WORKED_EXAMPLE.md).
+**The market side.** The same claims can be linked, with your approval, to prediction-market questions (Polymarket, Manifold — read-only, no account). The app keeps price snapshots, measures each channel's *realized edge* against the market price at the time it spoke, turns that into gated **signals** and cross-channel **consensus**, raises local **alerts** when the market moves against them, and keeps a **paper-trading** book that scores the whole thing. It never places an order.
+
+Everything lives on your computer in a SQLite database. Cloud AI providers, web research, and market data are opt-in and clearly labelled; a fully local workflow (LM Studio + local Whisper + transcript import) is supported.
+
+> **Status: 1.9.0.** Feature-complete against the original specification (releases 0.1 → 1.1), the sports rule (1.2 → 1.4), and the prediction-market plan (1.5 → 1.9, see [docs/PREDICTION_MARKETS.md](docs/PREDICTION_MARKETS.md)). Builds and runs on Windows 11 / Node 26; 81 automated tests. What has actually been executed on which platform is tracked in [docs/VERIFICATION.md](docs/VERIFICATION.md) and [docs/FIRST_RUN.md](docs/FIRST_RUN.md) — releases 1.4 → 1.9 have been tested against fixtures and live venue APIs, not yet end to end on real videos, so expect the parsers and matchers to need tuning on the first real run. Release-by-release detail: [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
 ## Contents
 
 - [How it works](#how-it-works)
+- [What you can do with it](#what-you-can-do-with-it)
 - [Quick start](#quick-start)
 - [First run checklist](#first-run-checklist)
 - [How it is engineered](#how-it-is-engineered)
@@ -46,6 +51,38 @@ Two principles run through the whole design:
 
 A useful mental model: it is a **courtroom, not a pundit**. Extraction is the clerk, the validation plan is the judge's instructions written before testimony, research is discovery, assessment is the verdict, and the full record is kept.
 
+The market side sits beside the courtroom, not inside it:
+
+```mermaid
+flowchart LR
+  P["Predictions + verdicts<br/>(the ledger)"] -->|"Find markets → you accept"| L["Links<br/>claim ⇄ market side"]
+  M["Markets<br/>Polymarket · Manifold<br/>snapshots, price history"] --> L
+  L --> S["Signals<br/>creator realized edge vs market<br/>shrunk · gated labels"]
+  S --> C["Consensus<br/>same claim across channels<br/>split shown as split"]
+  S --> W["Watch rules → Alerts<br/>moved · diverged · resolving"]
+  S --> B["Paper book<br/>hypothetical positions · marks<br/>estimate vs market Brier"]
+  classDef m fill:#eefaf0,stroke:#1a7f4b,color:#1a1d21;
+  class P,L,M,S,C,W,B m;
+```
+
+Three more principles govern that side: a link is a *proposal* until you accept it (only an exact game matchup auto-links); a creator is measured by what following them would have earned at the market's price, not by hit rate; and the paper book is the only scoreboard — the application has no trading code.
+
+---
+
+## What you can do with it
+
+| Area | In the dashboard | What happens underneath |
+|---|---|---|
+| **Import** | Library → paste a YouTube link, drop an MP4/MPEG/audio file, import an SRT/VTT/TXT/JSON transcript, or *Import a playlist or channel* (bulk, newest first, optional auto-extract). | yt-dlp (consent-installed, checksum-verified) fetches captions or audio; ffmpeg normalises audio; local Whisper (Transformers.js) or OpenAI transcribes in resumable chunks. Nothing leaves the machine for transcript imports. |
+| **Extract** | Video → *Extract predictions*; edit, merge, split, accept, dismiss. | Windowed transcript → structured model output → exact quote located in the transcript, dates resolved relative to when the claim was made, compound claims split into components, repeats deduplicated. Sports Mode turns game picks into *team vs team* with the game as the deadline. |
+| **Validate (general)** | Prediction → *Research* (plan is generated first; optional review stop). | Versioned validation plan → budgeted searches → guarded page fetches → evidence items whose excerpts must appear verbatim in the page → verdict from stored evidence only, with app-enforced rules (no results ≠ false, pending ≠ failed). Rechecks create new versions. |
+| **Validate (sports)** | Prediction → *Validate scores*, or Predictions → *Validate all scores* for a video. | One look-up per matchup: final score and date from trusted sources (parser first, model only as a fallback reader) → a game record → every pick on that game settled by rule: Hit / Miss / Push. |
+| **Markets** | Prediction → *Markets* → *Find markets*; accept or reject proposals; Markets page to search venues and watch questions. | Deterministic matching (teams + date + pick type for sports; term overlap, entities, numbers, deadlines for general claims) with model relation labels; snapshots on a schedule; the venue's price on the day the claim was made from price history. |
+| **Signals** | Signals page: market sides, estimates, edges, labels, creator records; expand a row for the why. | Realized edge per creator = mean(outcome − market price at made) over settled linked claims, shrunk by n/(n+k); combined per market side, one contribution per video; label only when record, edge, liquidity and deadlines clear the gates. |
+| **Consensus & alerts** | Signals → *Consensus across channels*; alerts list with a nav badge. | Same claim grouped by linked market or by statement overlap, weighted by record × recency, splits shown as splits. Watch rules after every snapshot: moved, diverged, resolving soon. |
+| **Paper trading** | Paper page; *Paper buy* on a Signals row; optional auto-open. | Hypothetical positions at the snapshot price, fixed or fractional-Kelly stakes, marked at every refresh, closed at 1/0 on venue resolution; estimate Brier vs market Brier. No orders, ever. |
+| **Keep the receipts** | JSON / CSV export; backups; job list with retry. | Export carries videos, predictions, plans, runs, sources, evidence, assessments, games, markets and links — never credentials. |
+
 ---
 
 ## Quick start
@@ -75,6 +112,8 @@ Stop with **Ctrl+C**. The server only ever listens on `127.0.0.1` (loopback); it
 | `npm run doctor` | Prints an environment report (Node, ffmpeg, yt-dlp, data directory, port) to paste into an issue — no secrets. |
 | `npm run backup` | Writes a consistent copy of the database + secret key into the data directory's `backups/`. |
 | `npm run eval` | Runs the Promptfoo prompt evaluations against real providers (needs keys; see `evals/README.md`). |
+| `npm run markets -- search "…"` | Read-only probe of the Polymarket public API (also `tag`, `market`, `book`) — no account needed. |
+| `npm run typecheck` | Type-checks every workspace without emitting. |
 | `npm run build` / `npm run clean` | Rebuild / remove build output (never touches your data). |
 
 Platform-specific commands, LM Studio setup, external tools, and troubleshooting: **[docs/SETUP.md](docs/SETUP.md)**.
@@ -92,6 +131,8 @@ Platform-specific commands, LM Studio setup, external tools, and troubleshooting
 5. **Save settings.** Keys are encrypted at rest and never shown again — only a masked hint like `sk-ant-…4f2a`.
 6. Pick a **Web search** provider (Brave/Tavily key, a local SearXNG URL, or Anthropic/OpenAI native search).
 7. **Try it:** Library → import `fixtures/transcripts/data-center-approvals.srt` with published date `2025-11-03` → **Extract predictions** → open a prediction → **Research** (generates the plan first, then searches, reads sources, and assesses).
+8. **Sports:** turn on **Sports Mode** in Setup, import a picks video, then **Validate all scores** on the Predictions page.
+9. **Markets (optional):** leave **Prediction markets** enabled (default), open a prediction → **Markets** → **Find markets**, accept the right proposal, then watch the **Signals** and **Paper** pages fill in as snapshots accumulate.
 
 Where your data is: shown in the Setup tab and the page footer (`%LOCALAPPDATA%\PredictionLedger` on Windows, `~/Library/Application Support/PredictionLedger` on macOS). Override with `PL_DATA_DIR`.
 
@@ -104,16 +145,17 @@ One Node.js process, one SQLite file, a browser tab. Details and rationale in **
 ```mermaid
 flowchart TB
   subgraph Browser["Your browser (same origin)"]
-    UI["React dashboard<br/>Library · Predictions · Jobs · Setup"]
+    UI["React dashboard<br/>Library · Predictions · Markets · Signals · Paper · Jobs · Setup"]
   end
   subgraph Node["Node.js process · 127.0.0.1:7317 · loopback only"]
     API["Fastify API (/api/*)<br/>Zod-validated · CSRF guard"]
     JOBS["Durable job worker<br/>SQLite-backed · restart recovery"]
-    SVC["Services<br/>ingest · transcribe · extract · plan · research · assess"]
+    SVC["Services<br/>ingest · transcribe · extract · plan · research · assess<br/>games · markets · signals · consensus · alerts · paper"]
     P1["LanguageModelProvider"]
     P2["TranscriptionProvider"]
     P3["SearchProvider"]
     P4["SourceFetcher"]
+    P5["MarketProvider"]
     SEC["SecretStore<br/>AES-256-GCM"]
   end
   subgraph Data["Data directory (outside the repo)"]
@@ -130,10 +172,11 @@ flowchart TB
     OAI["OpenAI"]
     S["Search API"]
     W["Web pages"]
+    V["Polymarket · Manifold<br/>public read APIs"]
   end
   UI --> API --> SVC
   JOBS --> SVC
-  SVC --> P1 & P2 & P3 & P4
+  SVC --> P1 & P2 & P3 & P4 & P5
   SVC --> DB & FILES
   P1 --> SEC
   P1 --> LMS & ANT & OAI
@@ -141,20 +184,24 @@ flowchart TB
   P2 --> OAI
   P3 --> S
   P4 --> W
+  P5 --> V
   SVC --> YT
 ```
 
 | Concern | Choice | Why |
 |---|---|---|
-| Runtime | Node.js 24 LTS, TypeScript | One runtime on Windows/macOS; `node:sqlite` built in — no native compile step. |
+| Runtime | Node.js ≥ 22.13 (24 LTS recommended; runs on 26), TypeScript | One runtime on Windows/macOS; `node:sqlite` built in — no native compile step. |
 | Server | Fastify 5 on `127.0.0.1` | Loopback only, schema-validated routes, redacted logs. Occupied port → walks to the next one, never kills anything. |
 | Frontend | React 18 + Vite | Built once to static files served by the same process; no separate web server in normal use. |
-| Database | SQLite (WAL) + forward-only migrations | Single file, crash-safe, backed up before every migration. Drizzle ORM evaluated in 0.3 (ADR-012). |
-| Jobs | Rows in a `jobs` table + in-process worker | Transcription and research survive restarts; bounded retries; cancellation; dedupe. |
+| Database | SQLite (WAL) + forward-only migrations (001 → 011) | Single file, crash-safe, backed up before every migration. Drizzle ORM evaluated in 0.3 (ADR-012). |
+| Jobs | Rows in a `jobs` table + in-process worker | Transcription, research, score look-ups, market matching and snapshots survive restarts; bounded retries; cancellation; dedupe keys. |
 | Secrets | AES-256-GCM, key file with owner-only permissions | Never in the browser, logs, exports, or git. |
 | Local transcription | Whisper (ONNX) inside Node via Transformers.js | Pure npm — no Python, no compiled binary. Models download once. |
 | Media / YouTube | ffmpeg, yt-dlp as child processes (argument arrays, never a shell) | Documented explicitly; npm alone does not supply them. |
 | Search | Replaceable `SearchProvider` (Brave first; SearXNG; Tavily; Anthropic/OpenAI native) | Only app-executed searches count as evidence. |
+| Sports settlement | Code-written plan, deterministic score/date parsers, rule settlement (`analysis/sports.ts`) | A final score is a fact, not a judgement; the model only reads pages the parser could not. |
+| Markets | Replaceable `MarketProvider` (Polymarket, Manifold) — read-only, unauthenticated | Snapshots and price history stored locally; links are proposals; no order endpoint is wired. |
+| Signals | Pure functions with fixture tests (`analysis/signals.ts`); computed on read | Realized edge, shrinkage and gates are inspectable numbers, not a model opinion. |
 
 **Security posture in one paragraph.** Loopback binding is not treated as a security boundary: mutating requests need a custom header a cross-origin page cannot send; outbound research fetches refuse private/loopback/link-local addresses and re-check on every redirect; uploads are stored under content-hash names and validated with ffprobe; transcripts, fetched pages, and generated prompts are treated as untrusted data that cannot change budgets, tools, or verdict rules. See [ARCHITECTURE §7](docs/ARCHITECTURE.md#7-security-model).
 
@@ -164,44 +211,49 @@ flowchart TB
 
 ```
 prediction-ledger/
-├── package.json            npm workspaces + portable scripts (setup/build/start/dev/test/clean)
-├── scripts/                cross-platform Node launchers (no bash/PowerShell required)
-│   ├── start.mjs           normal mode: run built server, open browser, clean Ctrl+C
-│   ├── dev.mjs             dev mode: tsx watch + Vite
-│   ├── setup-check.mjs     Node version + optional tools report
+├── package.json              npm workspaces + portable scripts (setup/build/start/dev/test/typecheck/clean/doctor/backup/markets/eval)
+├── scripts/                  cross-platform Node launchers (no bash/PowerShell required)
+│   ├── start.mjs             normal mode: run built server, open browser, clean Ctrl+C
+│   ├── dev.mjs               dev mode: tsx watch + Vite
+│   ├── setup-check.mjs       Node version + optional tools report
+│   ├── doctor.mjs            environment report for issues (no secrets)
+│   ├── backup.mjs            consistent DB + key backup
+│   ├── markets-probe.mjs     read-only Polymarket probe (search / tag / market / book)
+│   ├── copy-migrations.mjs   ships .sql migrations into server/dist
 │   └── clean.mjs
-├── shared/                 @prediction-ledger/shared — types shared by server and dashboard
-├── server/                 @prediction-ledger/server — Fastify API, SQLite, jobs, providers
+├── shared/                   @prediction-ledger/shared — types shared by server and dashboard
+├── server/                   @prediction-ledger/server — Fastify API, SQLite, jobs, providers
 │   └── src/
-│       ├── index.ts        entry: loopback bind, static files, shutdown
-│       ├── config.ts       OS-aware data directory, port, env vars
-│       ├── context.ts      composition root
-│       ├── settings.ts     Zod-validated settings service
-│       ├── db/             node:sqlite wrapper + migrations/NNN_*.sql
-│       ├── security/       SecretStore (AES-GCM), CSRF guard
-│       ├── jobs/           durable JobQueue
-│       ├── providers/llm/  LanguageModelProvider + Anthropic / OpenAI-compatible adapters
-│       ├── transcripts/    SRT / VTT / TXT / JSON parsers
-│       ├── analysis/       windowing, quote locator, date resolver, dedupe, prompts, schemas, structured completion
-│       ├── research/       SearchProvider adapters, guarded SourceFetcher, HTML extractor, verdict guard
-│       ├── services/       videos, predictions, plans, templates, research, export (repositories)
-│       ├── jobs/handlers/  prediction.extract, plan.generate, research.run, assessment.run
-│       ├── routes/         /api/* (see docs/API.md)
-│       └── *.test.ts       node:test suites (core, analysis, end-to-end pipeline with a fake model)
-├── fixtures/               human-reviewed transcripts, expected outcomes, canned model outputs
-├── web/                    @prediction-ledger/web — React + Vite dashboard
-│   └── src/pages/          Library · Video · Predictions (+ detail panel) · Jobs · Setup
-├── docs/
-│   ├── ARCHITECTURE.md     architecture overview v1 (components, data flow, schema, security, deps)
-│   ├── API.md              HTTP API contracts and job kinds
-│   ├── WORKED_EXAMPLE.md   the spec's worked example, end to end, on synthetic fixtures
-│   ├── BUILD_PLAN.md       requirements register, releases 0.1 → 1.0, acceptance criteria
-│   ├── SETUP.md            providers, LM Studio, external tools, data directory, troubleshooting
-│   ├── WIREFRAMES.md       screen mockups
-│   └── DECISIONS.md        architecture decision log
-├── LICENSE                 Apache-2.0
-├── NOTICE                  attribution
-├── THIRD_PARTY_NOTICES.md  licenses of non-original components
+│       ├── index.ts          entry: loopback bind, static files, market refresh timer, shutdown
+│       ├── config.ts         OS-aware data directory, port, env vars
+│       ├── context.ts        composition root (services + job handlers)
+│       ├── settings.ts       Zod-validated settings service (providers, stages, transcription, sports, markets, watch, paper…)
+│       ├── db/               node:sqlite wrapper + migrations/001_init … 011_paper.sql
+│       ├── security/         SecretStore (AES-GCM), CSRF guard
+│       ├── jobs/             durable JobQueue
+│       │   └── handlers/     extract · plan · research · assess · media · game (sports) · markets (match/snapshot/backfill) · watch
+│       ├── providers/
+│       │   ├── llm/          LanguageModelProvider: Anthropic, OpenAI-compatible (OpenAI, LM Studio)
+│       │   └── markets/      MarketProvider: Polymarket, Manifold (read-only) + registry
+│       ├── media/            ffmpeg wrapper, local upload importer, Whisper / OpenAI transcription
+│       ├── youtube/          yt-dlp wrapper, single-video importer, playlist/channel importer
+│       ├── transcripts/      SRT / VTT / TXT / JSON parsers
+│       ├── analysis/         windowing, quote locator, date resolver, dedupe, prompts, schemas, structured completion,
+│       │                     sports (score/date parsers, settlement), markets (matching), signals (edge, shrinkage, gates)
+│       ├── research/         SearchProvider adapters, guarded SourceFetcher, HTML extractor, verdict guard
+│       ├── services/         videos, predictions, plans, templates, research, games, markets, signals, consensus, alerts, paper, backup, export
+│       ├── routes/           /api/* — content, research, media, youtube, markets (+ signals, consensus, alerts, paper); see docs/API.md
+│       └── **/*.test.ts      node:test suites (81): core, analysis, sports, markets, signals, watch/consensus, paper, media, youtube, pipelines
+├── fixtures/                 human-reviewed transcripts (incl. a 30-minute one and NFL picks), expected outcomes, canned model outputs, research pages
+├── evals/                    Promptfoo configuration, prompts and assertions for the extraction/plan/assessment templates
+├── web/                      @prediction-ledger/web — React + Vite dashboard
+│   └── src/
+│       ├── pages/            Library · Video · Predictions · Markets · Signals · Paper · Jobs · Setup
+│       └── components/       PredictionDetail (quote, components, plan, evidence, history, Markets tab) · MarketLinks
+├── docs/                     see the table below
+├── LICENSE                   Apache-2.0
+├── NOTICE                    attribution
+├── THIRD_PARTY_NOTICES.md    licenses of non-original components
 └── CONTRIBUTING.md
 ```
 
@@ -220,7 +272,7 @@ prediction-ledger/
 | [docs/DECISIONS.md](docs/DECISIONS.md) | you are about to reverse a design decision. |
 | [docs/FIRST_RUN.md](docs/FIRST_RUN.md) | you are running the app for the first time on a new machine and want to report back what to fix. |
 | [docs/VERIFICATION.md](docs/VERIFICATION.md) | you want to know what has actually been executed on which platform. |
-| [docs/PREDICTION_MARKETS.md](docs/PREDICTION_MARKETS.md) | you want to pair predictions with market odds (Polymarket): what the APIs expose, the 1.5→1.8 plan, and the rules (read-only, no trading). |
+| [docs/PREDICTION_MARKETS.md](docs/PREDICTION_MARKETS.md) | you want to understand the market side: what Polymarket and Manifold expose, the ground rules (read-only, no trading), and how 1.5 → 1.9 were built. |
 | [CHANGELOG.md](CHANGELOG.md) | you want the release-by-release history. |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | you want to submit a change. |
 
@@ -235,14 +287,17 @@ prediction-ledger/
 | Brave / Tavily search | search queries from the validation plan | that provider |
 | Anthropic / OpenAI native web search | queries + assessment prompt | that provider |
 | Source fetching | requests to the cited websites | those sites |
-| YouTube import | the URL | YouTube |
-| LM Studio, SearXNG, local Whisper, transcript import | nothing | — |
+| YouTube import (single video, playlist, or channel) | the URL(s) | YouTube |
+| Prediction markets | search terms and market ids (never your predictions or keys) | Polymarket / Manifold public APIs |
+| LM Studio, SearXNG, local Whisper, transcript import, paper trading | nothing | — |
 
 Turning **Privacy → Allow internet access** off restricts the app to explicitly configured local endpoints; outcome research stays *pending* until it is turned back on. There is no telemetry.
 
 ---
 
 ## Roadmap
+
+Delivered, in order:
 
 | Release | Delivers |
 |---|---|
@@ -252,17 +307,17 @@ Turning **Privacy → Allow internet access** off restricts the app to explicitl
 | **0.4** ✓ | Local MP4/MPEG import, ffmpeg audio extraction, chunked + resumable local Whisper / OpenAI transcription with live progress. |
 | **0.5** ✓ | YouTube: consent-installed yt-dlp, captions → audio → transcript-import fallback, distinct unavailable-video messages, up-front privacy refusal. |
 | **0.6** ✓ | 30-minute labelled fixture + acceptance tests, Promptfoo suite, provider timeouts/backoff, job retry, backups, release scaffolding. |
-| **1.1.0** ✓ | Model download job + progress, model timeout setting, security tests, `npm run doctor`, first-run runbook, and the first real-machine build fixes (template names, migration files in `dist`). |
-| **1.9.0** ✓ | Paper trading (migration 011): positions, marks, resolution close, fixed / Kelly sizing, auto-open, Paper page, Setup → Paper trading. |
-| **1.8.0** ✓ | Playlist/channel import + auto-extract, consensus propositions, watch rules + alerts (migration 010), Manifold adapter, venue selection. |
-| **1.7.0** ✓ | Signals: price-history backfill (migration 009), creator records, realized-edge estimates with shrinkage, gated labels, Signals page, Setup → Signal gates. |
-| **1.6.0** ✓ | Markets in the ledger: migration 008, `market.match` / `market.snapshot` jobs, link review UI, Markets page, Setup → Prediction markets. |
-| **1.5.0** ✓ | Prediction markets: `MarketProvider` interface, read-only Polymarket adapter (Gamma + CLOB, no account), probe script, `/api/markets` routes; roadmap 1.6–1.8 in docs/PREDICTION_MARKETS.md. |
-| **1.4.0** ✓ | Game records (`games` table), `sports.resolve_game` (one look-up per matchup, deterministic score reader, rule settlement), Validate all scores, game card in the detail panel. |
-| **1.3.1** ✓ | Validate scores resolves an unknown game date from the schedule, records its provenance, then settles. |
-| **1.3.0** ✓ | Sports Mode switch, Validate scores (trusted box-score look-up, one click), track-spreads toggle, Hit/Miss/Push labels. |
+| **1.1.0** ✓ | Model download job + progress, model timeout setting, security tests, `npm run doctor`, first-run runbook, first real-machine build fixes. |
 | **1.2.0** ✓ | Sports picks: extraction rule, game-date deadlines, deterministic settlement plan, capped look-ups, settlement verdicts, dashboard chip and filter. |
-| **next** | Remaining first-run verification: `docs/FIRST_RUN.md` steps 4–10 on Windows and macOS, spikes S-3/S-4, eval scores in `docs/VERIFICATION.md`. |
+| **1.3.x** ✓ | Sports Mode switch, one-click **Validate scores** from trusted box-score sources, point-spread toggle, Hit/Miss/Push labels; schedule look-up for unknown game dates. |
+| **1.4.0** ✓ | Game records: one look-up per matchup (winner, score, date), deterministic score reader, every pick settled by rule, **Validate all scores**. |
+| **1.5.0** ✓ | Prediction markets: `MarketProvider` interface, read-only Polymarket adapter, probe script, `/api/markets` routes, integration framework. |
+| **1.6.0** ✓ | Markets in the ledger: stored markets + snapshots, proposal-only links (exact sports matchups auto-link), Markets tab and page, scheduled refresh. |
+| **1.7.0** ✓ | Signals: venue price history at the time of the claim, creator records with realized edge, shrunk estimates, gated labels, Signals page. |
+| **1.8.0** ✓ | Playlist/channel bulk import with auto-extract, consensus across channels, watch rules with local alerts, Manifold as a second venue. |
+| **1.9.0** ✓ | Paper trading: hypothetical positions (manual or auto on labelled signals), fixed / fractional-Kelly sizing, marks, resolution close, estimate-vs-market Brier. |
+
+Next, in rough priority: first end-to-end run of 1.4 → 1.9 on real videos and real venue pages (parser and matcher tuning); per-speaker creator records once diarisation exists; per-venue paper books (Manifold's mana is not dollars); Kalshi as a third venue; the remaining first-run verification in [docs/FIRST_RUN.md](docs/FIRST_RUN.md) on Windows and macOS. Real trading is not on the roadmap.
 
 Full backlog with acceptance criteria: [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md).
 

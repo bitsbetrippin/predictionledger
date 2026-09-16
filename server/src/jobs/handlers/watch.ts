@@ -13,6 +13,9 @@
 
 import type { JobContext } from "../queue.js";
 import type { AppContext } from "../../context.js";
+import { stakeFor } from "../../services/paper.js";
+
+const RANK: Record<string, number> = { none: 0, lean: 1, moderate: 2, strong: 3 };
 
 const pts = (x: number) => `${x >= 0 ? "+" : ""}${(x * 100).toFixed(1)} pts`;
 
@@ -69,7 +72,27 @@ export function makeMarketWatchHandler(ctx: AppContext) {
       if (alert) raised.push(alert.message);
     }
 
-    job.progress(100, `${raised.length} new alert(s)`);
-    return { raised: raised.length, messages: raised.slice(0, 20), open: ctx.alerts.openCount() };
+    // ---- 1.9: auto-open paper positions on labelled signals (opt-in) ----
+    const paper = s.markets.paper;
+    const opened: string[] = [];
+    if (paper.enabled && paper.autoOpen !== "off") {
+      job.progress(90, "Opening paper positions on labelled signals");
+      const book = ctx.paper.book({ enabled: true, bankroll: paper.bankroll });
+      let openCount = book.openCount;
+      for (const sig of ctx.signals.signals(s.markets.signals)) {
+        if (RANK[sig.confidence] < RANK[paper.autoOpen] || sig.edge === undefined || sig.edge <= 0 || sig.marketPrice === undefined) continue;
+        if (openCount >= paper.maxOpenPositions) break;
+        if (ctx.paper.openOn(sig.marketId, sig.side)) continue;
+        const { stake, note } = stakeFor(paper, book.bankroll, sig.marketPrice, sig.estimate);
+        if (stake <= 0) continue;
+        const pos = ctx.paper.open({ marketId: sig.marketId, side: sig.side, price: sig.marketPrice, stake, source: "auto", edge: sig.edge, estimate: sig.estimate, confidence: sig.confidence, predictionIds: sig.contributions.map((c) => c.predictionId), notes: `auto (${sig.confidence}); ${note}` });
+        opened.push(`${sig.question} — ${sig.side} @ ${(sig.marketPrice * 100).toFixed(0)}% for ${stake}`);
+        openCount++;
+        void pos;
+      }
+    }
+
+    job.progress(100, `${raised.length} new alert(s)${opened.length ? `, ${opened.length} paper position(s) opened` : ""}`);
+    return { raised: raised.length, messages: raised.slice(0, 20), open: ctx.alerts.openCount(), paperOpened: opened };
   };
 }

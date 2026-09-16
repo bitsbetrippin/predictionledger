@@ -120,6 +120,17 @@ Provider calls made by every job now go through a resilience wrapper: 120 s per-
 
 Settings gain `sports: { enabled, trackSpreads }`.
 
+## Release 1.9 — paper trading
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/paper` | `{ book: PaperBook, positions: PaperPosition[], sizing }` — marks open positions first. |
+| POST | `/api/paper/positions` | `{ marketId, side, stake?, notes?, predictionIds? }` → `201 PaperPosition` at the latest snapshot price; stake from Setup sizing (and the matching signal's estimate) when omitted. `409 paper_disabled / no_price / already_open / max_open / no_stake`. |
+| POST | `/api/paper/positions/:id/close` | `{ price? }` (default: current mark) → closed position with `realizedPnl`. |
+| DELETE | `/api/paper/positions/:id` · POST `/api/paper/mark` · POST `/api/paper/reset` | Remove one / mark all now / delete every position. |
+
+Settings gain `markets.paper { enabled, bankroll, sizing, fixedStake, kellyFraction, maxStakeFraction, autoOpen, maxOpenPositions }`. `market.snapshot` marks open positions after refreshing; `market.watch` returns `paperOpened[]` when auto-open fires.
+
 ## Release 1.8 — consensus, alerts, bulk import, Manifold
 
 | Method | Path | Notes |

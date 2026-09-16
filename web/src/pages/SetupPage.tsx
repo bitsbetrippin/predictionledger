@@ -360,6 +360,18 @@ export function SetupPage() {
           <label className="field"><span>Divergence (pts)</span><input type="number" min={1} max={100} value={settings.markets.watch.divergencePts} onChange={(e) => update((s) => ((s.markets.watch.divergencePts = Math.max(1, Number(e.target.value) || 1)), s))} /></label>
           <label className="field"><span>Resolving within (days)</span><input type="number" min={1} max={365} value={settings.markets.watch.resolveDays} onChange={(e) => update((s) => ((s.markets.watch.resolveDays = Math.max(1, Number(e.target.value) || 1)), s))} /></label>
         </div>
+        <h3>Paper trading</h3>
+        <p className="muted small">Hypothetical positions only; the app never places an order. Positions are marked at every snapshot and close on venue resolution. Auto-open records a position whenever a signal reaches the chosen label.</p>
+        <div className="grid-3">
+          <label className="row"><input type="checkbox" checked={settings.markets.paper.enabled} onChange={(e) => update((s) => ((s.markets.paper.enabled = e.target.checked), s))} /> <span>Enable paper trading</span></label>
+          <label className="field"><span>Starting bankroll ($)</span><input type="number" min={1} step={100} value={settings.markets.paper.bankroll} onChange={(e) => update((s) => ((s.markets.paper.bankroll = Math.max(1, Number(e.target.value) || 1)), s))} /></label>
+          <label className="field"><span>Sizing</span><select value={settings.markets.paper.sizing} onChange={(e) => update((s) => ((s.markets.paper.sizing = e.target.value as "fixed" | "kelly"), s))}><option value="fixed">Fixed stake</option><option value="kelly">Fractional Kelly on the signal's edge</option></select></label>
+          <label className="field"><span>Fixed stake ($)</span><input type="number" min={1} value={settings.markets.paper.fixedStake} onChange={(e) => update((s) => ((s.markets.paper.fixedStake = Math.max(0.01, Number(e.target.value) || 1)), s))} /></label>
+          <label className="field"><span>Kelly fraction</span><input type="number" min={0.01} max={1} step={0.05} value={settings.markets.paper.kellyFraction} onChange={(e) => update((s) => ((s.markets.paper.kellyFraction = Math.min(1, Math.max(0.01, Number(e.target.value) || 0.25))), s))} /><small>0.25 = quarter Kelly (recommended; full Kelly assumes the edge is exact).</small></label>
+          <label className="field"><span>Max stake (fraction of bankroll)</span><input type="number" min={0.001} max={1} step={0.01} value={settings.markets.paper.maxStakeFraction} onChange={(e) => update((s) => ((s.markets.paper.maxStakeFraction = Math.min(1, Math.max(0.001, Number(e.target.value) || 0.1))), s))} /></label>
+          <label className="field"><span>Auto-open on signals</span><select value={settings.markets.paper.autoOpen} onChange={(e) => update((s) => ((s.markets.paper.autoOpen = e.target.value as "off" | "lean" | "moderate" | "strong"), s))}><option value="off">Off — open by hand only</option><option value="lean">Lean or stronger</option><option value="moderate">Moderate or stronger</option><option value="strong">Strong only</option></select></label>
+          <label className="field"><span>Max open positions</span><input type="number" min={1} max={1000} value={settings.markets.paper.maxOpenPositions} onChange={(e) => update((s) => ((s.markets.paper.maxOpenPositions = Math.max(1, Number(e.target.value) || 1)), s))} /></label>
+        </div>
         <h3>Signal gates</h3>
         <p className="muted small">A signal label appears only when a contributor's record, the edge, the market's liquidity and the deadlines all clear these thresholds. Realized edge is shrunk by n/(n+k) toward zero; k is the prior weight.</p>
         <div className="grid-3">

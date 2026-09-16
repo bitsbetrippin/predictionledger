@@ -236,7 +236,7 @@ export const fmtClock = (s?: number) => {
 // Release 1.6 — prediction markets (read-only)
 // ---------------------------------------------------------------------------
 
-import type { Alert, CreatorRecord, MarketProviderId, MarketRecord, MarketSignal, MarketSnapshot, PredictionMarketLink, Proposition } from "@prediction-ledger/shared";
+import type { Alert, CreatorRecord, MarketProviderId, MarketRecord, MarketSignal, MarketSnapshot, PaperBook, PaperPosition, PredictionMarketLink, Proposition } from "@prediction-ledger/shared";
 
 export interface MarketSummaryView {
   provider: MarketProviderId; id: string; slug: string; url: string; question: string; description?: string; event?: { id: string; slug: string; title: string };
@@ -282,3 +282,15 @@ export const alertsApi = {
   dismissAll: () => request<{ dismissed: number }>("POST", "/api/alerts/dismiss-all"),
   runNow: () => request<{ jobId: string }>("POST", "/api/markets/watch-run"),
 };
+
+// 1.9 — paper trading (hypothetical positions; never orders)
+export interface PaperResponse { book: PaperBook; positions: PaperPosition[]; sizing: AppSettings["markets"]["paper"] }
+export const paperApi = {
+  get: () => request<PaperResponse>("GET", "/api/paper"),
+  open: (body: { marketId: string; side: string; stake?: number; notes?: string; predictionIds?: string[] }) => request<PaperPosition>("POST", "/api/paper/positions", body),
+  close: (id: string, price?: number) => request<PaperPosition>("POST", `/api/paper/positions/${id}/close`, price !== undefined ? { price } : {}),
+  remove: (id: string) => request<{ ok: true }>("DELETE", `/api/paper/positions/${id}`),
+  mark: () => request<{ marked: number; closed: number }>("POST", "/api/paper/mark"),
+  reset: () => request<{ deleted: number }>("POST", "/api/paper/reset"),
+};
+export const fmtPnl = (n?: number) => (n === undefined ? "—" : `${n >= 0 ? "+" : "−"}$${Math.abs(n).toFixed(2)}`);

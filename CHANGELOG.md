@@ -4,6 +4,18 @@ All notable changes to Prediction Ledger. Format follows [Keep a Changelog](http
 
 Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
 
+## [1.9.0] — 2026-09-16 — Paper trading
+The intermediate step the markets plan called for before real money is ever discussed: a hypothetical position ledger that scores the signals. **The app still never places an order.**
+### Added
+- Migration 011: `paper_positions` (market, side, opened price, stake, shares, source manual / signal / auto, edge / estimate / label at open, linked prediction ids, status, close price and reason, realized P&L, last mark) and `paper_marks` (price and unrealized P&L per mark).
+- `PaperService`: open (0 < price < 1), mark every open position at the latest non-history snapshot after each refresh, close at 1 / 0 when the venue resolves the market (Polymarket resolution is now detected from UMA status or a closed market with a side at ≥ 0.98; Manifold from `isResolved`), manual close at the mark, reset. The book reports bankroll, equity, realized / unrealized, W/L, return on stake, an equity curve from marks, and — over resolved positions that had a signal at open — the creators' estimate Brier next to the market-price Brier: the one number that says whether following the signals beat the market.
+- Sizing (`stakeFor`): fixed stake, or fractional Kelly on the signal's edge — f* = (estimate − price) / (1 − price), × the Kelly fraction (default ¼), capped at a fraction of bankroll (default 10 %).
+- Auto-open (off by default): after each watch run, open a paper position on every signal at or above the chosen label that has no open position yet, up to the max-open limit.
+- Routes: `GET /api/paper`, `POST /api/paper/positions { marketId, side, stake?, notes? }`, `POST /api/paper/positions/:id/close { price? }`, `DELETE /api/paper/positions/:id`, `POST /api/paper/mark`, `POST /api/paper/reset`.
+- UI: **Paper** page (book stats, equity curve, positions with close / remove, mark now, reset), a **Paper buy** button on each expanded Signals row, Setup → Prediction markets → Paper trading (bankroll, sizing, Kelly fraction, cap, auto-open label, max open).
+### Notes
+- Decision: the owner's "proceed to next build" was taken as go-ahead for the paper ledger flagged in 1.8; it is fully reversible (Setup switch; Reset book). 81 tests.
+
 ## [1.8.0] — 2026-09-16 — Consensus across channels, watch rules, second venue, bulk import
 Last step of [docs/PREDICTION_MARKETS.md](docs/PREDICTION_MARKETS.md) as planned: the range of bets across many channels, and a watch that says when the market moves against them. Paper trading is deliberately not included — it is a product decision (see the doc).
 ### Added

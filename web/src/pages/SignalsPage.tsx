@@ -9,7 +9,7 @@
  */
 import { useEffect, useState } from "react";
 import type { Alert, MarketSignal, Proposition } from "@prediction-ledger/shared";
-import { alertsApi, consensusApi, fmtEdge, fmtMoney, fmtPct, pollJob, signalsApi, type SignalsResponse } from "../api";
+import { alertsApi, consensusApi, fmtEdge, fmtMoney, fmtPct, paperApi, pollJob, signalsApi, type SignalsResponse } from "../api";
 
 const ALERT_LABEL: Record<Alert["kind"], string> = { market_move: "Market moved", divergence: "Divergence", resolving_soon: "Resolving soon" };
 
@@ -93,6 +93,9 @@ export function SignalsPage() {
                         <tr key={`${key}-detail`} className="detail-row">
                           <td colSpan={8}>
                             <div className="small"><strong>Why:</strong> {s.reasons.join(" · ")}</div>
+                            <div className="row small">
+                              <button type="button" disabled={!!busy || s.marketPrice === undefined} onClick={async () => { setBusy("Opening paper position…"); try { await paperApi.open({ marketId: s.marketId, side: s.side }); setError(null); window.location.hash = "#/paper"; } catch (e) { setError((e as Error).message); } finally { setBusy(null); } }} title="Record a hypothetical position at the current market price — no order is placed">Paper buy {s.side} @ {fmtPct(s.marketPrice)}</button>
+                            </div>
                             <ul className="plain small">
                               {s.contributions.map((c) => (
                                 <li key={c.linkId}>

@@ -65,6 +65,9 @@ export function normalizeGammaMarket(m: GammaMarket, retrievedAt = new Date().to
     bestAsk: i === 0 ? m.bestAsk : m.bestBid !== undefined ? +(1 - m.bestBid).toFixed(4) : undefined,
   }));
   const statuses = jsonList(m.umaResolutionStatuses);
+  // Resolution (1.9): UMA says resolved, or the market is closed with one side priced at (almost) 1.
+  const winner = outcomes.find((o) => o.price !== undefined && o.price >= 0.98);
+  const resolved = statuses.includes("resolved") || (m.closed === true && !!winner);
   const ev = m.events?.[0];
   return {
     provider: "polymarket",
@@ -84,7 +87,8 @@ export function normalizeGammaMarket(m: GammaMarket, retrievedAt = new Date().to
     active: m.active === true,
     closed: m.closed === true,
     restricted: m.restricted,
-    resolved: statuses.includes("resolved") || undefined,
+    resolved: resolved || undefined,
+    resolvedOutcome: resolved ? winner?.label : undefined,
     tags: m.tags?.map((t) => t.slug ?? t.label ?? "").filter(Boolean),
     retrievedAt,
   };

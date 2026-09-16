@@ -13,6 +13,7 @@ import type { AppContext } from "../context.js";
 import { z } from "zod";
 import { MarketApiError, type MarketProvider } from "../providers/markets/types.js";
 import { createMarketProvider, isMarketProviderId } from "../providers/markets/registry.js";
+import { stakeFor } from "../services/paper.js";
 
 /** Accept an id, a slug, or a venue URL (polymarket.com/event/<slug>, manifold.markets/<user>/<slug>). */
 export function marketKeyFromInput(input: string): string {
@@ -181,6 +182,47 @@ export function registerMarketRoutes(app: FastifyInstance, ctx: AppContext): voi
   app.post<{ Body: { ids?: string[] } }>("/api/alerts/seen", async (req) => { ctx.alerts.markSeen(Array.isArray(req.body?.ids) ? req.body!.ids!.filter((x) => typeof x === "string").slice(0, 500) : []); return { ok: true }; });
   app.post<{ Params: { id: string } }>("/api/alerts/:id/dismiss", async (req, reply) => ctx.alerts.dismiss(req.params.id) ?? reply.code(404).send({ error: "not_found" }));
   app.post("/api/alerts/dismiss-all", async () => ({ dismissed: ctx.alerts.dismissAll() }));
+  // ---- 1.9 — paper trading (hypothetical; never an order) ----
+  app.get("/api/paper", async () => {
+    const cfg = ctx.settings.getPersisted().markets.paper;
+    if (cfg.enabled) ctx.paper.markAll();
+    return { book: ctx.paper.book({ enabled: cfg.enabled, bankroll: cfg.bankroll }), positions: ctx.paper.list(), sizing: cfg };
+  });
+  const openSchema = z.object({ marketId: z.string().min(1), side: z.string().min(1).max(80), stake: z.number().positive().optional(), notes: z.string().max(500).optional(), predictionIds: z.array(z.string()).max(50).optional() });
+  app.post("/api/paper/positions", async (req, reply) => {
+    const parsed = openSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", issues: parsed.error.issues });
+    const cfg = ctx.settings.getPersisted().markets.paper;
+    if (!cfg.enabled) return reply.code(409).send({ error: "paper_disabled", message: "Paper trading is turned off in Setup → Prediction markets." });
+    const m = ctx.markets.get(parsed.data.marketId);
+    if (!m) return reply.code(404).send({ error: "not_found", message: "Market is not in the ledger." });
+    const price = m.latest?.prices.find((x) => x.label === parsed.data.side)?.price;
+    if (price === undefined) return reply.code(409).send({ error: "no_price", message: `No snapshot price for side "${parsed.data.side}"; refresh the market first.` });
+    if (ctx.paper.openOn(m.id, parsed.data.side)) return reply.code(409).send({ error: "already_open", message: "A paper position on this side is already open." });
+    const book = ctx.paper.book({ enabled: true, bankroll: cfg.bankroll });
+    if (book.openCount >= cfg.maxOpenPositions) return reply.code(409).send({ error: "max_open", message: `Max open paper positions (${cfg.maxOpenPositions}) reached.` });
+    const sig = ctx.signals.signals(ctx.settings.getPersisted().markets.signals).find((x) => x.marketId === m.id && x.side === parsed.data.side);
+    const sized = parsed.data.stake !== undefined ? { stake: parsed.data.stake, note: "stake set by hand" } : stakeFor(cfg, book.bankroll, price, sig?.estimate);
+    if (sized.stake <= 0) return reply.code(409).send({ error: "no_stake", message: sized.note });
+    try {
+      const pos = ctx.paper.open({ marketId: m.id, side: parsed.data.side, price, stake: sized.stake, source: sig ? "signal" : "manual", edge: sig?.edge, estimate: sig?.estimate, confidence: sig?.confidence, predictionIds: parsed.data.predictionIds ?? sig?.contributions.map((c) => c.predictionId), notes: parsed.data.notes ?? sized.note });
+      return reply.code(201).send(pos);
+    } catch (err) {
+      return reply.code(400).send({ error: "invalid_request", message: (err as Error).message });
+    }
+  });
+  app.post<{ Params: { id: string }; Body: { price?: number } }>("/api/paper/positions/:id/close", async (req, reply) => {
+    const p = ctx.paper.get(req.params.id);
+    if (!p) return reply.code(404).send({ error: "not_found" });
+    if (p.status === "closed") return p;
+    const price = typeof req.body?.price === "number" ? req.body.price : p.currentPrice ?? p.openedPrice;
+    if (!(price >= 0 && price <= 1)) return reply.code(400).send({ error: "invalid_request", message: "price must be 0–1" });
+    return ctx.paper.close(p.id, price, "manual");
+  });
+  app.delete<{ Params: { id: string } }>("/api/paper/positions/:id", async (req, reply) => (ctx.paper.delete(req.params.id) ? { ok: true } : reply.code(404).send({ error: "not_found" })));
+  app.post("/api/paper/mark", async () => ctx.paper.markAll());
+  app.post("/api/paper/reset", async () => ({ deleted: ctx.paper.reset() }));
+
   app.post("/api/markets/watch-run", async (_req, reply) => {
     const jobId = ctx.jobs.enqueue({ kind: "market.watch", subjectType: "market", subjectId: "all", payload: {}, dedupeKey: "market.watch:all", maxAttempts: 1 });
     return reply.code(202).send({ jobId });

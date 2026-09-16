@@ -103,6 +103,20 @@ export interface AppSettings {
       /** Venue liquidity (quote currency) below which no label is shown. */
       minLiquidity: number;
     };
+    /** 1.9 — paper trading: hypothetical positions marked against snapshots. Never places orders. */
+    paper: {
+      enabled: boolean;
+      /** Starting bankroll in the venue's quote unit (Polymarket: USDC-equivalent dollars). */
+      bankroll: number;
+      /** "fixed" = every position stakes `fixedStake`; "kelly" = fractional Kelly on the signal's edge, capped at `maxStakeFraction` of bankroll. */
+      sizing: "fixed" | "kelly";
+      fixedStake: number;
+      kellyFraction: number;
+      maxStakeFraction: number;
+      /** Open a paper position automatically when a signal reaches this label (off = never). */
+      autoOpen: "off" | "lean" | "moderate" | "strong";
+      maxOpenPositions: number;
+    };
     /** 1.8 — watch rules evaluated after every snapshot run. */
     watch: {
       enabled: boolean;
@@ -891,4 +905,59 @@ export interface PlaylistImportRequest {
   limit?: number;
   /** Extract predictions automatically once each transcript lands. */
   autoExtract?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Release 1.9 — paper trading (hypothetical positions; no orders, ever)
+// ---------------------------------------------------------------------------
+
+export interface PaperPosition {
+  id: string;
+  marketId: string;
+  side: string;
+  openedAt: string;
+  openedPrice: number;
+  stake: number;
+  shares: number;
+  source: "manual" | "signal" | "auto";
+  edgeAtOpen?: number;
+  estimateAtOpen?: number;
+  confidenceAtOpen?: SignalConfidence;
+  predictionIds: string[];
+  notes?: string;
+  status: "open" | "closed";
+  closedAt?: string;
+  closedPrice?: number;
+  closeReason?: "manual" | "resolved" | "ledger";
+  realizedPnl?: number;
+  lastMarkPrice?: number;
+  lastMarkedAt?: string;
+  /** Derived for the UI: current price and unrealized P&L (open), or the outcome (closed). */
+  currentPrice?: number;
+  unrealizedPnl?: number;
+  market?: { question: string; url: string; endDate?: string; provider: MarketProviderId; resolved: boolean; resolvedOutcome?: string };
+}
+
+export interface PaperBook {
+  enabled: boolean;
+  bankrollStart: number;
+  /** bankrollStart + realized P&L. */
+  bankroll: number;
+  /** bankroll + unrealized P&L of open positions. */
+  equity: number;
+  realizedPnl: number;
+  unrealizedPnl: number;
+  openCount: number;
+  closedCount: number;
+  wins: number;
+  losses: number;
+  /** Total stake ever committed. */
+  staked: number;
+  /** realized P&L / stake of closed positions. */
+  returnOnStake?: number;
+  /** Over closed positions that had an estimate at open: mean (estimate − outcome)² vs mean (market price at open − outcome)². Lower is better; the gap is whether the signals helped. */
+  brierEstimate?: number;
+  brierMarket?: number;
+  /** Equity over time from marks (newest last). */
+  curve: { at: string; equity: number }[];
 }

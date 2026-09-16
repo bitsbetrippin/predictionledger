@@ -27,6 +27,7 @@ import { MarketService } from "./services/markets.js";
 import { SignalService } from "./services/signals.js";
 import { AlertService } from "./services/alerts.js";
 import { ConsensusService } from "./services/consensus.js";
+import { PaperService } from "./services/paper.js";
 import { makeMarketWatchHandler } from "./jobs/handlers/watch.js";
 import { makePlaylistImportHandler } from "./youtube/playlist.js";
 import { GuardedFetcher, type SourceFetcher } from "./research/fetcher.js";
@@ -57,6 +58,8 @@ export interface AppContext {
   /** 1.8: watch-rule alerts and cross-channel consensus. */
   alerts: AlertService;
   consensus: ConsensusService;
+  /** 1.9: paper-trading ledger (hypothetical positions; never orders). */
+  paper: PaperService;
   fetcher: SourceFetcher;
   /** Builds the transcription engine selected in Setup (or a test override). */
   transcription: () => TranscriptionProvider;
@@ -89,6 +92,7 @@ export function createContext(overrides: Partial<Pick<AppContext, "fetcher" | "t
     signals: new SignalService(db),
     alerts: new AlertService(db),
     consensus: new ConsensusService(db, new SignalService(db)),
+    paper: new PaperService(db),
     fetcher: overrides.fetcher ?? new GuardedFetcher(),
     transcription:
       overrides.transcription ??

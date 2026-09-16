@@ -70,6 +70,18 @@ export const persistedSettingsSchema = z.object({
           minLiquidity: z.number().min(0).default(10000),
         })
         .default({ priorWeight: 10, minSettledLean: 3, minSettledModerate: 8, minSettledStrong: 20, minLiquidity: 10000 }),
+      paper: z
+        .object({
+          enabled: z.boolean().default(true),
+          bankroll: z.number().min(1).max(1e9).default(1000),
+          sizing: z.enum(["fixed", "kelly"]).default("fixed"),
+          fixedStake: z.number().min(0.01).max(1e8).default(25),
+          kellyFraction: z.number().min(0.01).max(1).default(0.25),
+          maxStakeFraction: z.number().min(0.001).max(1).default(0.1),
+          autoOpen: z.enum(["off", "lean", "moderate", "strong"]).default("off"),
+          maxOpenPositions: z.number().int().min(1).max(1000).default(25),
+        })
+        .default({ enabled: true, bankroll: 1000, sizing: "fixed", fixedStake: 25, kellyFraction: 0.25, maxStakeFraction: 0.1, autoOpen: "off", maxOpenPositions: 25 }),
       watch: z
         .object({
           enabled: z.boolean().default(true),
@@ -79,7 +91,7 @@ export const persistedSettingsSchema = z.object({
         })
         .default({ enabled: true, movePts: 10, divergencePts: 10, resolveDays: 7 }),
     })
-    .default({ enabled: true, provider: "polymarket", venues: ["polymarket"], refreshHours: 6, snapshotBudget: 50, autoLinkSports: true, signals: { priorWeight: 10, minSettledLean: 3, minSettledModerate: 8, minSettledStrong: 20, minLiquidity: 10000 }, watch: { enabled: true, movePts: 10, divergencePts: 10, resolveDays: 7 } }),
+    .default({ enabled: true, provider: "polymarket", venues: ["polymarket"], refreshHours: 6, snapshotBudget: 50, autoLinkSports: true, signals: { priorWeight: 10, minSettledLean: 3, minSettledModerate: 8, minSettledStrong: 20, minLiquidity: 10000 }, paper: { enabled: true, bankroll: 1000, sizing: "fixed", fixedStake: 25, kellyFraction: 0.25, maxStakeFraction: 0.1, autoOpen: "off", maxOpenPositions: 25 }, watch: { enabled: true, movePts: 10, divergencePts: 10, resolveDays: 7 } }),
   youtube: z
     .object({
       captions: z.enum(["manual-then-auto", "manual-only", "never"]).default("manual-then-auto"),
@@ -131,7 +143,7 @@ export const DEFAULT_SETTINGS: PersistedSettings = {
     overlapSeconds: 5,
   },
   sports: { enabled: false, trackSpreads: true },
-  markets: { enabled: true, provider: "polymarket", venues: ["polymarket"], refreshHours: 6, snapshotBudget: 50, autoLinkSports: true, signals: { priorWeight: 10, minSettledLean: 3, minSettledModerate: 8, minSettledStrong: 20, minLiquidity: 10000 }, watch: { enabled: true, movePts: 10, divergencePts: 10, resolveDays: 7 } },
+  markets: { enabled: true, provider: "polymarket", venues: ["polymarket"], refreshHours: 6, snapshotBudget: 50, autoLinkSports: true, signals: { priorWeight: 10, minSettledLean: 3, minSettledModerate: 8, minSettledStrong: 20, minLiquidity: 10000 }, paper: { enabled: true, bankroll: 1000, sizing: "fixed", fixedStake: 25, kellyFraction: 0.25, maxStakeFraction: 0.1, autoOpen: "off", maxOpenPositions: 25 }, watch: { enabled: true, movePts: 10, divergencePts: 10, resolveDays: 7 } },
   youtube: { captions: "manual-then-auto", allowAudioDownload: true, captionLanguage: "auto" },
   search: { provider: "none" },
   limits: { concurrency: 2, maxSearchesPerRun: 8, maxSourcesPerRun: 12, requestsPerMinute: 30, modelTimeoutSeconds: 120 },

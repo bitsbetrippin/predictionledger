@@ -17,9 +17,10 @@ import { PredictionsPage } from "./pages/PredictionsPage";
 import { JobsPage } from "./pages/JobsPage";
 import { MarketsPage } from "./pages/MarketsPage";
 import { SignalsPage } from "./pages/SignalsPage";
+import { PaperPage } from "./pages/PaperPage";
 
 export interface Route {
-  name: "library" | "video" | "predictions" | "markets" | "signals" | "jobs" | "setup";
+  name: "library" | "video" | "predictions" | "markets" | "signals" | "paper" | "jobs" | "setup";
   id?: string;
   query: URLSearchParams;
 }
@@ -32,6 +33,7 @@ export function parseHash(hash: string): Route {
   if (parts[0] === "predictions") return { name: "predictions", query };
   if (parts[0] === "markets") return { name: "markets", query };
   if (parts[0] === "signals") return { name: "signals", query };
+  if (parts[0] === "paper") return { name: "paper", query };
   if (parts[0] === "jobs") return { name: "jobs", query };
   if (parts[0] === "setup") return { name: "setup", query };
   return { name: "library", query };
@@ -46,6 +48,7 @@ const TABS: { name: Route["name"]; label: string; to: string }[] = [
   { name: "predictions", label: "Predictions", to: "/predictions" },
   { name: "markets", label: "Markets", to: "/markets" },
   { name: "signals", label: "Signals", to: "/signals" },
+  { name: "paper", label: "Paper", to: "/paper" },
   { name: "jobs", label: "Jobs", to: "/jobs" },
   { name: "setup", label: "Setup", to: "/setup" },
 ];
@@ -104,6 +107,7 @@ export function App() {
         {route.name === "predictions" && <PredictionsPage initialVideoId={route.query.get("videoId") ?? undefined} initialPredictionId={route.query.get("id") ?? undefined} />}
         {route.name === "markets" && <MarketsPage />}
         {route.name === "signals" && <SignalsPage />}
+        {route.name === "paper" && <PaperPage />}
         {route.name === "jobs" && <JobsPage />}
         {route.name === "setup" && <SetupPage />}
       </main>

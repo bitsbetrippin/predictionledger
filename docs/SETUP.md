@@ -14,6 +14,8 @@ Setup → **Prediction markets** turns on read-only Polymarket data (default on;
 
 **Consensus, alerts and bulk import (1.8).** Library → *Import a playlist or channel* queues a whole channel (newest first, up to the limit you set) and can extract predictions as each transcript lands. Signals → *Consensus across channels* groups the same claim across videos and shows a split room as a split. Watch rules (Setup → Prediction markets → Watch rules) raise local alerts — a market moved, creators and the market diverge, a market resolves soon — listed on the Signals page with a count in the nav; nothing is sent anywhere. Setup → Venues adds Manifold (play-money) beside Polymarket; searches, links and snapshots then cover both.
 
+**Paper trading (1.9).** The Paper page keeps hypothetical positions — never orders. Open one from an expanded Signals row (*Paper buy*), or set Setup → Prediction markets → Paper trading → *Auto-open* so watch runs open positions on labelled signals. Sizing is a fixed stake or fractional Kelly on the signal's edge, capped at a fraction of the bankroll. Positions are marked at every snapshot and close at 1 or 0 when the venue resolves the market; the book shows equity, realized and unrealized P&L, and the creators' estimate Brier beside the market's — lower is better, and the gap is whether the signals helped. *Reset book* wipes it.
+
 ## 1. Prerequisites
 
 | Requirement | Windows | macOS | Notes |

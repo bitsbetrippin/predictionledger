@@ -59,6 +59,11 @@ export function makeMarketSnapshotHandler(ctx: AppContext) {
         failed.push(`${m.question}: ${(err as Error).message}`);
       }
     }
+    // 1.9: mark open paper positions at the fresh prices; close the ones whose market resolved.
+    if (ctx.settings.getPersisted().markets.paper.enabled) {
+      const m = ctx.paper.markAll();
+      if (m.closed > 0) failed.push(`(info) ${m.closed} paper position(s) closed on resolution`);
+    }
     // 1.8: watch rules run over the fresh snapshots.
     if (ctx.settings.getPersisted().markets.watch.enabled && ok > 0) ctx.jobs.enqueue({ kind: "market.watch", subjectType: "market", subjectId: "all", payload: {}, dedupeKey: "market.watch:all", maxAttempts: 1 });
     job.progress(100, `${ok} market(s) refreshed${failed.length ? `, ${failed.length} failed` : ""}`);

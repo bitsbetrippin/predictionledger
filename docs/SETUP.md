@@ -6,6 +6,10 @@ This guide covers everything that is *not* just `npm run setup` + `npm start`. T
 
 ---
 
+## Prediction markets (1.6)
+
+Setup → **Prediction markets** turns on read-only Polymarket data (default on; needs internet). Open a prediction → **Markets** → **Find markets** to get scored proposals; accept the one whose resolution rules really match the claim. Sports picks link automatically when the two teams, the game date and the pick type all match a game market (switch that off in Setup if you prefer to review). The **Markets** page lists everything stored, lets you search the venue and *watch* a market, and refreshes prices on the interval you set (0 = manual). Nothing is ever traded; no account is needed.
+
 ## 1. Prerequisites
 
 | Requirement | Windows | macOS | Notes |

@@ -135,6 +135,8 @@ export function registerResearchRoutes(app: FastifyInstance, ctx: AppContext): v
       evidence: ctx.research.allEvidence(),
       assessments: ctx.research.allAssessments(),
       games: ctx.games.list(),
+      markets: ctx.markets.list(),
+      marketLinks: ctx.markets.allLinks(),
     };
     reply.header("content-disposition", `attachment; filename="prediction-ledger-export-${bundle.exportedAt.slice(0, 10)}.json"`);
     return bundle;

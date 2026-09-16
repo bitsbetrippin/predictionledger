@@ -70,6 +70,11 @@ export function normalizeSportsPick(raw: { sport: string; league?: string | null
   };
 }
 
+/** Loose team-name equality: "Chiefs" ~ "Kansas City Chiefs" ~ "KC Chiefs". */
+export function sameTeamName(a: string, b: string): boolean {
+  return sameTeam(a, b);
+}
+
 function sameTeam(a: string, b: string): boolean {
   const na = a.toLowerCase().replace(/[^a-z0-9]/g, "");
   const nb = b.toLowerCase().replace(/[^a-z0-9]/g, "");

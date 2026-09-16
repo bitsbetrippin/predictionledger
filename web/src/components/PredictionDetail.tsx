@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { EVIDENCE_ASSESSMENT_LABEL, TIME_STATUS_LABEL, type Assessment, type ComponentKind, type EvidenceItem, type Game, type JobSummary, type PredictionEdit, type ValidationPlan } from "@prediction-ledger/shared";
 import { content, fmtClock, type PredictionFull, type RunDetail } from "../api";
+import { MarketLinks } from "./MarketLinks";
 
 const KIND_LABEL: Record<ComponentKind, string> = { future_claim: "future claim", premise: "premise", causal_link: "causal link" };
 
@@ -21,7 +22,7 @@ export function PredictionDetail(props: {
   onClose: () => void;
 }) {
   const p = props.prediction;
-  const [tab, setTab] = useState<"plan" | "evidence" | "history">(p.assessments?.length ? "evidence" : "plan");
+  const [tab, setTab] = useState<"plan" | "evidence" | "history" | "markets">(p.assessments?.length ? "evidence" : "plan");
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const planRunning = props.planJob && (props.planJob.status === "queued" || props.planJob.status === "running");
@@ -165,6 +166,7 @@ export function PredictionDetail(props: {
         <button type="button" className={tab === "plan" ? "tab active" : "tab"} onClick={() => setTab("plan")}>Validation plan {p.plans.length ? `(v${p.plans[0].version})` : ""}</button>
         <button type="button" className={tab === "evidence" ? "tab active" : "tab"} onClick={() => setTab("evidence")}>Evidence {latest ? `(${latest.supportingIds.length + latest.contradictingIds.length} cited)` : ""}</button>
         <button type="button" className={tab === "history" ? "tab active" : "tab"} onClick={() => setTab("history")}>History ({p.revisions.length + p.plans.length + (p.assessments?.length ?? 0)})</button>
+        <button type="button" className={tab === "markets" ? "tab active" : "tab"} onClick={() => setTab("markets")}>Markets</button>
       </div>
 
       {tab === "plan" && (p.plans.length === 0 ? (
@@ -175,6 +177,7 @@ export function PredictionDetail(props: {
       {tab === "evidence" && (latest ? <EvidenceView prediction={p} assessment={latest} /> : (
         <div className="empty-state"><p className="muted">No research yet. Research runs the plan's queries through your configured search provider, fetches the pages, and stores every excerpt it cites.</p></div>
       ))}
+      {tab === "markets" && <MarketLinks predictionId={p.id} kind={p.kind} />}
       {tab === "history" && (
         <ul className="plain history">
           {(p.assessments ?? []).map((a) => <li key={a.id}>{a.createdAt.slice(0, 16).replace("T", " ")} — assessment v{a.version}: <strong>{EVIDENCE_ASSESSMENT_LABEL[a.evidenceAssessment]}</strong> ({a.confidence}) · plan v{a.planVersion} · {a.provider}{a.model ? ` (${a.model})` : ""}</li>)}

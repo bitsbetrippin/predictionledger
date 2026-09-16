@@ -320,6 +320,30 @@ export function SetupPage() {
         <small className="muted">Game picks are detected even with Sports Mode off; the switch tells the extractor to look for them and ignore analysis chatter. Trusted score sources: league sites, ESPN, AP, CBS/Fox/NBC/Yahoo Sports, BBC/Sky, the Reference sites.</small>
       </fieldset>
 
+      <h2>Prediction markets</h2>
+      <fieldset className="card">
+        <label className="row">
+          <input type="checkbox" checked={settings.markets.enabled} onChange={(e) => update((s) => ((s.markets.enabled = e.target.checked), s))} />
+          <span><strong>Enable prediction-market data (Polymarket)</strong> — read-only. Searches and price snapshots go to the venue's public API; no account, no wallet, no trading. Turned off, the Markets page and the Markets tab stay quiet.</span>
+        </label>
+        <div className="grid-3">
+          <label className="field">
+            <span>Auto-refresh every (hours)</span>
+            <input type="number" min={0} max={168} step={1} value={settings.markets.refreshHours} onChange={(e) => update((s) => ((s.markets.refreshHours = Math.max(0, Number(e.target.value) || 0)), s))} />
+            <small>0 = manual only. Refreshes watched and linked markets while the app is running.</small>
+          </label>
+          <label className="field">
+            <span>Markets per refresh</span>
+            <input type="number" min={1} max={500} step={1} value={settings.markets.snapshotBudget} onChange={(e) => update((s) => ((s.markets.snapshotBudget = Math.max(1, Number(e.target.value) || 1)), s))} />
+            <small>Budget per snapshot run; requests also respect the requests-per-minute limit.</small>
+          </label>
+          <label className="row">
+            <input type="checkbox" checked={settings.markets.autoLinkSports} onChange={(e) => update((s) => ((s.markets.autoLinkSports = e.target.checked), s))} />
+            <span>Auto-accept exact game matchups (both teams, game date, same pick type). General predictions are always proposals you accept by hand.</span>
+          </label>
+        </div>
+      </fieldset>
+
       <h2>YouTube</h2>
       <fieldset className="card">
         <p className="muted">Pasting a link sends the video id to YouTube (via yt-dlp) to read its title, date, captions, and — when needed — the audio. Nothing else leaves this computer. yt-dlp scrapes YouTube, so it can break when YouTube changes; updating it usually fixes that.</p>

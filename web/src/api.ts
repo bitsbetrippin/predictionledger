@@ -76,6 +76,7 @@ export function toPayload(s: AppSettings): SettingsPayload {
     stages: s.stages,
     transcription: s.transcription,
     sports: s.sports,
+    markets: s.markets,
     youtube: s.youtube,
     search: { provider: s.search.provider, baseUrl: s.search.baseUrl },
     limits: s.limits,
@@ -228,3 +229,35 @@ export const fmtClock = (s?: number) => {
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60);
   return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 };
+
+// ---------------------------------------------------------------------------
+// Release 1.6 — prediction markets (read-only)
+// ---------------------------------------------------------------------------
+
+import type { MarketRecord, MarketSnapshot, PredictionMarketLink } from "@prediction-ledger/shared";
+
+export interface MarketSummaryView {
+  provider: "polymarket"; id: string; slug: string; url: string; question: string; description?: string; event?: { id: string; slug: string; title: string };
+  outcomes: { label: string; tokenId?: string; price?: number; bestBid?: number; bestAsk?: number }[]; liquidity?: number; volume?: number; volume24h?: number; endDate?: string; active: boolean; closed: boolean; restricted?: boolean; retrievedAt: string;
+}
+export type MarketStoredDetail = MarketRecord & { snapshots: MarketSnapshot[]; links: PredictionMarketLink[] };
+
+export const marketsApi = {
+  search: (q: string, limit = 10) => request<MarketSummaryView[]>("GET", `/api/markets/search${qs({ q, limit: String(limit) })}`),
+  byTag: (tag: string, limit = 20) => request<MarketSummaryView[]>("GET", `/api/markets${qs({ tag, limit: String(limit) })}`),
+  stored: () => request<MarketRecord[]>("GET", "/api/markets/stored"),
+  storedDetail: (id: string) => request<MarketStoredDetail>("GET", `/api/markets/stored/${id}`),
+  watch: (idOrSlug: string) => request<MarketRecord>("POST", "/api/markets/watch", { provider: "polymarket", idOrSlug }),
+  unwatch: (id: string) => request<MarketRecord>("POST", `/api/markets/stored/${id}/unwatch`),
+  remove: (id: string) => request<{ ok: true }>("DELETE", `/api/markets/stored/${id}`),
+  snapshot: (marketIds?: string[]) => request<{ jobId: string }>("POST", "/api/markets/snapshot", marketIds ? { marketIds } : {}),
+  links: (predictionId: string) => request<PredictionMarketLink[]>("GET", `/api/predictions/${predictionId}/market-links`),
+  match: (predictionId: string, limit = 5) => request<{ jobId: string }>("POST", `/api/predictions/${predictionId}/market-links/match`, { limit }),
+  linkManual: (predictionId: string, idOrSlug: string, side?: string) => request<PredictionMarketLink>("POST", `/api/predictions/${predictionId}/market-links`, { provider: "polymarket", idOrSlug, side }),
+  accept: (linkId: string, side?: string) => request<PredictionMarketLink>("POST", `/api/market-links/${linkId}/accept`, { side }),
+  reject: (linkId: string) => request<PredictionMarketLink>("POST", `/api/market-links/${linkId}/reject`),
+  unlink: (linkId: string) => request<{ ok: true }>("DELETE", `/api/market-links/${linkId}`),
+};
+
+export const fmtPct = (p?: number) => (p === undefined || Number.isNaN(p) ? "—" : `${(p * 100).toFixed(p < 0.1 || p > 0.9 ? 1 : 0)}%`);
+export const fmtMoney = (n?: number) => (n === undefined || Number.isNaN(n) ? "—" : `$${Math.round(n).toLocaleString("en-US")}`);

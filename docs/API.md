@@ -120,6 +120,22 @@ Provider calls made by every job now go through a resilience wrapper: 120 s per-
 
 Settings gain `sports: { enabled, trackSpreads }`.
 
+## Release 1.6 — markets in the ledger
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/markets/stored` | Stored markets (watched or linked) with `latest` snapshot. |
+| GET | `/api/markets/stored/:id` | One market + `snapshots[]` (newest first, ≤100) + `links[]`. |
+| POST | `/api/markets/watch` | `{ provider: "polymarket", idOrSlug }` (id, slug, or polymarket.com URL) → `201 MarketRecord`, watched. |
+| POST | `/api/markets/stored/:id/unwatch` · DELETE `/api/markets/stored/:id` | Stop refreshing / remove (links cascade). |
+| POST | `/api/markets/snapshot` | `{ marketIds? }` → `202 { jobId }` (`market.snapshot`; all refreshable markets when omitted, deduped). |
+| GET | `/api/predictions/:id/market-links` | Links with embedded `market` (and its `latest`). |
+| POST | `/api/predictions/:id/market-links/match` | `{ limit? }` → `202 { jobId }` (`market.match`). |
+| POST | `/api/predictions/:id/market-links` | Manual link `{ provider, idOrSlug, side? }` → `201` accepted link (`matchedBy: "user"`). |
+| POST | `/api/market-links/:id/accept` (`{ side? }`) · `/reject` · DELETE `/api/market-links/:id` | Review a proposal. |
+
+`409 markets_disabled` when Setup → Markets is off; `409 offline` without internet. Settings gain `markets: { enabled, provider, refreshHours, snapshotBudget, autoLinkSports }`. Job kinds: `market.snapshot { marketIds? }` → `{ refreshed, failed[], budget, candidates }`; `market.match { predictionId, limit? }` → `{ candidates, proposed, accepted, notes[], top[] }`.
+
 ## Release 1.5 — markets (read-only)
 
 | Method | Path | Notes |

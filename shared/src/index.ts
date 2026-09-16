@@ -80,6 +80,17 @@ export interface AppSettings {
     /** Track point spreads (cover/no cover). Off = every pick is win/loss on the named team. */
     trackSpreads: boolean;
   };
+  /** 1.6 — prediction markets (read-only). */
+  markets: {
+    enabled: boolean;
+    provider: "polymarket";
+    /** Hours between automatic snapshot refreshes of linked/watched markets (0 = manual only). */
+    refreshHours: number;
+    /** Max markets refreshed per snapshot run. */
+    snapshotBudget: number;
+    /** Auto-accept a link when the match is an exact sports matchup (teams + game date). */
+    autoLinkSports: boolean;
+  };
   youtube: {
     /** Which captions to accept before falling back to audio: creator-uploaded only, or auto-generated too, or none. */
     captions: "manual-then-auto" | "manual-only" | "never";
@@ -166,7 +177,11 @@ export type JobKind =
   | "tool.install"
   | "model.download"
   /** 1.4: find the game record (date, final score, winner) for a matchup and settle every pick on it. */
-  | "sports.resolve_game";
+  | "sports.resolve_game"
+  /** 1.6: refresh snapshots of linked/watched markets. */
+  | "market.snapshot"
+  /** 1.6: propose market links for one prediction. */
+  | "market.match";
 
 export type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 
@@ -631,4 +646,74 @@ export interface ExportBundle {
   assessments: Assessment[];
   /** 1.4 */
   games?: Game[];
+  /** 1.6 */
+  markets?: MarketRecord[];
+  marketLinks?: PredictionMarketLink[];
+}
+
+// ---------------------------------------------------------------------------
+// Release 1.6 — prediction markets in the ledger
+// ---------------------------------------------------------------------------
+
+export type MarketProviderId = "polymarket";
+
+export interface MarketRecord {
+  id: string;
+  provider: MarketProviderId;
+  venueId: string;
+  conditionId?: string;
+  slug: string;
+  url: string;
+  question: string;
+  /** Resolution rules as published by the venue. */
+  description?: string;
+  event?: { id: string; slug: string; title: string };
+  outcomes: { label: string; tokenId?: string }[];
+  endDate?: string;
+  startDate?: string;
+  active: boolean;
+  closed: boolean;
+  restricted: boolean;
+  resolved: boolean;
+  resolvedOutcome?: string;
+  tags: string[];
+  watched: boolean;
+  updatedAt: string;
+  /** Latest snapshot, when one exists. */
+  latest?: MarketSnapshot;
+}
+
+export interface MarketSnapshot {
+  id: string;
+  marketId: string;
+  retrievedAt: string;
+  /** In the market's outcomes order. Prices are probabilities 0–1. */
+  prices: { label: string; price?: number; bestBid?: number; bestAsk?: number }[];
+  liquidity?: number;
+  volume?: number;
+  volume24h?: number;
+  spread?: number;
+  source: "gamma" | "clob" | "history";
+}
+
+export type MarketLinkStatus = "proposed" | "accepted" | "rejected";
+export type MarketLinkRelation = "exact" | "same" | "narrower" | "broader" | "different";
+
+export interface PredictionMarketLink {
+  id: string;
+  predictionId: string;
+  marketId: string;
+  /** Outcome label the prediction implies ("Yes", a team name). */
+  side?: string;
+  /** 0–1 match score. */
+  score: number;
+  relation?: MarketLinkRelation;
+  rationale?: string;
+  status: MarketLinkStatus;
+  matchedBy: "rule:sports" | "rule:text" | "model" | "user";
+  /** Side price nearest the prediction's made-on date, when a snapshot/history point exists. */
+  priceAtMade?: number;
+  createdAt: string;
+  updatedAt: string;
+  market?: MarketRecord;
 }

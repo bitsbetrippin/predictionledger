@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
 import { BIND_HOST, PORT_SEARCH_RANGE, APP_VERSION, isDevMode, resolvePort } from "./config.js";
-import { createContext } from "./context.js";
+import { createContext, type AppContext } from "./context.js";
 import { registerCsrfGuard } from "./security/csrf.js";
 import { registerRoutes } from "./routes/index.js";
 import { registerContentRoutes } from "./routes/content.js";
@@ -83,6 +83,7 @@ async function main(): Promise<void> {
   const origin = `http://${BIND_HOST}:${boundPort}`;
 
   ctx.jobs.start();
+  startMarketRefresh(ctx);
 
   // This exact line is what scripts/start.mjs waits for before opening the browser.
   console.log(`PREDICTION_LEDGER_READY ${origin}`);
@@ -97,6 +98,25 @@ async function main(): Promise<void> {
   };
   process.once("SIGINT", () => void shutdown("SIGINT"));
   process.once("SIGTERM", () => void shutdown("SIGTERM"));
+}
+
+/**
+ * 1.6 — periodic market snapshots (Setup → Markets → refresh hours; 0 = manual only). Checked every
+ * 10 minutes so a settings change takes effect without a restart; the job itself is deduped.
+ */
+function startMarketRefresh(ctx: AppContext): void {
+  let last = 0;
+  const tick = () => {
+    const s = ctx.settings.getPersisted();
+    if (!s.markets.enabled || !s.privacy.allowInternet || s.markets.refreshHours <= 0) return;
+    if (Date.now() - last < s.markets.refreshHours * 3_600_000) return;
+    if (ctx.markets.refreshable().length === 0) return;
+    last = Date.now();
+    ctx.jobs.enqueue({ kind: "market.snapshot", subjectType: "market", subjectId: "all", payload: {}, dedupeKey: "market.snapshot:all", maxAttempts: 1 });
+  };
+  const timer = setInterval(tick, 10 * 60_000);
+  timer.unref();
+  setTimeout(tick, 30_000).unref();
 }
 
 /**

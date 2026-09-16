@@ -12,6 +12,7 @@ import { makeExtractHandler } from "./jobs/handlers/extract.js";
 import { makePlanHandler } from "./jobs/handlers/plan.js";
 import { makeResearchHandler } from "./jobs/handlers/research.js";
 import { makeGameHandler } from "./jobs/handlers/game.js";
+import { makeMarketMatchHandler, makeMarketSnapshotHandler } from "./jobs/handlers/markets.js";
 import { makeAssessHandler } from "./jobs/handlers/assess.js";
 import { SecretStore } from "./security/secrets.js";
 import { SettingsService } from "./settings.js";
@@ -22,6 +23,7 @@ import { PlanService } from "./services/plans.js";
 import { TemplateService } from "./services/templates.js";
 import { ResearchService } from "./services/research.js";
 import { GameService } from "./services/games.js";
+import { MarketService } from "./services/markets.js";
 import { GuardedFetcher, type SourceFetcher } from "./research/fetcher.js";
 import { makeAudioExtractHandler, makeModelDownloadHandler, makeTranscribeHandler } from "./jobs/handlers/media.js";
 import { LocalWhisperProvider, OpenAiTranscriptionProvider, type TranscriptionProvider } from "./media/transcription.js";
@@ -43,6 +45,8 @@ export interface AppContext {
   research: ResearchService;
   /** 1.4: game records shared by every pick on a matchup. */
   games: GameService;
+  /** 1.6: prediction markets, snapshots, links. */
+  markets: MarketService;
   fetcher: SourceFetcher;
   /** Builds the transcription engine selected in Setup (or a test override). */
   transcription: () => TranscriptionProvider;
@@ -71,6 +75,7 @@ export function createContext(overrides: Partial<Pick<AppContext, "fetcher" | "t
     templates: new TemplateService(db),
     research: new ResearchService(db, paths.artifacts),
     games: new GameService(db),
+    markets: new MarketService(db),
     fetcher: overrides.fetcher ?? new GuardedFetcher(),
     transcription:
       overrides.transcription ??
@@ -87,6 +92,8 @@ export function createContext(overrides: Partial<Pick<AppContext, "fetcher" | "t
   jobs.register("plan.generate", makePlanHandler(ctx));
   jobs.register("research.run", makeResearchHandler(ctx));
   jobs.register("sports.resolve_game", makeGameHandler(ctx));
+  jobs.register("market.snapshot", makeMarketSnapshotHandler(ctx));
+  jobs.register("market.match", makeMarketMatchHandler(ctx));
   jobs.register("assessment.run", makeAssessHandler(ctx));
   jobs.register("audio.extract", makeAudioExtractHandler(ctx));
   jobs.register("transcript.generate", makeTranscribeHandler(ctx));

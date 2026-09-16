@@ -4,6 +4,18 @@ All notable changes to Prediction Ledger. Format follows [Keep a Changelog](http
 
 Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
 
+## [1.6.0] — 2026-09-16 — Markets in the ledger
+Step two of [docs/PREDICTION_MARKETS.md](docs/PREDICTION_MARKETS.md): a prediction can point at a market, and the app remembers what the market said. Still read-only.
+### Added
+- Migration 008: `markets` (venue id, question, resolution rules, outcomes with token ids, event, end date, flags, watched), `market_snapshots` (per-outcome price / bid / ask, liquidity, volume, 24 h volume, spread, retrieved at), `prediction_market_links` (side, 0–1 score, relation, rationale, status proposed / accepted / rejected, matched by, price at made-on date). Export includes markets and links.
+- Job `market.match` (per prediction): venue search from the prediction's entities/statement (sports: the two nicknames), deterministic scoring — sports picks: both teams in the event/question, game date vs market end, pick type vs market wording (moneyline / spread / total) → **exact**; general predictions: content-token overlap, entity hits, shared numbers (years ignored), deadline proximity, negation → implied Yes/No — then, for general predictions only, one assessment-stage model call labels the top three candidates *same / narrower / broader / different* with a one-line rationale and adjusts the score. Proposals are written; an exact sports matchup is auto-accepted when Setup allows (default on); everything else waits for you. The implied side's price from the snapshot taken at link time is stored as `priceAtMade` (history backfill is 1.7).
+- Job `market.snapshot`: refreshes every watched or linked open market (budgeted, rate-limited) and appends a snapshot. Automatic on the Setup → Markets interval (default 6 h, 0 = manual) while the app runs; also on demand.
+- Routes: `GET /api/markets/stored[/:id]`, `POST /api/markets/watch`, `POST /api/markets/stored/:id/unwatch`, `DELETE /api/markets/stored/:id`, `POST /api/markets/snapshot`, `GET /api/predictions/:id/market-links`, `POST /api/predictions/:id/market-links/match`, `POST /api/predictions/:id/market-links` (manual link by slug/id/URL + side), `POST /api/market-links/:id/accept|reject`, `DELETE /api/market-links/:id`.
+- UI: **Markets** tab in the prediction detail (Find markets, proposed / linked / rejected with side, current price, price when the claim was made, liquidity, match score and rationale; accept / reject / remove; link by hand), a **Markets** page (venue search → watch, table of stored markets with latest snapshot, detail with rules, price history and linked predictions, refresh), and Setup → Prediction markets (enable, refresh hours, budget, auto-link sports).
+- Provider registry with a test seam; 66 tests (scorers, match job for general + sports, snapshot job, watch/unwatch/delete cascade).
+### Notes
+- Matching is a proposal, not a judgement: the rationale always says which terms, entities, numbers and dates lined up. A market's resolution rules are shown next to every link so you can check the two mean the same thing before accepting.
+
 ## [1.5.0] — 2026-09-15 — Prediction markets: read-only Polymarket connector
 First step of the market integration described in [docs/PREDICTION_MARKETS.md](docs/PREDICTION_MARKETS.md) (releases 1.5 → 1.8: connector → markets in the ledger → creator-vs-market signals → multi-channel consensus and watchlists). Nothing is stored yet and nothing can trade.
 ### Added

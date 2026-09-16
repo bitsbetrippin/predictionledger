@@ -53,6 +53,15 @@ export const persistedSettingsSchema = z.object({
       trackSpreads: z.boolean().default(true),
     })
     .default({ enabled: false, trackSpreads: true }),
+  markets: z
+    .object({
+      enabled: z.boolean().default(true),
+      provider: z.enum(["polymarket"]).default("polymarket"),
+      refreshHours: z.number().min(0).max(168).default(6),
+      snapshotBudget: z.number().int().min(1).max(500).default(50),
+      autoLinkSports: z.boolean().default(true),
+    })
+    .default({ enabled: true, provider: "polymarket", refreshHours: 6, snapshotBudget: 50, autoLinkSports: true }),
   youtube: z
     .object({
       captions: z.enum(["manual-then-auto", "manual-only", "never"]).default("manual-then-auto"),
@@ -104,6 +113,7 @@ export const DEFAULT_SETTINGS: PersistedSettings = {
     overlapSeconds: 5,
   },
   sports: { enabled: false, trackSpreads: true },
+  markets: { enabled: true, provider: "polymarket", refreshHours: 6, snapshotBudget: 50, autoLinkSports: true },
   youtube: { captions: "manual-then-auto", allowAudioDownload: true, captionLanguage: "auto" },
   search: { provider: "none" },
   limits: { concurrency: 2, maxSearchesPerRun: 8, maxSourcesPerRun: 12, requestsPerMinute: 30, modelTimeoutSeconds: 120 },

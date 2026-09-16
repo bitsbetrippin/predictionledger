@@ -165,3 +165,10 @@ details summary { cursor: pointer; }
 
 /* 1.4 — game record card inside the sports pick block */
 .game-card { margin-top: 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+
+/* 1.6 — markets */
+.market-links h4 { margin: 10px 0 4px; }
+.market-link { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; background: var(--surface); }
+.market-link.accepted { border-left: 3px solid var(--ok, #2f9e44); }
+.market-link.rejected { opacity: 0.6; }
+.market-result { padding: 6px 0; border-bottom: 1px solid var(--border); }

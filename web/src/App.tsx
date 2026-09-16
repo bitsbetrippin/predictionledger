@@ -15,9 +15,10 @@ import { LibraryPage } from "./pages/LibraryPage";
 import { VideoPage } from "./pages/VideoPage";
 import { PredictionsPage } from "./pages/PredictionsPage";
 import { JobsPage } from "./pages/JobsPage";
+import { MarketsPage } from "./pages/MarketsPage";
 
 export interface Route {
-  name: "library" | "video" | "predictions" | "jobs" | "setup";
+  name: "library" | "video" | "predictions" | "markets" | "jobs" | "setup";
   id?: string;
   query: URLSearchParams;
 }
@@ -28,6 +29,7 @@ export function parseHash(hash: string): Route {
   const parts = pathPart.split("/").filter(Boolean);
   if (parts[0] === "videos" && parts[1]) return { name: "video", id: parts[1], query };
   if (parts[0] === "predictions") return { name: "predictions", query };
+  if (parts[0] === "markets") return { name: "markets", query };
   if (parts[0] === "jobs") return { name: "jobs", query };
   if (parts[0] === "setup") return { name: "setup", query };
   return { name: "library", query };
@@ -40,6 +42,7 @@ export function navigate(to: string): void {
 const TABS: { name: Route["name"]; label: string; to: string }[] = [
   { name: "library", label: "Video Library", to: "/library" },
   { name: "predictions", label: "Predictions", to: "/predictions" },
+  { name: "markets", label: "Markets", to: "/markets" },
   { name: "jobs", label: "Jobs", to: "/jobs" },
   { name: "setup", label: "Setup", to: "/setup" },
 ];
@@ -92,6 +95,7 @@ export function App() {
         {route.name === "library" && <LibraryPage />}
         {route.name === "video" && route.id && <VideoPage id={route.id} />}
         {route.name === "predictions" && <PredictionsPage initialVideoId={route.query.get("videoId") ?? undefined} initialPredictionId={route.query.get("id") ?? undefined} />}
+        {route.name === "markets" && <MarketsPage />}
         {route.name === "jobs" && <JobsPage />}
         {route.name === "setup" && <SetupPage />}
       </main>

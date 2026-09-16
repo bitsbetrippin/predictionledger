@@ -73,8 +73,9 @@ and from the running app: `GET /api/markets/search?q=…`, `GET /api/markets?tag
 - Docs: this file; CHANGELOG; ADR-025 (read-only, provider-interface, no trading).
 - Acceptance: probe and routes return live data; offline mode refuses with the standard message; a venue 4xx/5xx surfaces as `502 market_api` with the venue text, never as a verdict.
 
-### 1.6 — Markets in the ledger
+### 1.6 — Markets in the ledger — **shipped 1.6.0**
 *Goal: a prediction can point at a market, and the app remembers what the market said.*
+Delivered as written below, with these specifics: matching is deterministic first (`analysis/markets.ts`) and the model only labels relations for general predictions; `priceAtMade` uses the snapshot taken when the link is created (the `/prices-history` backfill moves to 1.7); the refresh timer runs inside the server process while the app is open.
 
 - Migration 008: `markets`, `market_snapshots`, `prediction_market_links`.
 - `market.snapshot` job: stores a snapshot for every linked (or watched) market; runs on demand and on an interval set in Setup → Markets (default 6 h, budgeted through the rate limiter). History endpoint `/prices-history` backfills the price at the prediction's `madeOnDate` when a link is created late.

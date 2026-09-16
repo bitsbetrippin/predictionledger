@@ -18,7 +18,7 @@ interface MarketRow {
 interface SnapshotRow { id: string; market_id: string; retrieved_at: string; prices_json: string; liquidity: number | null; volume: number | null; volume_24h: number | null; spread: number | null; source: MarketSnapshot["source"] }
 interface LinkRow {
   id: string; prediction_id: string; market_id: string; side: string | null; score: number; relation: string | null; rationale: string | null; status: MarketLinkStatus;
-  matched_by: PredictionMarketLink["matchedBy"]; price_at_made: number | null; created_at: string; updated_at: string;
+  matched_by: PredictionMarketLink["matchedBy"]; price_at_made: number | null; price_at_made_at: string | null; price_at_made_source: string | null; created_at: string; updated_at: string;
 }
 
 export class MarketService {
@@ -140,8 +140,15 @@ export class MarketService {
     return this.getLink(id);
   }
 
-  setPriceAtMade(id: string, price: number | undefined): void {
-    this.db.run("UPDATE prediction_market_links SET price_at_made = ? WHERE id = ?", price ?? null, id);
+  setPriceAtMade(id: string, price: number | undefined, at?: string, source?: "history" | "snapshot"): void {
+    this.db.run("UPDATE prediction_market_links SET price_at_made = ?, price_at_made_at = ?, price_at_made_source = ? WHERE id = ?", price ?? null, at ?? null, source ?? null, id);
+  }
+
+  /** Accepted links whose made-on price has not been read from venue history yet (1.7 backfill). */
+  linksNeedingBackfill(limit = 50): PredictionMarketLink[] {
+    return this.db
+      .all<LinkRow>("SELECT * FROM prediction_market_links WHERE status = 'accepted' AND (price_at_made IS NULL OR price_at_made_source IS NULL OR price_at_made_source <> 'history') ORDER BY updated_at DESC LIMIT ?", limit)
+      .map((r) => this.hydrateLink(r));
   }
 
   getLink(id: string): PredictionMarketLink | undefined {
@@ -183,7 +190,8 @@ export class MarketService {
   private hydrateLink(r: LinkRow, withMarket = true): PredictionMarketLink {
     return {
       id: r.id, predictionId: r.prediction_id, marketId: r.market_id, side: r.side ?? undefined, score: r.score, relation: (r.relation ?? undefined) as MarketLinkRelation | undefined,
-      rationale: r.rationale ?? undefined, status: r.status, matchedBy: r.matched_by, priceAtMade: r.price_at_made ?? undefined, createdAt: r.created_at, updatedAt: r.updated_at,
+      rationale: r.rationale ?? undefined, status: r.status, matchedBy: r.matched_by, priceAtMade: r.price_at_made ?? undefined,
+      priceAtMadeAt: r.price_at_made_at ?? undefined, priceAtMadeSource: (r.price_at_made_source ?? undefined) as "history" | "snapshot" | undefined, createdAt: r.created_at, updatedAt: r.updated_at,
       market: withMarket ? this.get(r.market_id) : undefined,
     };
   }

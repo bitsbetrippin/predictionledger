@@ -137,8 +137,33 @@ export function registerMarketRoutes(app: FastifyInstance, ctx: AppContext): voi
   });
   app.post<{ Params: { id: string }; Body: { side?: string } }>("/api/market-links/:id/accept", async (req, reply) => {
     const l = ctx.markets.setLinkStatus(req.params.id, "accepted", typeof req.body?.side === "string" ? req.body.side : undefined);
-    return l ?? reply.code(404).send({ error: "not_found" });
+    if (!l) return reply.code(404).send({ error: "not_found" });
+    // 1.7: an accepted link gets its made-on price from venue history (best effort, in the background).
+    const s = ctx.settings.getPersisted();
+    if (s.markets.enabled && s.privacy.allowInternet && l.priceAtMadeSource !== "history") {
+      ctx.jobs.enqueue({ kind: "market.backfill", subjectType: "prediction", subjectId: l.predictionId, payload: { linkId: l.id }, dedupeKey: `market.backfill:${l.id}`, maxAttempts: 1 });
+    }
+    return l;
   });
+  app.post<{ Params: { id: string } }>("/api/market-links/:id/backfill", async (req, reply) => {
+    const l = ctx.markets.getLink(req.params.id);
+    if (!l) return reply.code(404).send({ error: "not_found" });
+    if (!guard(reply, "polymarket")) return;
+    const jobId = ctx.jobs.enqueue({ kind: "market.backfill", subjectType: "prediction", subjectId: l.predictionId, payload: { linkId: l.id }, dedupeKey: `market.backfill:${l.id}`, maxAttempts: 1 });
+    return reply.code(202).send({ jobId });
+  });
+  app.post("/api/markets/backfill", async (_req, reply) => {
+    if (!guard(reply, "polymarket")) return;
+    const jobId = ctx.jobs.enqueue({ kind: "market.backfill", subjectType: "market", subjectId: "all", payload: {}, dedupeKey: "market.backfill:all", maxAttempts: 1 });
+    return reply.code(202).send({ jobId });
+  });
+
+  // ---- 1.7 — signals (computed on read; nothing stored) ----
+  app.get<{ Querystring: { includeSettled?: string } }>("/api/signals", async (req) => {
+    const gates = ctx.settings.getPersisted().markets.signals;
+    return { gates, creators: ctx.signals.creators(gates), signals: ctx.signals.signals(gates, { includeSettled: req.query.includeSettled === "1" }) };
+  });
+  app.get("/api/signals/creators", async () => ctx.signals.creators(ctx.settings.getPersisted().markets.signals));
   app.post<{ Params: { id: string } }>("/api/market-links/:id/reject", async (req, reply) => ctx.markets.setLinkStatus(req.params.id, "rejected") ?? reply.code(404).send({ error: "not_found" }));
   app.delete<{ Params: { id: string } }>("/api/market-links/:id", async (req, reply) => (ctx.markets.deleteLink(req.params.id) ? { ok: true } : reply.code(404).send({ error: "not_found" })));
 }

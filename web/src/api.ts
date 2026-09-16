@@ -234,7 +234,7 @@ export const fmtClock = (s?: number) => {
 // Release 1.6 — prediction markets (read-only)
 // ---------------------------------------------------------------------------
 
-import type { MarketRecord, MarketSnapshot, PredictionMarketLink } from "@prediction-ledger/shared";
+import type { CreatorRecord, MarketRecord, MarketSignal, MarketSnapshot, PredictionMarketLink } from "@prediction-ledger/shared";
 
 export interface MarketSummaryView {
   provider: "polymarket"; id: string; slug: string; url: string; question: string; description?: string; event?: { id: string; slug: string; title: string };
@@ -257,7 +257,16 @@ export const marketsApi = {
   accept: (linkId: string, side?: string) => request<PredictionMarketLink>("POST", `/api/market-links/${linkId}/accept`, { side }),
   reject: (linkId: string) => request<PredictionMarketLink>("POST", `/api/market-links/${linkId}/reject`),
   unlink: (linkId: string) => request<{ ok: true }>("DELETE", `/api/market-links/${linkId}`),
+  backfill: (linkId: string) => request<{ jobId: string }>("POST", `/api/market-links/${linkId}/backfill`),
+  backfillAll: () => request<{ jobId: string }>("POST", "/api/markets/backfill"),
 };
+
+// 1.7 — signals (computed on read)
+export interface SignalsResponse { gates: AppSettings["markets"]["signals"]; creators: CreatorRecord[]; signals: MarketSignal[] }
+export const signalsApi = {
+  get: (includeSettled = false) => request<SignalsResponse>("GET", `/api/signals${includeSettled ? "?includeSettled=1" : ""}`),
+};
+export const fmtEdge = (e?: number) => (e === undefined ? "—" : `${e >= 0 ? "+" : ""}${(e * 100).toFixed(1)} pts`);
 
 export const fmtPct = (p?: number) => (p === undefined || Number.isNaN(p) ? "—" : `${(p * 100).toFixed(p < 0.1 || p > 0.9 ? 1 : 0)}%`);
 export const fmtMoney = (n?: number) => (n === undefined || Number.isNaN(n) ? "—" : `$${Math.round(n).toLocaleString("en-US")}`);

@@ -15,7 +15,7 @@ import type { ModelInfo, Prediction, ProviderTestResult, SportsPick } from "@pre
 import type { CompletionRequest, CompletionResult, LanguageModelProvider, ProviderCredentials } from "../providers/llm/types.js";
 import { setLlmProviderForTests } from "../providers/llm/registry.js";
 import { setMarketProviderForTests } from "../providers/markets/registry.js";
-import type { MarketProvider, MarketSummary, OrderBookSnapshot } from "../providers/markets/types.js";
+import type { MarketProvider, MarketSummary, OrderBookSnapshot, PricePoint } from "../providers/markets/types.js";
 import { buildMarketQueries, scoreSportsMarket, scoreTextMarket, tokenize } from "./markets.js";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -98,6 +98,15 @@ class FakeMarkets implements MarketProvider {
   }
   async list(): Promise<MarketSummary[]> { return [btcMarket]; }
   async book(tokenId: string): Promise<OrderBookSnapshot> { return { provider: "polymarket", tokenId, bids: [], asks: [], retrievedAt: now }; }
+  histories: string[] = [];
+  async priceHistory(tokenId: string, opts: { from: string; to: string }): Promise<PricePoint[]> {
+    this.histories.push(tokenId);
+    // Hourly points; the Bills token drifted from 0.50 to 0.58 over the window.
+    const out: PricePoint[] = [];
+    const a = Date.parse(opts.from), b = Date.parse(opts.to);
+    for (let t = a, i = 0; t <= b; t += 3_600_000, i++) out.push({ t: new Date(t).toISOString(), p: +(0.5 + 0.08 * ((t - a) / Math.max(1, b - a))).toFixed(4) });
+    return out;
+  }
 }
 
 let fake: FakeModel;
@@ -186,14 +195,26 @@ test("market.match: sports pick → exact moneyline auto-accepted with the picke
 
     // snapshot job: linked markets refreshed with the provider's current price
     markets.price = 0.61;
-    const before = ctx.markets.snapshots(accepted[0].marketId).length;
+    await sleep(400); // the auto-accept queued a history backfill; let it land before counting gamma snapshots
+    const gamma = (id: string) => ctx.markets.snapshots(id).filter((x) => x.source === "gamma");
+    const before = gamma(accepted[0].marketId).length;
     const sj = await waitFor(ctx.jobs.enqueue({ kind: "market.snapshot", subjectType: "market", subjectId: "all", payload: {} }));
     assert.equal(sj.status, "completed", sj.error);
-    const snaps = ctx.markets.snapshots(accepted[0].marketId);
+    const snaps = gamma(accepted[0].marketId);
     assert.equal(snaps.length, before + 1);
     assert.equal(snaps[0].prices[0].price, 0.61);
     assert.equal(ctx.markets.get(accepted[0].marketId)?.latest?.prices[0].price, 0.61);
     assert.ok(markets.gets.includes("3"));
+
+    // 1.7 backfill: accepted link gets the made-on price from history, not from the link-time snapshot
+    const bj = await waitFor(ctx.jobs.enqueue({ kind: "market.backfill", subjectType: "prediction", subjectId: p.id, payload: { linkId: accepted[0].id } }));
+    assert.equal(bj.status, "completed", bj.error);
+    const refreshed = ctx.markets.getLink(accepted[0].id)!;
+    assert.equal(refreshed.priceAtMadeSource, "history");
+    assert.ok(refreshed.priceAtMadeAt!.startsWith("2026-09-09T12") || refreshed.priceAtMadeAt!.startsWith("2026-09-09T11"), `nearest point at or before made-on noon: ${refreshed.priceAtMadeAt}`);
+    assert.ok(refreshed.priceAtMade! > 0.5 && refreshed.priceAtMade! < 0.58, `interpolated history price ${refreshed.priceAtMade}`);
+    assert.ok(markets.histories.includes("b"), "Bills token id used");
+    assert.ok(ctx.markets.snapshots(accepted[0].marketId).some((s) => s.source === "history"), "history point stored as a snapshot");
 
     // watch + unwatch + delete cascade
     const w = ctx.markets.upsertFromSummary(fedMarket, { watched: true });

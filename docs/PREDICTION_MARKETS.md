@@ -84,7 +84,8 @@ Delivered as written below, with these specifics: matching is deterministic firs
 - Settings: Setup → Markets (provider on/off, refresh interval, snapshot budget, tag watchlist).
 - Acceptance: link a sports pick to its game's moneyline automatically; link a general prediction by accepting a proposal; snapshots accumulate; export includes links and snapshots; offline leaves everything pending.
 
-### 1.7 — Signals: creator vs. market
+### 1.7 — Signals: creator vs. market — **shipped 1.7.0**
+Delivered: `/prices-history` backfill (`market.backfill`), creator records per channel with realized edge / Brier, shrunk-edge estimate with settled-count weighting (one contribution per video), gated labels with reasons, Signals page. Deviations: the Brier numbers are reported but the *label* is driven by realized edge; calibration by topic/horizon is not yet modelled (1.8+).
 *Goal: turn "creator said X" + "market says p" + "creator's history" into a number you can argue with.*
 
 - **Implied side.** A prediction's normalized statement maps to a market side (Yes/No or a team). The link stores it.

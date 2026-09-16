@@ -342,6 +342,15 @@ export function SetupPage() {
             <span>Auto-accept exact game matchups (both teams, game date, same pick type). General predictions are always proposals you accept by hand.</span>
           </label>
         </div>
+        <h3>Signal gates</h3>
+        <p className="muted small">A signal label appears only when a contributor's record, the edge, the market's liquidity and the deadlines all clear these thresholds. Realized edge is shrunk by n/(n+k) toward zero; k is the prior weight.</p>
+        <div className="grid-3">
+          <label className="field"><span>Prior weight (k)</span><input type="number" min={0} max={1000} value={settings.markets.signals.priorWeight} onChange={(e) => update((s) => ((s.markets.signals.priorWeight = Math.max(0, Number(e.target.value) || 0)), s))} /></label>
+          <label className="field"><span>Min settled — lean</span><input type="number" min={1} value={settings.markets.signals.minSettledLean} onChange={(e) => update((s) => ((s.markets.signals.minSettledLean = Math.max(1, Number(e.target.value) || 1)), s))} /></label>
+          <label className="field"><span>Min settled — moderate</span><input type="number" min={1} value={settings.markets.signals.minSettledModerate} onChange={(e) => update((s) => ((s.markets.signals.minSettledModerate = Math.max(1, Number(e.target.value) || 1)), s))} /></label>
+          <label className="field"><span>Min settled — strong</span><input type="number" min={1} value={settings.markets.signals.minSettledStrong} onChange={(e) => update((s) => ((s.markets.signals.minSettledStrong = Math.max(1, Number(e.target.value) || 1)), s))} /></label>
+          <label className="field"><span>Min liquidity ($)</span><input type="number" min={0} step={1000} value={settings.markets.signals.minLiquidity} onChange={(e) => update((s) => ((s.markets.signals.minLiquidity = Math.max(0, Number(e.target.value) || 0)), s))} /></label>
+        </div>
       </fieldset>
 
       <h2>YouTube</h2>

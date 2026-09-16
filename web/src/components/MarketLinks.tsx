@@ -57,7 +57,8 @@ export function MarketLinks(props: { predictionId: string; kind: "general" | "sp
         </div>
         <div className="small">
           {l.side ? <>Implied side <strong>{l.side}</strong> at <strong>{fmtPct(price)}</strong></> : <span className="muted">no side implied</span>}
-          {l.priceAtMade !== undefined && l.side && <span className="muted"> · was {fmtPct(l.priceAtMade)} when the claim was made</span>}
+          {l.priceAtMade !== undefined && l.side && <span className="muted"> · was {fmtPct(l.priceAtMade)} when the claim was made{l.priceAtMadeSource === "history" ? ` (venue history, ${l.priceAtMadeAt?.slice(0, 10) ?? ""})` : " (snapshot at link time)"}</span>}
+          {l.status === "accepted" && l.priceAtMadeSource !== "history" && <button type="button" className="link" disabled={!!busy} onClick={() => run("Reading history…", async () => { const { jobId } = await marketsApi.backfill(l.id); await pollJob(jobId); })}>read venue history</button>}
           {m?.latest && <span className="muted"> · liquidity {fmtMoney(m.latest.liquidity)} · 24h volume {fmtMoney(m.latest.volume24h)} · as of {m.latest.retrievedAt.slice(0, 16).replace("T", " ")}</span>}
           {m?.endDate && <span className="muted"> · market ends {m.endDate.slice(0, 10)}</span>}
         </div>

@@ -90,6 +90,17 @@ export interface AppSettings {
     snapshotBudget: number;
     /** Auto-accept a link when the match is an exact sports matchup (teams + game date). */
     autoLinkSports: boolean;
+    /** 1.7 — signal gates. */
+    signals: {
+      /** Prior weight k: a creator's realized edge is shrunk by n/(n+k) toward zero. */
+      priorWeight: number;
+      /** Settled, market-linked predictions a creator needs before a label is shown. */
+      minSettledLean: number;
+      minSettledModerate: number;
+      minSettledStrong: number;
+      /** Venue liquidity (quote currency) below which no label is shown. */
+      minLiquidity: number;
+    };
   };
   youtube: {
     /** Which captions to accept before falling back to audio: creator-uploaded only, or auto-generated too, or none. */
@@ -181,7 +192,9 @@ export type JobKind =
   /** 1.6: refresh snapshots of linked/watched markets. */
   | "market.snapshot"
   /** 1.6: propose market links for one prediction. */
-  | "market.match";
+  | "market.match"
+  /** 1.7: fetch the venue price nearest a prediction's made-on date for a link. */
+  | "market.backfill";
 
 export type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 
@@ -713,7 +726,84 @@ export interface PredictionMarketLink {
   matchedBy: "rule:sports" | "rule:text" | "model" | "user";
   /** Side price nearest the prediction's made-on date, when a snapshot/history point exists. */
   priceAtMade?: number;
+  /** Instant of that price point and where it came from (1.7). */
+  priceAtMadeAt?: string;
+  priceAtMadeSource?: "history" | "snapshot";
   createdAt: string;
   updatedAt: string;
   market?: MarketRecord;
+}
+
+// ---------------------------------------------------------------------------
+// Release 1.7 — signals: creator record vs market
+// ---------------------------------------------------------------------------
+
+/** Who made the claims: the video's channel when known, otherwise the video itself. */
+export interface CreatorRecord {
+  key: string;
+  label: string;
+  /** Predictions by this creator (all kinds, any status). */
+  predictions: number;
+  /** Settled = latest assessment supported / contradicted / partially supported. */
+  settled: number;
+  hits: number;
+  misses: number;
+  partial: number;
+  hitRate?: number;
+  /** Subset of settled predictions with an accepted market link and a price when the claim was made. */
+  linkedSettled: number;
+  /** Mean of (outcome − market price at made) over linkedSettled: realized edge per $1 at the market's price. */
+  realizedEdge?: number;
+  /** Mean (marketPrice − outcome)² over linkedSettled — how good the market was on this creator's questions. */
+  marketBrier?: number;
+  /** Mean (1 − outcome)² — the creator stated the side as certain. */
+  creatorBrier?: number;
+  /** n/(n+k) shrinkage applied to realizedEdge. */
+  shrunkEdge?: number;
+  open: number;
+}
+
+export type SignalConfidence = "strong" | "moderate" | "lean" | "none";
+
+export interface SignalContribution {
+  predictionId: string;
+  videoId: string;
+  videoTitle?: string;
+  creatorKey: string;
+  creatorLabel: string;
+  linkId: string;
+  quote: string;
+  madeOnDate?: string;
+  priceAtMade?: number;
+  /** Creator record numbers used for this contribution. */
+  settled: number;
+  realizedEdge?: number;
+  shrunkEdge?: number;
+  weight: number;
+}
+
+export interface MarketSignal {
+  marketId: string;
+  question: string;
+  url: string;
+  eventTitle?: string;
+  side: string;
+  /** Latest snapshot price of the side. */
+  marketPrice?: number;
+  asOf?: string;
+  liquidity?: number;
+  volume24h?: number;
+  endDate?: string;
+  /** Weighted mean of contributors' shrunk edges. */
+  edge?: number;
+  /** marketPrice + edge, clamped to (0.01, 0.99). */
+  estimate?: number;
+  confidence: SignalConfidence;
+  /** Why the label is what it is (gates that passed / failed). */
+  reasons: string[];
+  /** Independent creators (same video counts once). */
+  creators: number;
+  contributions: SignalContribution[];
+  /** Prediction deadlines vs market end: "consistent" | "inconsistent" | "unknown". */
+  deadlineCheck: "consistent" | "inconsistent" | "unknown";
 }

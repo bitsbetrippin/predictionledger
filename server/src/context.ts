@@ -12,7 +12,7 @@ import { makeExtractHandler } from "./jobs/handlers/extract.js";
 import { makePlanHandler } from "./jobs/handlers/plan.js";
 import { makeResearchHandler } from "./jobs/handlers/research.js";
 import { makeGameHandler } from "./jobs/handlers/game.js";
-import { makeMarketMatchHandler, makeMarketSnapshotHandler } from "./jobs/handlers/markets.js";
+import { makeMarketBackfillHandler, makeMarketMatchHandler, makeMarketSnapshotHandler } from "./jobs/handlers/markets.js";
 import { makeAssessHandler } from "./jobs/handlers/assess.js";
 import { SecretStore } from "./security/secrets.js";
 import { SettingsService } from "./settings.js";
@@ -24,6 +24,7 @@ import { TemplateService } from "./services/templates.js";
 import { ResearchService } from "./services/research.js";
 import { GameService } from "./services/games.js";
 import { MarketService } from "./services/markets.js";
+import { SignalService } from "./services/signals.js";
 import { GuardedFetcher, type SourceFetcher } from "./research/fetcher.js";
 import { makeAudioExtractHandler, makeModelDownloadHandler, makeTranscribeHandler } from "./jobs/handlers/media.js";
 import { LocalWhisperProvider, OpenAiTranscriptionProvider, type TranscriptionProvider } from "./media/transcription.js";
@@ -47,6 +48,8 @@ export interface AppContext {
   games: GameService;
   /** 1.6: prediction markets, snapshots, links. */
   markets: MarketService;
+  /** 1.7: creator records and market-side signals (computed on read). */
+  signals: SignalService;
   fetcher: SourceFetcher;
   /** Builds the transcription engine selected in Setup (or a test override). */
   transcription: () => TranscriptionProvider;
@@ -76,6 +79,7 @@ export function createContext(overrides: Partial<Pick<AppContext, "fetcher" | "t
     research: new ResearchService(db, paths.artifacts),
     games: new GameService(db),
     markets: new MarketService(db),
+    signals: new SignalService(db),
     fetcher: overrides.fetcher ?? new GuardedFetcher(),
     transcription:
       overrides.transcription ??
@@ -94,6 +98,7 @@ export function createContext(overrides: Partial<Pick<AppContext, "fetcher" | "t
   jobs.register("sports.resolve_game", makeGameHandler(ctx));
   jobs.register("market.snapshot", makeMarketSnapshotHandler(ctx));
   jobs.register("market.match", makeMarketMatchHandler(ctx));
+  jobs.register("market.backfill", makeMarketBackfillHandler(ctx));
   jobs.register("assessment.run", makeAssessHandler(ctx));
   jobs.register("audio.extract", makeAudioExtractHandler(ctx));
   jobs.register("transcript.generate", makeTranscribeHandler(ctx));

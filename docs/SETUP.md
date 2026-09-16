@@ -10,6 +10,8 @@ This guide covers everything that is *not* just `npm run setup` + `npm start`. T
 
 Setup → **Prediction markets** turns on read-only Polymarket data (default on; needs internet). Open a prediction → **Markets** → **Find markets** to get scored proposals; accept the one whose resolution rules really match the claim. Sports picks link automatically when the two teams, the game date and the pick type all match a game market (switch that off in Setup if you prefer to review). The **Markets** page lists everything stored, lets you search the venue and *watch* a market, and refreshes prices on the interval you set (0 = manual). Nothing is ever traded; no account is needed.
 
+**Signals (1.7).** The Signals page shows, per market side, the market's price against the linked creators' *realized edge* — what following them would have earned per $1 at the market's price on their settled, linked calls — shrunk toward zero when the record is thin, and a label (strong / moderate / lean / no signal) that only appears when the record size, the edge, the market's liquidity and the deadlines all clear the gates under Setup → Prediction markets → Signal gates. Accepting a link triggers a read of the venue's price history for the day the claim was made. Every row expands to the claims and numbers behind it.
+
 ## 1. Prerequisites
 
 | Requirement | Windows | macOS | Notes |

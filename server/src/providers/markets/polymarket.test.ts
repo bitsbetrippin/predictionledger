@@ -46,6 +46,7 @@ test("PolymarketProvider: search flattens events → markets, get by id/slug, li
       "/events?tag_slug=nfl": [{ id: "9", slug: "lions-vs-bills", title: "Lions vs. Bills", markets: [{ ...gammaMarket, id: "77", question: "Lions vs. Bills", outcomes: '["Lions","Bills"]', outcomePrices: '["0.45","0.55"]', events: undefined }] }],
       "/book?token_id=3233": { bids: [{ price: "0.039", size: "100" }, { price: "0.04", size: "50" }], asks: [{ price: "0.042", size: "80" }] },
       "/midpoint?token_id=3233": { mid: "0.0405" },
+      "/prices-history?market=3233": { history: [{ t: 1757404814, p: "0.155" }, { t: 1757401213, p: 0.15 }] },
     }),
   });
   const found = await pm.search("bitcoin 100k");
@@ -60,6 +61,10 @@ test("PolymarketProvider: search flattens events → markets, get by id/slug, li
   assert.equal(book.bids[0].price, 0.04, "bids sorted best first");
   assert.equal(book.midpoint, 0.0405);
   assert.equal(await pm.get("999999"), undefined, "404 → undefined");
+  const hist = await pm.priceHistory("3233", { from: "2025-09-09T00:00:00Z", to: "2025-09-10T00:00:00Z" });
+  assert.deepEqual(hist.map((h) => h.p), [0.15, 0.155], "sorted ascending by time, strings coerced");
+  assert.equal(hist[0].t, "2025-09-09T07:00:13.000Z");
+  assert.deepEqual(await pm.priceHistory("3233", { from: "2025-09-10T00:00:00Z", to: "2025-09-09T00:00:00Z" }), [], "empty range → no call");
   const broken = new PolymarketProvider({ fetchImpl: (async () => new Response("rate limited", { status: 429 })) as typeof fetch });
   await assert.rejects(() => broken.list({}), (e: unknown) => e instanceof MarketApiError && e.status === 429);
 });

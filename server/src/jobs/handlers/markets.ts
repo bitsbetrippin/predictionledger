@@ -17,6 +17,7 @@ import { z } from "zod";
 import type { JobContext } from "../queue.js";
 import type { AppContext } from "../../context.js";
 import { buildMarketQueries, scoreSportsMarket, scoreTextMarket, type MatchScore } from "../../analysis/markets.js";
+import { priceNearest } from "../../analysis/signals.js";
 import { completeStructured, MalformedOutputError } from "../../analysis/structured.js";
 import { resolveStageTarget } from "../../analysis/stages.js";
 import { createMarketProvider } from "../../providers/markets/registry.js";
@@ -173,11 +174,59 @@ export function makeMarketMatchHandler(ctx: AppContext) {
       if (s.side && p.madeOnDate && link.priceAtMade === undefined) {
         const snap = ctx.markets.snapshotNearest(record.id, p.madeOnDate);
         const price = snap?.prices.find((x) => x.label === s.side)?.price;
-        if (price !== undefined) ctx.markets.setPriceAtMade(link.id, price);
+        if (price !== undefined) ctx.markets.setPriceAtMade(link.id, price, snap!.retrievedAt, "snapshot");
       }
     }
+    if (accepted > 0) ctx.jobs.enqueue({ kind: "market.backfill", subjectType: "prediction", subjectId: predictionId, payload: {}, dedupeKey: "market.backfill:all", maxAttempts: 1 });
     job.progress(100, `${proposed} market link(s) proposed${accepted ? `, ${accepted} auto-accepted` : ""}`);
     return { candidates: seen.size, proposed, accepted, notes, top: scored.slice(0, limit).map(({ m, s }) => ({ id: m.id, question: m.question, ...s })) };
+  };
+}
+
+/**
+ * market.backfill (1.7): read the venue's price of the linked side nearest the prediction's made-on
+ * date from price history, so "what did the market say when they said it" is real, not the price at
+ * link time. One history call per link; budgeted; skipped when the prediction has no made-on date
+ * or the side has no token id.
+ */
+export function makeMarketBackfillHandler(ctx: AppContext) {
+  return async (job: JobContext): Promise<Record<string, unknown>> => {
+    const provider = marketProviderFor(ctx);
+    const budget = ctx.settings.getPersisted().markets.snapshotBudget;
+    const one = job.payload.linkId ? ctx.markets.getLink(String(job.payload.linkId)) : undefined;
+    const links = one ? [one] : ctx.markets.linksNeedingBackfill(budget);
+    let done = 0;
+    const skipped: string[] = [];
+    for (let i = 0; i < links.length; i++) {
+      if (job.signal.aborted) throw new Error("Cancelled");
+      const link = links[i];
+      job.progress(Math.round((i / Math.max(1, links.length)) * 100), `Reading price history ${i + 1}/${links.length}`);
+      const p = ctx.predictions.get(link.predictionId);
+      const m = link.market ?? ctx.markets.get(link.marketId);
+      if (!p || !m) { skipped.push(`${link.id}: prediction or market missing`); continue; }
+      if (!p.madeOnDate) { skipped.push(`${link.id}: prediction has no made-on date`); continue; }
+      const outcome = m.outcomes.find((o) => o.label === link.side);
+      if (!outcome?.tokenId) { skipped.push(`${link.id}: side "${link.side ?? "?"}" has no token id`); continue; }
+      const at = `${p.madeOnDate}T12:00:00Z`;
+      const from = new Date(Date.parse(at) - 3 * 86_400_000).toISOString();
+      const to = new Date(Math.min(Date.now(), Date.parse(at) + 2 * 86_400_000)).toISOString();
+      try {
+        await ctx.rateLimiter.acquire();
+        const points = await provider.priceHistory(outcome.tokenId, { from, to, fidelityMinutes: 60, signal: job.signal });
+        const pt = priceNearest(points, at);
+        if (!pt) { skipped.push(`${link.id}: no price history around ${p.madeOnDate} (market may not have existed yet)`); continue; }
+        ctx.markets.setPriceAtMade(link.id, pt.p, pt.t, "history");
+        if (m.outcomes.length === 2) {
+          const other = m.outcomes.find((o) => o.label !== link.side)!;
+          ctx.markets.addSnapshot(m.id, { provider: m.provider, id: m.venueId, slug: m.slug, url: m.url, question: m.question, outcomes: [{ label: link.side!, tokenId: outcome.tokenId, price: pt.p }, { label: other.label, tokenId: other.tokenId, price: +(1 - pt.p).toFixed(4) }], active: m.active, closed: m.closed, retrievedAt: pt.t }, "history");
+        }
+        done++;
+      } catch (err) {
+        skipped.push(`${link.id}: ${(err as Error).message}`);
+      }
+    }
+    job.progress(100, `${done} link(s) backfilled${skipped.length ? `, ${skipped.length} skipped` : ""}`);
+    return { backfilled: done, skipped };
   };
 }
 

@@ -64,6 +64,13 @@ export interface OrderBookSnapshot {
   retrievedAt: string;
 }
 
+export interface PricePoint {
+  /** ISO timestamp. */
+  t: string;
+  /** Probability 0–1. */
+  p: number;
+}
+
 export interface MarketProvider {
   readonly id: MarketProviderId;
   /** Free-text search across the venue's markets/events. */
@@ -74,6 +81,8 @@ export interface MarketProvider {
   list(opts: { tag?: string; limit?: number; offset?: number; activeOnly?: boolean; signal?: AbortSignal }): Promise<MarketSummary[]>;
   /** Live order book + midpoint for one outcome token. */
   book(tokenId: string, signal?: AbortSignal): Promise<OrderBookSnapshot>;
+  /** Historical prices for one outcome token between two ISO instants (1.7). */
+  priceHistory(tokenId: string, opts: { from: string; to: string; fidelityMinutes?: number; signal?: AbortSignal }): Promise<PricePoint[]>;
 }
 
 export class MarketApiError extends Error {

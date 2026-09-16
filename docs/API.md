@@ -120,6 +120,16 @@ Provider calls made by every job now go through a resilience wrapper: 120 s per-
 
 Settings gain `sports: { enabled, trackSpreads }`.
 
+## Release 1.7 — signals
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/signals?includeSettled=1` | `{ gates, creators: CreatorRecord[], signals: MarketSignal[] }` — computed on read; signals cover open predictions' accepted links unless `includeSettled=1`. |
+| GET | `/api/signals/creators` | Creator records only. |
+| POST | `/api/market-links/:id/backfill` · `/api/markets/backfill` | Enqueue `market.backfill` for one link / every accepted link lacking a history price → `202 { jobId }`. |
+
+`PredictionMarketLink` gains `priceAtMadeAt`, `priceAtMadeSource: "history" | "snapshot"`. Settings gain `markets.signals { priorWeight, minSettledLean, minSettledModerate, minSettledStrong, minLiquidity }`. Job `market.backfill { linkId? }` → `{ backfilled, skipped[] }`. `MarketProvider.priceHistory` is required of adapters.
+
 ## Release 1.6 — markets in the ledger
 
 | Method | Path | Notes |

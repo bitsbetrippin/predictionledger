@@ -12,7 +12,7 @@
  * this adapter normalises them into MarketSummary. Base URLs are overridable for tests and mirrors.
  */
 
-import type { MarketOutcome, MarketProvider, MarketSummary, OrderBookSnapshot } from "./types.js";
+import type { MarketOutcome, MarketProvider, MarketSummary, OrderBookSnapshot, PricePoint } from "./types.js";
 import { MarketApiError } from "./types.js";
 
 export interface PolymarketOptions {
@@ -191,5 +191,21 @@ export class PolymarketProvider implements MarketProvider {
       midpoint: mid.mid !== undefined ? Number(mid.mid) : undefined,
       retrievedAt: new Date().toISOString(),
     };
+  }
+
+  /**
+   * CLOB `GET /prices-history?market=<tokenId>&startTs=<unix s>&endTs=<unix s>&fidelity=<minutes>` →
+   * `{ history: [{ t: <unix s>, p: <0–1> }] }` (verified live 2026-09-16).
+   */
+  async priceHistory(tokenId: string, opts: { from: string; to: string; fidelityMinutes?: number; signal?: AbortSignal }): Promise<PricePoint[]> {
+    const startTs = Math.floor(Date.parse(opts.from) / 1000);
+    const endTs = Math.floor(Date.parse(opts.to) / 1000);
+    if (!Number.isFinite(startTs) || !Number.isFinite(endTs) || endTs <= startTs) return [];
+    const q = new URLSearchParams({ market: tokenId, startTs: String(startTs), endTs: String(endTs), fidelity: String(opts.fidelityMinutes ?? 60) });
+    const data = await this.getJson<{ history?: { t: number; p: number | string }[] }>(`${this.clob}/prices-history?${q}`, opts.signal);
+    return (data.history ?? [])
+      .map((h) => ({ t: new Date(Number(h.t) * 1000).toISOString(), p: Number(h.p) }))
+      .filter((h) => Number.isFinite(h.p))
+      .sort((a, b) => a.t.localeCompare(b.t));
   }
 }

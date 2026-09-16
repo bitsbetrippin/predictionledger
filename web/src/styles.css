@@ -172,3 +172,12 @@ details summary { cursor: pointer; }
 .market-link.accepted { border-left: 3px solid var(--ok, #2f9e44); }
 .market-link.rejected { opacity: 0.6; }
 .market-result { padding: 6px 0; border-bottom: 1px solid var(--border); }
+
+/* 1.7 — signals */
+.pos { color: var(--ok, #2f9e44); }
+.neg { color: var(--danger, #c92a2a); }
+.chip.conf-strong { background: var(--ok, #2f9e44); color: #fff; }
+.chip.conf-moderate { background: #e8a33d; color: #fff; }
+.chip.conf-lean { background: #8aa6c1; color: #fff; }
+.chip.conf-none { opacity: 0.7; }
+.detail-row td { background: var(--surface); }

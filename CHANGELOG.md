@@ -4,6 +4,18 @@ All notable changes to Prediction Ledger. Format follows [Keep a Changelog](http
 
 Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
 
+## [1.7.0] — 2026-09-16 — Signals: creator record vs market
+Step three of [docs/PREDICTION_MARKETS.md](docs/PREDICTION_MARKETS.md): turn "creator said X" + "market says p" + "creator's history" into a number you can argue with. Computed on read, nothing stored, nothing traded.
+### Added
+- **Venue price history.** `MarketProvider.priceHistory(tokenId, {from, to, fidelityMinutes})` over CLOB `/prices-history` (verified live). Job `market.backfill` reads the price of the linked side nearest noon UTC on the prediction's made-on date (window −3/+2 days, hourly) and records it as `priceAtMade` with `priceAtMadeAt` and `priceAtMadeSource: "history"` (migration 009), plus a `history` snapshot for binary markets. Runs automatically when a link is accepted or auto-linked; also `POST /api/market-links/:id/backfill`, `POST /api/markets/backfill`, and a "read venue history" button on the link.
+- **Creator records** (`GET /api/signals/creators`): per channel (or per video when the channel is unknown) — predictions, settled (latest verdict supported / contradicted / partially), hits, misses, hit rate, and over settled predictions with an accepted link and a made-on price: **realized edge** = mean(outcome − market price at made) — what following the creator earned per $1 at the market's price — plus market Brier and creator Brier, and the edge shrunk by n/(n+k).
+- **Signals** (`GET /api/signals`): one row per (market, side) with an accepted link from an open prediction — current market price and snapshot time, contributors' shrunk edges combined by settled-count weight with one contribution per video, estimate = price + edge (clamped), and a **label** — strong / moderate / lean / no signal — that is a gate, not a score: minimum settled linked record (20 / 8 / 3 by default), minimum absolute edge (10 / 5 / 3 pts), liquidity ≥ $10k, and prediction deadlines consistent with the market end (±45 days); every failed gate is listed in `reasons`. Thresholds and prior weight live in Setup → Prediction markets → Signal gates.
+- **Signals page** (nav): market sides with price, estimate, edge, label, contributors (expand a row for the why and each contributing claim with the price at the time and the creator's record), and the creator-record table.
+### Notes
+- Realized edge, not hit rate, is the measure: a creator who only calls 95 % favourites has a high hit rate and ≈ 0 edge.
+- The creator is the video's channel; per-speaker records wait for diarisation. Multiple links on one settled prediction each count as an observation.
+- 71 tests (signal math fixtures, service over a small ledger, backfill job, price-history adapter).
+
 ## [1.6.0] — 2026-09-16 — Markets in the ledger
 Step two of [docs/PREDICTION_MARKETS.md](docs/PREDICTION_MARKETS.md): a prediction can point at a market, and the app remembers what the market said. Still read-only.
 ### Added

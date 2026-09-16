@@ -30,6 +30,8 @@ import { ConsensusService } from "./services/consensus.js";
 import { PaperService } from "./services/paper.js";
 import { makeMarketWatchHandler } from "./jobs/handlers/watch.js";
 import { makePlaylistImportHandler } from "./youtube/playlist.js";
+import { TradingAccountService } from "./services/tradingAccounts.js";
+import { createTradingAdapter } from "./providers/trading/registry.js";
 import { GuardedFetcher, type SourceFetcher } from "./research/fetcher.js";
 import { makeAudioExtractHandler, makeModelDownloadHandler, makeTranscribeHandler } from "./jobs/handlers/media.js";
 import { LocalWhisperProvider, OpenAiTranscriptionProvider, type TranscriptionProvider } from "./media/transcription.js";
@@ -60,6 +62,8 @@ export interface AppContext {
   consensus: ConsensusService;
   /** 1.9: paper-trading ledger (hypothetical positions; never orders). */
   paper: PaperService;
+  /** 1.10: Polymarket US account connection (reads only; owns the trading secret vault). */
+  trading: TradingAccountService;
   fetcher: SourceFetcher;
   /** Builds the transcription engine selected in Setup (or a test override). */
   transcription: () => TranscriptionProvider;
@@ -93,6 +97,8 @@ export function createContext(overrides: Partial<Pick<AppContext, "fetcher" | "t
     alerts: new AlertService(db),
     consensus: new ConsensusService(db, new SignalService(db)),
     paper: new PaperService(db),
+    // The vault handle is created here and handed to exactly one service; nothing else can read trading.* secrets.
+    trading: new TradingAccountService(db, secrets.openVault("trading."), () => createTradingAdapter("polymarket_us"), { allowInternet: () => settings.getPersisted().privacy.allowInternet }),
     fetcher: overrides.fetcher ?? new GuardedFetcher(),
     transcription:
       overrides.transcription ??
@@ -124,5 +130,9 @@ export function createContext(overrides: Partial<Pick<AppContext, "fetcher" | "t
   // Research runs interrupted by a crash: the job queue re-runs the job, which creates a new run.
   const orphaned = ctx.research.failOrphanedRuns();
   if (orphaned) console.log(`[research] marked ${orphaned} interrupted run(s) as failed`);
+  // 1.10 (OPS-02): a restored database never comes up armed or "connected" without its credentials.
+  const boot = ctx.trading.startupCheck();
+  if (boot.needsRebind) console.log("[trading] Polymarket US binding needs rebind: credentials are not in this data directory (restored backup?)");
+  if (boot.disarmed) console.log("[trading] live trading mode found in the database was reset to paper at startup");
   return ctx;
 }

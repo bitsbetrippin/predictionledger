@@ -120,6 +120,23 @@ Provider calls made by every job now go through a resilience wrapper: 120 s per-
 
 Settings gain `sports: { enabled, trackSpreads }`.
 
+## Release 1.10 — Polymarket US account connection (reads only)
+
+Application routes, distinct from venue routes. All mutations require the CSRF header and same origin; bodies are `.strict()` — an unknown key (a base URL, a mode, a budget) is a `400`. No route in this release creates, previews or modifies an order; the live-control paths exist only to answer `501 feature_disabled`.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/trading/status` | `TradingStatus`: `policy {mode, liveAuthorizedAt?}`, `features {submission:false, automation:false}`, `armed:false`, `submissionAvailable:false`, `binding?` (local id, state, `identityKind:"local_binding"`, fingerprint, masked hints, continuity, `reconcileRequired`), `previousBindings[]`, `latestSync?` (balances / positions / open orders as decimal strings with currency), `syncAgeSeconds`, `stale` (> 30 s), `gates[]`, `identityNote`, `hosts`, `sdk`. |
+| GET | `/api/trading/audit?limit=100` | Append-only, secret-free events: `connection.tested`, `connection.saved`, `credential.replaced`, `trading.disarmed`, `orders.cancel_requested`, `connection.disconnected`, `connection.validation_failed`, `sync.failed`, `policy.mode_changed`, `connection.needs_rebind`, `backup.scrubbed`. |
+| POST | `/api/trading/connection/test` | `{ keyId?, secretKey? }` (blank = use the saved credential). Returns `TradingConnectionTest { ok, code, message, credentialFingerprint?, balances?, orderCalls: 0 }`. Codes: `ok`, `malformed_secret`, `invalid_key_id` (no network call), `offline_mode`, `unauthorized`, `forbidden`, `clock_skew`, `rate_limited`, `venue_unavailable`, `network`, `timeout`, `sdk_missing`. Never a trade. |
+| PUT | `/api/trading/connection` | `{ keyId, secretKey, assertSameAccount? }` → `201 { binding, test, sync?, status }`. Requires a passing live test (`422 connection_failed` with the test otherwise). Same fingerprint continues the binding; a different one starts a new binding (`continuity: "unverified"`, old row `superseded`) unless `assertSameAccount` (`"user_asserted"`); both set `reconcileRequired`. Never changes the mode. |
+| DELETE | `/api/trading/connection` | Disarms (live → paper, authorization cleared, prepared intents invalidated — none can exist yet), requests cancellation of app-owned open orders (empty in 1.10), removes the credential, keeps history. `{ disconnected, cancellations[], note, status }`; `404 not_connected`. |
+| POST | `/api/trading/sync` | Reads balances, every page of positions and open orders; stores a sync row. Errors: `401 trading_unauthorized|trading_forbidden`, `429`, `502 trading_<code>`. |
+| GET / PUT | `/api/trading/policy` | `{ mode }`. 1.10 accepts `disabled` and `paper`; `manual_live` / `auto_live` → `409 gate_unmet { gates[] }`. Generic `PUT /api/settings` cannot change it. |
+| POST | `/api/trading/arm`, `/disarm`, `/emergency-stop`, `/decisions`, `/orders` | `501 feature_disabled` in this build. |
+
+`MarketProviderId` gains `"polymarket_us"`; `MarketRecord`/`MarketSummary` gain `constraints?: MarketContractConstraints` (US only: `status`, `tickSize`, `minQuantity`, `feeCoefficient`, `sides[{id,label,long,tradable}]`, `category`, `sportsMarketType`, `line`, `gameStartTime`, `eventStartTime`, `bestBid`, `bestAsk` — decimal strings, USD). US outcome token ids are `<slug>:YES` / `<slug>:NO`. The JSON export gains `tradingBindings` and `tradingAudit` (secret-free).
+
 ## Release 1.9 — paper trading
 
 | Method | Path | Notes |

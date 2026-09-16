@@ -694,13 +694,22 @@ export interface ExportBundle {
   /** 1.6 */
   markets?: MarketRecord[];
   marketLinks?: PredictionMarketLink[];
+  /** 1.10 — secret-free: bindings carry masked hints and fingerprints only. */
+  tradingBindings?: TradingAccountBinding[];
+  tradingAudit?: TradingAuditEvent[];
 }
 
 // ---------------------------------------------------------------------------
 // Release 1.6 — prediction markets in the ledger
 // ---------------------------------------------------------------------------
 
-export type MarketProviderId = "polymarket" | "manifold";
+/**
+ * Market venues. `polymarket` = Polymarket international (Gamma/CLOB, read-only), `manifold` = Manifold
+ * (play money, read-only), `polymarket_us` = Polymarket US retail (1.10: read-only discovery; the only
+ * venue that can ever reach the separate execution adapter). Records are namespaced by this id and are
+ * never converted between venues.
+ */
+export type MarketProviderId = "polymarket" | "manifold" | "polymarket_us";
 
 export interface MarketRecord {
   id: string;
@@ -726,6 +735,40 @@ export interface MarketRecord {
   updatedAt: string;
   /** Latest snapshot, when one exists. */
   latest?: MarketSnapshot;
+  /** 1.10 — venue contract constraints (Polymarket US only). Absent for other venues. */
+  constraints?: MarketContractConstraints;
+}
+
+/**
+ * 1.10 — what a venue says about a tradable contract, as published, without interpretation. Values that the
+ * venue omits stay undefined: a missing field blocks the dependent execution category (spec §14.4), it is never
+ * defaulted. Amounts are decimal strings with the unit declared.
+ */
+export interface MarketContractConstraints {
+  venue: "polymarket_us";
+  /** Venue market slug — the symbol every private endpoint keys on. */
+  slug: string;
+  /** Venue status string as published (e.g. MARKET_STATUS_OPEN); undocumented in the OpenAPI schema, captured verbatim. */
+  status?: string;
+  /** Smallest valid price increment for `price.value` (decimal string, USD). */
+  tickSize?: string;
+  /** Smallest valid order quantity in contracts (decimal string; "0.01" = 1 % of a contract). */
+  minQuantity?: string;
+  /** Fee coefficient Θ published on the market at retrieval time. Effective-dated by the venue; never frozen in code. */
+  feeCoefficient?: string;
+  /** Durable side identifiers. `long` marks the YES-denominated instrument; NO is synthetic (1 − YES). */
+  sides: { id: string; label: string; long: boolean; tradable?: boolean }[];
+  category?: string;
+  sportsMarketType?: string;
+  line?: string;
+  /** Event/game start as published (ISO). The earliest applicable of these is the pre-event cutoff basis (MAT-06, 1.11). */
+  gameStartTime?: string;
+  eventStartTime?: string;
+  eventId?: string;
+  /** Best YES bid/ask at retrieval (decimal strings, USD). */
+  bestBid?: string;
+  bestAsk?: string;
+  retrievedAt: string;
 }
 
 export interface MarketSnapshot {
@@ -960,4 +1003,156 @@ export interface PaperBook {
   brierMarket?: number;
   /** Equity over time from marks (newest last). */
   curve: { at: string; equity: number }[];
+}
+
+// ---------------------------------------------------------------------------
+// Release 1.10 — Polymarket US account connection (read-only foundation)
+// ---------------------------------------------------------------------------
+
+export type TradingVenueId = "polymarket_us";
+
+/** ACC-05: connection never arms trading. 1.10 accepts only `disabled` and `paper`; live modes wait for their release gates. */
+export type TradingMode = "disabled" | "paper" | "manual_live" | "auto_live";
+
+/** Decimal amount with its unit declared; never a binary float for ledgers. */
+export interface DecimalAmount {
+  value: string;
+  currency: string;
+}
+
+export type TradingAccountState = "connected" | "disconnected" | "needs_rebind" | "superseded";
+
+/** How the binding relates to the one before it (ACC-03). */
+export type TradingContinuity = "first" | "same_credential" | "user_asserted" | "unverified";
+
+export interface TradingAccountBinding {
+  /** Local binding id — the app's own identifier for this credential/account pairing. Never a venue account id. */
+  id: string;
+  venue: TradingVenueId;
+  state: TradingAccountState;
+  /** "local_binding" until a venue exposes a verified account identity (Polymarket US retail does not, as of 2026-09-16). */
+  identityKind: "local_binding" | "venue_verified";
+  externalIdentity?: string;
+  /** SHA-256 (hex, 16 chars) of the Ed25519 public key derived from the secret — identifies the credential, not the person. */
+  credentialFingerprint?: string;
+  keyIdHint?: string;
+  secretHint?: string;
+  continuity: TradingContinuity;
+  /** Set when a binding change means existing venue state must be re-read before anything could activate. */
+  reconcileRequired: boolean;
+  supersededBy?: string;
+  createdAt: string;
+  lastValidatedAt?: string;
+  lastValidationError?: string;
+  lastSyncAt?: string;
+  disconnectedAt?: string;
+}
+
+export interface TradingBalanceSummary {
+  currency: string;
+  currentBalance?: DecimalAmount;
+  buyingPower?: DecimalAmount;
+  openOrdersNotional?: DecimalAmount;
+  assetNotional?: DecimalAmount;
+  unsettledFunds?: DecimalAmount;
+  /** Venue-reported last balance change. */
+  lastUpdated?: string;
+  /** "number" = the venue returned JSON numbers (decimal formatting is ours); "string" = decimal strings verbatim. */
+  precisionSource: "number" | "string";
+}
+
+export interface TradingPositionSummary {
+  marketSlug: string;
+  title?: string;
+  outcome?: string;
+  eventSlug?: string;
+  /** Contracts (decimal string); positive = long YES, negative = short. */
+  netQuantity: string;
+  cost?: DecimalAmount;
+  realized?: DecimalAmount;
+  cashValue?: DecimalAmount;
+  expired: boolean;
+  updateTime?: string;
+}
+
+export interface TradingOpenOrderSummary {
+  id: string;
+  marketSlug: string;
+  intent: string;
+  state: string;
+  /** Venue (YES-denominated) price. */
+  price?: DecimalAmount;
+  quantity?: string;
+  filledQuantity?: string;
+  createTime?: string;
+}
+
+export interface TradingAccountSync {
+  id: string;
+  bindingId: string;
+  at: string;
+  ok: boolean;
+  error?: string;
+  balances: TradingBalanceSummary[];
+  positions: TradingPositionSummary[];
+  openOrders: TradingOpenOrderSummary[];
+  /** Positions/open-order pages were fully read (absence can only be inferred from a complete snapshot). */
+  complete: boolean;
+}
+
+export interface TradingConnectionTest {
+  ok: boolean;
+  /** Stable code for the UI: ok | malformed_secret | invalid_key_id | unauthorized | forbidden | clock_skew | rate_limited | venue_unavailable | offline_mode | sdk_missing | host_not_allowed | unknown */
+  code: string;
+  /** Redacted, human-readable. Never contains key material or auth headers. */
+  message: string;
+  credentialFingerprint?: string;
+  balances?: TradingBalanceSummary[];
+  /** Count of venue create/cancel calls made by the test — always 0 (ACC-02). */
+  orderCalls: 0;
+}
+
+export interface TradingPolicy {
+  mode: TradingMode;
+  /** Present only after an explicit owner authorization (1.14). Absent in 1.10. */
+  liveAuthorizedAt?: string;
+  liveAuthorizationHash?: string;
+  updatedAt: string;
+}
+
+export interface TradingGate {
+  id: string;
+  label: string;
+  satisfied: boolean;
+  detail: string;
+}
+
+export interface TradingAuditEvent {
+  id: string;
+  at: string;
+  bindingId?: string;
+  kind: string;
+  details: Record<string, unknown>;
+}
+
+export interface TradingStatus {
+  venue: TradingVenueId;
+  policy: TradingPolicy;
+  /** Feature flags: what this build can do at all. Both false in 1.10. */
+  features: { submission: boolean; automation: boolean };
+  armed: false;
+  submissionAvailable: false;
+  binding?: TradingAccountBinding;
+  /** Retained earlier bindings (history is never deleted on disconnect). */
+  previousBindings: TradingAccountBinding[];
+  latestSync?: TradingAccountSync;
+  /** Seconds since the latest successful sync; undefined when none. */
+  syncAgeSeconds?: number;
+  /** True when no sync is younger than the freshness bound (RSK-03: 30 s). */
+  stale: boolean;
+  gates: TradingGate[];
+  /** Plain-language limitation of the identity binding (ACC-03). */
+  identityNote: string;
+  hosts: { gateway: string; api: string };
+  sdk: { package: string; version: string };
 }

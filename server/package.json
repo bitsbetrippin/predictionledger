@@ -1,6 +1,6 @@
 {
   "name": "@prediction-ledger/server",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
@@ -9,12 +9,14 @@
     "build": "tsc -p tsconfig.json && node ../scripts/copy-migrations.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dev": "tsx watch src/index.ts",
-    "test": "node --import tsx --test \"src/**/*.test.ts\""
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "test:trading": "node --import tsx --test \"src/providers/trading/*.test.ts\" \"src/providers/markets/polymarketUs.test.ts\" \"src/services/trading.test.ts\" \"src/routes/trading.test.ts\""
   },
   "dependencies": {
     "@fastify/static": "^8.0.0",
-    "@prediction-ledger/shared": "1.9.0",
+    "@prediction-ledger/shared": "1.10.0",
     "fastify": "^5.0.0",
+    "polymarket-us": "0.1.1",
     "zod": "^3.23.0"
   },
   "devDependencies": {

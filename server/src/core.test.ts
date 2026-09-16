@@ -27,16 +27,23 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 test("migrations apply in order and create the expected tables", () => {
   const paths = tempPaths();
   const { db, schemaVersion } = openDatabase(paths as never);
-  assert.equal(schemaVersion, 11);
+  assert.equal(schemaVersion, 12);
   const tables = db
     .all<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     .map((r) => r.name);
   assert.deepEqual(tables, [
     "alerts", "assessments", "component_assessments", "evidence_items", "games", "jobs", "market_snapshots", "markets", "paper_marks", "paper_positions", "prediction_components", "prediction_market_links", "prediction_revisions", "predictions",
     "prompt_templates", "research_runs", "run_results", "schema_migrations", "search_cache", "secrets", "settings", "sources",
-    "transcript_segments", "transcription_chunks", "validation_plans", "videos",
+    "trading_account_syncs", "trading_accounts", "trading_audit_events", "trading_policy", "transcript_segments", "transcription_chunks", "validation_plans", "videos",
   ]);
-  assert.deepEqual(db.all<{ version: number }>("SELECT version FROM schema_migrations ORDER BY version").map((r) => r.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  assert.deepEqual(db.all<{ version: number }>("SELECT version FROM schema_migrations ORDER BY version").map((r) => r.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  // 1.10: the policy row exists with paper mode and no live authorization; the audit table is append-only.
+  const policy = db.get<{ mode: string; live_authorized_at: string | null }>("SELECT mode, live_authorized_at FROM trading_policy WHERE id = 'default'")!;
+  assert.equal(policy.mode, "paper");
+  assert.equal(policy.live_authorized_at, null);
+  db.run("INSERT INTO trading_audit_events (id, kind) VALUES ('a1', 'test')");
+  assert.throws(() => db.run("UPDATE trading_audit_events SET kind = 'x' WHERE id = 'a1'"), /append-only/);
+  assert.throws(() => db.run("DELETE FROM trading_audit_events WHERE id = 'a1'"), /append-only/);
   db.close();
 });
 

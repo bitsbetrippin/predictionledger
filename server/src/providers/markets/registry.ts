@@ -8,8 +8,9 @@
 import type { MarketProvider, MarketProviderId } from "./types.js";
 import { PolymarketProvider } from "./polymarket.js";
 import { ManifoldProvider } from "./manifold.js";
+import { PolymarketUsProvider } from "./polymarketUs.js";
 
-export const MARKET_PROVIDER_IDS: MarketProviderId[] = ["polymarket", "manifold"];
+export const MARKET_PROVIDER_IDS: MarketProviderId[] = ["polymarket", "manifold", "polymarket_us"];
 export const isMarketProviderId = (x: string): x is MarketProviderId => (MARKET_PROVIDER_IDS as string[]).includes(x);
 
 const overrides = new Map<MarketProviderId, MarketProvider>();
@@ -20,7 +21,7 @@ export function createMarketProvider(id: MarketProviderId): MarketProvider {
   if (o) return o;
   let p = singletons.get(id);
   if (!p) {
-    p = id === "manifold" ? new ManifoldProvider() : new PolymarketProvider();
+    p = id === "manifold" ? new ManifoldProvider() : id === "polymarket_us" ? new PolymarketUsProvider() : new PolymarketProvider();
     singletons.set(id, p);
   }
   return p;

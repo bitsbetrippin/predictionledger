@@ -1,0 +1,77 @@
+{
+ "_note": "Captured from GET https://gateway.polymarket.us/v1/market/slug/cpc-btc-100k-10-31-2026 on 2026-09-16 (public data; prices are stale). Note outcomes order [\"No\",\"Yes\"].",
+ "market": {
+  "id": "268833",
+  "question": "When will Bitcoin cross $100k again?",
+  "slug": "cpc-btc-100k-10-31-2026",
+  "endDate": "2027-01-14T23:00:00Z",
+  "category": "crypto",
+  "startDate": "2026-07-21T16:17:24Z",
+  "description": "This market will settle to Yes if the price of Bitcoin is above $100,000.00 at any point after the creation of this market and before 12:00 AM ET on November 1, 2026.\n\nOutcome sourced from CF Benchmarks' Bitcoin Real-Time Index.\n\nThe market settles based on the CF Bitcoin Real-Time Index (BRTI) using a trimmed mean calculation over any sixty second period, excluding the top 20% and bottom 20% of values. If this trimmed mean crosses the threshold at any point, the market settles to Yes. Otherwise, the market settles to No.",
+  "active": true,
+  "marketType": "futures",
+  "closed": false,
+  "createdAt": "2026-07-21T16:17:24Z",
+  "updatedAt": "2026-09-16T15:22:58Z",
+  "archived": false,
+  "orderPriceMinTickSize": 0.01,
+  "gameStartTime": "2026-07-13T19:40:00Z",
+  "manualActivation": false,
+  "sportsMarketType": "futures",
+  "marketSides": [
+   {
+    "id": "537230",
+    "marketSideType": "MARKET_SIDE_TYPE_INSTRUMENT",
+    "identifier": "cpc-btc-100k-10-31-2026",
+    "createdAt": "2026-07-21T16:17:24Z",
+    "updatedAt": "2026-07-21T16:17:24Z",
+    "description": "Yes",
+    "price": "0.0700",
+    "marketId": 268833,
+    "long": true,
+    "quote": {
+     "value": "0.0700",
+     "currency": "USD"
+    },
+    "tradable": true
+   },
+   {
+    "id": "537231",
+    "marketSideType": "MARKET_SIDE_TYPE_INSTRUMENT",
+    "identifier": "cpc-btc-100k-10-31-2026",
+    "createdAt": "2026-07-21T16:17:24Z",
+    "updatedAt": "2026-07-21T16:17:24Z",
+    "description": "No",
+    "price": "0.94",
+    "marketId": 268833,
+    "long": false,
+    "quote": {
+     "value": "0.94",
+     "currency": "USD"
+    },
+    "tradable": true
+   }
+  ],
+  "outcomes": "[\"No\",\"Yes\"]",
+  "outcomePrices": "[\"0.0700\",\"0.94\"]",
+  "ep3Status": "OPEN",
+  "status": "MARKET_STATUS_OPEN",
+  "sportsMarketTypeV2": "SPORTS_MARKET_TYPE_FUTURE",
+  "hidden": false,
+  "title": "Before November 2026",
+  "feeCoefficient": 0.06,
+  "sortOrder": 2,
+  "bestBidQuote": {
+   "value": "0.0600",
+   "currency": "USD"
+  },
+  "bestAskQuote": {
+   "value": "0.0700",
+   "currency": "USD"
+  },
+  "titleShort": "Before November 2026",
+  "ep3SyncedAt": "2026-09-14T11:49:09Z",
+  "minimumTradeQty": 0.01,
+  "comboEnabled": false
+ }
+}

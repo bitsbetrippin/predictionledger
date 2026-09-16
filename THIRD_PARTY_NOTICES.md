@@ -14,6 +14,14 @@ This file is maintained by hand. **Rule:** a dependency is added to `package.jso
 | zod | ^3 | MIT | Colin McDonnell | Runtime validation |
 | react, react-dom | ^18 | MIT | Meta Platforms, Inc. and affiliates | Dashboard UI |
 
+## Runtime dependencies (Release 1.10 — Polymarket US)
+
+| Component | Version | License | Copyright / origin | Used for |
+|---|---|---|---|---|
+| polymarket-us | 0.1.1 (pinned exactly) | MIT | Polymarket Team — github.com/Polymarket/polymarket-us-typescript | Signed transport for the Polymarket US retail API (reads only in 1.10); loaded lazily by `providers/trading/polymarketUs.ts` |
+| @noble/ed25519 | ^2.2.3 (transitive, via polymarket-us) | MIT | Paul Miller | Ed25519 request signatures inside the SDK |
+| ws | ^8.18 (transitive, via polymarket-us) | MIT | Einar Otto Stangvik and contributors | SDK WebSocket support (not used by 1.10) |
+
 ## Build-time dependencies
 
 | Component | License | Origin | Used for |

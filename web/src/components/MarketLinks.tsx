@@ -17,7 +17,7 @@ export function MarketLinks(props: { predictionId: string; kind: "general" | "sp
   const [error, setError] = useState<string | null>(null);
   const [manual, setManual] = useState("");
   const [manualSide, setManualSide] = useState("");
-  const [manualVenue, setManualVenue] = useState<"polymarket" | "manifold">("polymarket");
+  const [manualVenue, setManualVenue] = useState<"polymarket" | "manifold" | "polymarket_us">("polymarket");
 
   const load = async () => {
     try { setLinks(await marketsApi.links(props.predictionId)); } catch (e) { setError((e as Error).message); }
@@ -96,7 +96,7 @@ export function MarketLinks(props: { predictionId: string; kind: "general" | "sp
       <details>
         <summary className="small">Link a market by hand</summary>
         <div className="row small">
-          <select value={manualVenue} onChange={(e) => setManualVenue(e.target.value as "polymarket" | "manifold")} aria-label="Venue"><option value="polymarket">Polymarket</option><option value="manifold">Manifold</option></select>
+          <select value={manualVenue} onChange={(e) => setManualVenue(e.target.value as "polymarket" | "manifold" | "polymarket_us")} aria-label="Venue"><option value="polymarket">Polymarket</option><option value="manifold">Manifold</option><option value="polymarket_us">Polymarket US</option></select>
           <input value={manual} placeholder="slug, id, or market URL" onChange={(e) => setManual(e.target.value)} style={{ minWidth: 280 }} />
           <input value={manualSide} placeholder="side (Yes / team)" onChange={(e) => setManualSide(e.target.value)} style={{ width: 130 }} />
           <button type="button" disabled={!!busy || !manual.trim()} onClick={() => run("Linking…", async () => { await marketsApi.linkManual(props.predictionId, manual.trim(), manualSide.trim() || undefined, manualVenue); setManual(""); setManualSide(""); })}>Link</button>

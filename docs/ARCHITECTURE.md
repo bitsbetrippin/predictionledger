@@ -388,6 +388,23 @@ interface SourceFetcher         { fetch(url): { text, title, publishedAt, ... } 
 
 **Provider-native search** (Anthropic/OpenAI web search tools) is treated as a `SearchProvider` whose results are the tool's returned citations. They are stored like any other retrieved evidence, and the app still fetches and snapshots the cited pages where accessible.
 
+### 6.1 Market data and the Polymarket US execution boundary (1.5 → 1.10)
+
+Two more interfaces were added later, and they are deliberately kept apart:
+
+```ts
+interface MarketProvider { search(); get(); list(); book(); priceHistory() }               // public venue data → probabilities; never authenticated
+interface TradingAdapter { balances(); positions(); openOrders(); cancelOrder() }          // 1.10: signed account READS + targeted cancel; no create/preview
+```
+
+| Venue | Provider id | Hosts | Units | Account | Can reach execution? |
+|---|---|---|---|---|---|
+| Polymarket (international) | `polymarket` | gamma-api / clob .polymarket.com | USDC | none | never (geo-restricted; research only) |
+| Manifold | `manifold` | api.manifold.markets | mana (play money) | none | never |
+| Polymarket US | `polymarket_us` | gateway.polymarket.us (public) · api.polymarket.us (signed) | USD | optional, key ID + Ed25519 secret | the only one — after the 1.11 → 1.13 gates |
+
+Rules that hold across the whole track (ADR-030/031): records are namespaced by provider and never converted; the `TradingAdapter` is the only code that may hold a venue credential, and it takes the credential per call from the trading service, which is the only holder of the `trading.` secret vault; the official `polymarket-us` SDK is pinned and used as the signed transport only — business logic never imports SDK types; production hosts are fixed in the adapter (base-URL overrides are constructor-only, test-only); the trading mode lives in `trading_policy`, not in settings, so a settings save cannot arm anything; every automated test uses the fake adapter; LLMs never call the adapter (there is no tool for it) and never modify policy. What the adapter *cannot* do in 1.10 is the point: there is no method that creates, previews or modifies an order, so submission is impossible by construction until the release that adds it passes its gate.
+
 ---
 
 ## 7. Security model
@@ -396,7 +413,9 @@ interface SourceFetcher         { fetch(url): { text, title, publishedAt, ... } 
 Loopback only (`127.0.0.1`), not configurable. No CORS. Security headers on every response (`nosniff`, `DENY` framing, no referrer). CSP on the dashboard restricts scripts to same-origin.
 
 ### 7.2 Secrets
-AES-256-GCM per secret, key in `secret.key` (owner-only), plaintext decrypted only for the outbound call, never logged (pino redaction of `authorization` and `x-api-key`), never in exports, never in the browser (only masked hints like `sk-ant-…4f2a`). Threat model: protects against copied/committed/exported databases; does **not** defend against malware running as the same OS user (same boundary as an OS keychain for an unsigned app). OS-keychain backing is a deferred enhancement.
+AES-256-GCM per secret, key in `secret.key` (owner-only), plaintext decrypted only for the outbound call, never logged (pino redaction of `authorization`, `x-api-key`, `x-pm-access-key`, `x-pm-signature`, `keyId`, `secretKey`), never in exports, never in the browser (only masked hints like `sk-ant-…4f2a`). Threat model: protects against copied/committed/exported databases; does **not** defend against malware running as the same OS user (same boundary as an OS keychain for an unsigned app). OS-keychain backing is a deferred enhancement.
+
+**Protected namespace (1.10).** Names under `trading.` are refused by `SecretStore.get/set/has/hint/delete`; they are reachable only through a `SecretVault` opened once in the composition root and handed to `TradingAccountService`. Model and search adapters receive getters for their own keys and never see the store, so a prompt-injected model or a compromised search adapter has no code path to a venue credential (OPS-01). Every string that leaves the trading adapter is passed through `redactSecrets` with the live key material and the venue's header shapes before it is stored, returned or logged. **Portable backups** scrub `trading.*` secrets and live authorization from the copy (OPS-02); the raw data-directory copy and pre-migration copies still contain the ciphertext and keep their documented sensitivity. On Windows the protection of `secret.key` is the per-user `%LOCALAPPDATA%` ACL — verified by inspection on the owner's machine, not inferred from the POSIX `0600` mode.
 
 ### 7.3 Browser request protections
 Mutating requests require the custom header `x-prediction-ledger: 1` (cross-origin pages cannot add it without a preflight we never approve) and, when present, an `Origin` matching our own. Localhost is not treated as trusted.

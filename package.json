@@ -1,13 +1,13 @@
 {
   "name": "prediction-ledger",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "private": true,
   "description": "Prediction Ledger \u2014 import a video, extract the predictions it makes, generate an inspectable validation plan, research what actually happened, and keep a ledger of the results. Runs entirely on localhost.",
   "license": "Apache-2.0",
   "author": "Michael D. Carter (BitsBeTrippin) \u2014 original concept; built with Claude AI assistance",
   "repository": {
     "type": "git",
-    "url": "https://github.com/bitsbetrippin/prediction-ledger"
+    "url": "https://github.com/bitsbetrippin/predictionledger"
   },
   "engines": {
     "node": ">=22.13.0",
@@ -29,6 +29,8 @@
     "eval": "npx promptfoo@latest eval -c evals/promptfooconfig.yaml",
     "backup": "node scripts/backup.mjs",
     "markets": "node scripts/markets-probe.mjs",
+    "test:trading": "npm run test:trading --workspace server",
+    "trading:read-check": "node scripts/polymarket-us-read-check.mjs",
     "doctor": "node scripts/doctor.mjs"
   },
   "devDependencies": {

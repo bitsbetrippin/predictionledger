@@ -11,6 +11,7 @@
 import { useEffect, useState } from "react";
 import type { AnalysisStage, AppSettings, JobSummary, LlmProviderId, MediaStatus, ModelInfo, ProviderTestResult, ToolsStatus } from "@prediction-ledger/shared";
 import { api, backups, content, media, pollJob, toPayload, youtube, type BackupInfo, type SecretUpdates } from "../api";
+import { PolymarketUsCard } from "../components/PolymarketUsCard";
 import type { PromptTemplateInfo } from "@prediction-ledger/shared";
 
 const PROVIDER_LABELS: Record<LlmProviderId, string> = {
@@ -18,6 +19,13 @@ const PROVIDER_LABELS: Record<LlmProviderId, string> = {
   openai: "OpenAI",
   lmstudio: "LM Studio (local)",
 };
+
+const VENUE_LABELS = { polymarket: "Polymarket (international)", manifold: "Manifold", polymarket_us: "Polymarket US" } as const;
+const VENUE_NOTES = {
+  polymarket: " — USDC markets on the international site; trading there is geo-restricted, data is public.",
+  manifold: " — play-money markets (mana); liquidity and volume are not dollars, so treat its signal gates accordingly.",
+  polymarket_us: " — the CFTC-regulated US exchange (USD). Public market data needs no account; the account connection below is separate and never required for discovery.",
+} as const;
 
 const STAGE_LABELS: Record<AnalysisStage, string> = {
   extraction: "Prediction extraction",
@@ -57,7 +65,7 @@ export function SetupPage() {
     setBackupMsg(null);
     try {
       const b = await backups.create();
-      setBackupMsg(`Backup written: ${b.file} (${(b.bytes / 1024).toFixed(0)} KB${b.hasSecretKey ? ", secret key copied alongside" : ""}).`);
+      setBackupMsg(`Backup written: ${b.file} (${(b.bytes / 1024).toFixed(0)} KB${b.hasSecretKey ? ", secret key copied alongside" : ""}). Polymarket US credentials and any live authorization are not included; a restore needs a reconnect.`);
       await loadBackups();
     } catch (e) {
       setBackupMsg((e as Error).message);
@@ -344,13 +352,13 @@ export function SetupPage() {
         </div>
         <h3>Venues</h3>
         <div className="grid-3">
-          {(["polymarket", "manifold"] as const).map((v) => (
+          {(["polymarket", "manifold", "polymarket_us"] as const).map((v) => (
             <label key={v} className="row">
               <input type="checkbox" checked={settings.markets.venues.includes(v)} onChange={(e) => update((s) => { const set = new Set(s.markets.venues); if (e.target.checked) set.add(v); else set.delete(v); if (set.size === 0) set.add("polymarket"); s.markets.venues = [...set]; return s; })} />
-              <span><strong>{v === "polymarket" ? "Polymarket" : "Manifold"}</strong>{v === "manifold" ? " — play-money markets (mana); liquidity and volume are not dollars, so treat its signal gates accordingly." : " — USDC markets; trading is geo-restricted, data is public."}</span>
+              <span><strong>{VENUE_LABELS[v]}</strong>{VENUE_NOTES[v]}</span>
             </label>
           ))}
-          <label className="field"><span>Default venue</span><select value={settings.markets.provider} onChange={(e) => update((s) => ((s.markets.provider = e.target.value as typeof s.markets.provider), s))}><option value="polymarket">Polymarket</option><option value="manifold">Manifold</option></select></label>
+          <label className="field"><span>Default venue</span><select value={settings.markets.provider} onChange={(e) => update((s) => ((s.markets.provider = e.target.value as typeof s.markets.provider), s))}><option value="polymarket">Polymarket (international)</option><option value="manifold">Manifold</option><option value="polymarket_us">Polymarket US</option></select></label>
         </div>
         <h3>Watch rules</h3>
         <p className="muted small">Checked after every snapshot refresh (and on demand from the Signals page); each rule raises one local alert per subject per day.</p>
@@ -445,6 +453,9 @@ export function SetupPage() {
           </div>
         )}
       </fieldset>
+
+      <h2>Polymarket US account</h2>
+      <PolymarketUsCard allowInternet={settings.privacy.allowInternet} />
 
       <h2>Web search (for outcome research)</h2>
       <fieldset className="card">

@@ -7,8 +7,32 @@
  * RFC 4180 quoting; UTF-8 BOM so Excel opens it correctly. Never touches settings or secrets.
  */
 
+import type { ExportBundle } from "@prediction-ledger/shared";
 import type { AppContext } from "../context.js";
+import { APP_VERSION } from "../config.js";
 import { timeStatus } from "../analysis/dates.js";
+
+/** JSON export: content, research, games, markets and (1.10) the secret-free trading audit trail. Never settings or secrets. */
+export function buildExportBundle(ctx: Pick<AppContext, "videos" | "predictions" | "plans" | "research" | "games" | "markets" | "trading">): ExportBundle {
+  const predictions = ctx.predictions.list({ includeDismissed: true });
+  const status = ctx.trading.status();
+  return {
+    exportedAt: new Date().toISOString(),
+    appVersion: APP_VERSION,
+    videos: ctx.videos.list(),
+    predictions,
+    plans: predictions.flatMap((p) => ctx.plans.listForPrediction(p.id)),
+    runs: ctx.research.allRuns(),
+    sources: ctx.research.allSources(),
+    evidence: ctx.research.allEvidence(),
+    assessments: ctx.research.allAssessments(),
+    games: ctx.games.list(),
+    markets: ctx.markets.list(),
+    marketLinks: ctx.markets.allLinks(),
+    tradingBindings: [...(status.binding ? [status.binding] : []), ...status.previousBindings],
+    tradingAudit: ctx.trading.auditEvents(1000),
+  };
+}
 
 export const CSV_COLUMNS = [
   "prediction_id", "video_title", "video_published", "timestamp", "speaker", "quote", "normalized_statement", "modality",

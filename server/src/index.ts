@@ -27,6 +27,7 @@ import { registerResearchRoutes } from "./routes/research.js";
 import { registerMediaRoutes } from "./routes/media.js";
 import { registerYouTubeRoutes } from "./routes/youtube.js";
 import { registerMarketRoutes } from "./routes/markets.js";
+import { registerTradingRoutes } from "./routes/trading.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const webDist = path.resolve(here, "..", "..", "web", "dist");
@@ -35,7 +36,11 @@ async function main(): Promise<void> {
   const ctx = createContext();
 
   const app = Fastify({
-    logger: { level: process.env.PL_LOG_LEVEL ?? "info", redact: ["req.headers.authorization", "req.headers['x-api-key']"] },
+    logger: {
+      level: process.env.PL_LOG_LEVEL ?? "info",
+      // 1.10: venue auth headers and credential fields are scrubbed wherever an object is logged (ACC-04).
+      redact: ["req.headers.authorization", "req.headers['x-api-key']", "req.headers['x-pm-access-key']", "req.headers['x-pm-signature']", "secretKey", "keyId", "*.secretKey", "*.keyId", "headers['x-pm-signature']", "headers['x-pm-access-key']"],
+    },
     bodyLimit: 25 * 1024 * 1024, // 25 MiB: transcript imports arrive as JSON text. The media upload route sets its own (8 GiB) limit.
   });
 
@@ -63,6 +68,7 @@ async function main(): Promise<void> {
   registerMediaRoutes(app, ctx);
   registerYouTubeRoutes(app, ctx);
   registerMarketRoutes(app, ctx);
+  registerTradingRoutes(app, ctx);
 
   if (fs.existsSync(webDist)) {
     await app.register(fastifyStatic, { root: webDist, prefix: "/", wildcard: false });

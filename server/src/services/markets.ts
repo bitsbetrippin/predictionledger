@@ -13,7 +13,7 @@ import type { MarketSummary } from "../providers/markets/types.js";
 interface MarketRow {
   id: string; provider: MarketRecord["provider"]; venue_id: string; condition_id: string | null; slug: string; url: string; question: string; description: string | null;
   event_id: string | null; event_slug: string | null; event_title: string | null; outcomes_json: string; end_date: string | null; start_date: string | null;
-  active: number; closed: number; restricted: number; resolved: number; resolved_outcome: string | null; tags_json: string; watched: number; updated_at: string;
+  active: number; closed: number; restricted: number; resolved: number; resolved_outcome: string | null; tags_json: string; watched: number; updated_at: string; constraints_json: string | null;
 }
 interface SnapshotRow { id: string; market_id: string; retrieved_at: string; prices_json: string; liquidity: number | null; volume: number | null; volume_24h: number | null; spread: number | null; source: MarketSnapshot["source"] }
 interface LinkRow {
@@ -33,14 +33,15 @@ export class MarketService {
     const outcomes = JSON.stringify(s.outcomes.map((o) => ({ label: o.label, tokenId: o.tokenId })));
     const watched = opts.watched === undefined ? (existing?.watched ?? 0) : opts.watched ? 1 : 0;
     this.db.run(
-      `INSERT INTO markets (id, provider, venue_id, condition_id, slug, url, question, description, event_id, event_slug, event_title, outcomes_json, end_date, start_date, active, closed, restricted, resolved, resolved_outcome, tags_json, watched)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO markets (id, provider, venue_id, condition_id, slug, url, question, description, event_id, event_slug, event_title, outcomes_json, end_date, start_date, active, closed, restricted, resolved, resolved_outcome, tags_json, watched, constraints_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(provider, venue_id) DO UPDATE SET condition_id = excluded.condition_id, slug = excluded.slug, url = excluded.url, question = excluded.question, description = excluded.description,
-         event_id = excluded.event_id, event_slug = excluded.event_slug, event_title = excluded.event_title, outcomes_json = excluded.outcomes_json, end_date = excluded.end_date, start_date = excluded.start_date,
+         event_id = COALESCE(excluded.event_id, markets.event_id), event_slug = COALESCE(excluded.event_slug, markets.event_slug), event_title = COALESCE(excluded.event_title, markets.event_title), outcomes_json = excluded.outcomes_json, end_date = excluded.end_date, start_date = excluded.start_date,
          active = excluded.active, closed = excluded.closed, restricted = excluded.restricted, resolved = excluded.resolved, resolved_outcome = excluded.resolved_outcome, tags_json = excluded.tags_json,
-         watched = excluded.watched, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')`,
+         watched = excluded.watched, constraints_json = COALESCE(excluded.constraints_json, markets.constraints_json), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')`,
       id, s.provider, s.id, s.conditionId ?? null, s.slug, s.url, s.question, s.description ?? null, s.event?.id ?? null, s.event?.slug ?? null, s.event?.title ?? null, outcomes,
       s.endDate ?? null, s.startDate ?? null, s.active ? 1 : 0, s.closed ? 1 : 0, s.restricted ? 1 : 0, s.resolved ? 1 : 0, s.resolvedOutcome ?? null, JSON.stringify(s.tags ?? []), watched,
+      s.constraints ? JSON.stringify(s.constraints) : null,
     );
     if (opts.snapshot !== false) this.addSnapshot(id, s);
     return this.get(id)!;
@@ -184,6 +185,7 @@ export class MarketService {
       outcomes: JSON.parse(r.outcomes_json) as MarketRecord["outcomes"], endDate: r.end_date ?? undefined, startDate: r.start_date ?? undefined,
       active: r.active === 1, closed: r.closed === 1, restricted: r.restricted === 1, resolved: r.resolved === 1, resolvedOutcome: r.resolved_outcome ?? undefined,
       tags: JSON.parse(r.tags_json) as string[], watched: r.watched === 1, updatedAt: r.updated_at, latest: this.latestSnapshot(r.id),
+      constraints: r.constraints_json ? (JSON.parse(r.constraints_json) as MarketRecord["constraints"]) : undefined,
     };
   }
 

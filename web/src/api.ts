@@ -15,6 +15,15 @@ import {
   type JobSummary,
   type ProviderTestRequest,
   type ProviderTestResult,
+  type DecimalAmount,
+  type TradingAccountBinding,
+  type TradingAccountSync,
+  type TradingAuditEvent,
+  type TradingConnectionTest,
+  type TradingGate,
+  type TradingMode,
+  type TradingPolicy,
+  type TradingStatus,
 } from "@prediction-ledger/shared";
 
 export class ApiError extends Error {
@@ -294,3 +303,15 @@ export const paperApi = {
   reset: () => request<{ deleted: number }>("POST", "/api/paper/reset"),
 };
 export const fmtPnl = (n?: number) => (n === undefined ? "—" : `${n >= 0 ? "+" : "−"}$${Math.abs(n).toFixed(2)}`);
+
+// 1.10 — Polymarket US account connection (reads only; no order submission exists in this build)
+export const tradingApi = {
+  status: () => request<TradingStatus>("GET", "/api/trading/status"),
+  audit: (limit = 50) => request<TradingAuditEvent[]>("GET", `/api/trading/audit?limit=${limit}`),
+  test: (body: { keyId?: string; secretKey?: string }) => request<TradingConnectionTest>("POST", "/api/trading/connection/test", body),
+  connect: (body: { keyId: string; secretKey: string; assertSameAccount?: boolean }) => request<{ binding: TradingAccountBinding; test: TradingConnectionTest; sync?: TradingAccountSync; status: TradingStatus }>("PUT", "/api/trading/connection", body),
+  disconnect: () => request<{ disconnected: boolean; cancellations: { orderId: string; outcome: string; message?: string }[]; note: string; status: TradingStatus }>("DELETE", "/api/trading/connection"),
+  sync: () => request<TradingAccountSync>("POST", "/api/trading/sync"),
+  setMode: (mode: TradingMode) => request<{ policy: TradingPolicy; gates: TradingGate[] }>("PUT", "/api/trading/policy", { mode }),
+};
+export const fmtAmount = (a?: DecimalAmount) => (a ? `${a.currency === "USD" ? "$" : `${a.currency} `}${a.value}` : "—");

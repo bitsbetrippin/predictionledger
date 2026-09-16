@@ -15,6 +15,11 @@
  * mistake). It does NOT protect against another process running as the same OS user —
  * that is the same trust boundary as the OS keychain for an unsigned local app.
  * OS-keychain integration is a deferred enhancement (see docs/BUILD_PLAN.md).
+ *
+ * 1.10 — protected namespaces. Trading credentials (`trading.*`) are refused by the ordinary
+ * get/set/hint/has/delete methods; only the holder of a `SecretVault` opened for that namespace can
+ * reach them (OPS-01: model and search code is handed key *getters* for their own names and never
+ * receives the vault). This is a capability boundary inside one process, not cryptographic isolation.
  */
 
 import crypto from "node:crypto";
@@ -22,6 +27,25 @@ import fs from "node:fs";
 import type { Database } from "../db/index.js";
 
 const ALGO = "aes-256-gcm";
+
+/** Namespaces whose secrets are reachable only through a SecretVault. */
+export const PROTECTED_NAMESPACES = ["trading."] as const;
+
+export function isProtectedSecretName(name: string): boolean {
+  return PROTECTED_NAMESPACES.some((ns) => name.startsWith(ns));
+}
+
+/** Scoped accessor for one protected namespace. Handed to exactly one service (1.10: TradingAccountService). */
+export interface SecretVault {
+  readonly namespace: string;
+  set(name: string, plaintext: string): void;
+  get(name: string): string | undefined;
+  hint(name: string): string | undefined;
+  has(name: string): boolean;
+  delete(name: string): void;
+  /** Names currently stored in the namespace (no values). */
+  names(): string[];
+}
 
 export class SecretStore {
   private readonly key: Buffer;
@@ -33,7 +57,35 @@ export class SecretStore {
     this.key = loadOrCreateKey(keyFilePath);
   }
 
+  private guard(name: string): void {
+    if (isProtectedSecretName(name)) throw new Error(`Secret "${name}" is in a protected namespace; use the vault opened for it.`);
+  }
+
+  /**
+   * Open the scoped accessor for a protected namespace. The returned object is the only way to read those
+   * secrets; keep it inside the owning service.
+   */
+  openVault(namespace: (typeof PROTECTED_NAMESPACES)[number]): SecretVault {
+    const check = (name: string) => {
+      if (!name.startsWith(namespace)) throw new Error(`Vault for "${namespace}" cannot access "${name}".`);
+    };
+    return {
+      namespace,
+      set: (name, plaintext) => { check(name); this.write(name, plaintext); },
+      get: (name) => { check(name); return this.read(name); },
+      hint: (name) => { check(name); return this.readHint(name); },
+      has: (name) => { check(name); return this.readHint(name) !== undefined; },
+      delete: (name) => { check(name); this.db.run("DELETE FROM secrets WHERE name = ?", name); },
+      names: () => this.db.all<{ name: string }>("SELECT name FROM secrets WHERE name LIKE ? ORDER BY name", `${namespace}%`).map((r) => r.name),
+    };
+  }
+
   set(name: string, plaintext: string): void {
+    this.guard(name);
+    this.write(name, plaintext);
+  }
+
+  private write(name: string, plaintext: string): void {
     const iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv(ALGO, this.key, iv);
     const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
@@ -52,6 +104,11 @@ export class SecretStore {
   }
 
   get(name: string): string | undefined {
+    this.guard(name);
+    return this.read(name);
+  }
+
+  private read(name: string): string | undefined {
     const row = this.db.get<{ ciphertext: Uint8Array; iv: Uint8Array; auth_tag: Uint8Array }>(
       "SELECT ciphertext, iv, auth_tag FROM secrets WHERE name = ?",
       name,
@@ -63,14 +120,21 @@ export class SecretStore {
   }
 
   hint(name: string): string | undefined {
+    this.guard(name);
+    return this.readHint(name);
+  }
+
+  private readHint(name: string): string | undefined {
     return this.db.get<{ hint: string }>("SELECT hint FROM secrets WHERE name = ?", name)?.hint;
   }
 
   has(name: string): boolean {
-    return this.hint(name) !== undefined;
+    this.guard(name);
+    return this.readHint(name) !== undefined;
   }
 
   delete(name: string): void {
+    this.guard(name);
     this.db.run("DELETE FROM secrets WHERE name = ?", name);
   }
 }

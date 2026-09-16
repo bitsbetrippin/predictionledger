@@ -56,8 +56,8 @@ export const persistedSettingsSchema = z.object({
   markets: z
     .object({
       enabled: z.boolean().default(true),
-      provider: z.enum(["polymarket", "manifold"]).default("polymarket"),
-      venues: z.array(z.enum(["polymarket", "manifold"])).min(1).default(["polymarket"]),
+      provider: z.enum(["polymarket", "manifold", "polymarket_us"]).default("polymarket"),
+      venues: z.array(z.enum(["polymarket", "manifold", "polymarket_us"])).min(1).default(["polymarket"]),
       refreshHours: z.number().min(0).max(168).default(6),
       snapshotBudget: z.number().int().min(1).max(500).default(50),
       autoLinkSports: z.boolean().default(true),

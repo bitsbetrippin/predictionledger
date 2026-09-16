@@ -1,4 +1,4 @@
-# Prediction markets — integration framework (1.5 → 1.8)
+# Prediction markets — integration framework (1.5 → 1.10)
 
 Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
 
@@ -10,7 +10,7 @@ The mental model is a **ledger with two columns**: our extracted claims (with th
 
 ## Ground rules (carry through every release)
 
-- **Read-only until a separate decision.** Market data is public and unauthenticated. Trading needs a wallet, an API key, funds, and — for Polymarket — is geo-restricted (US users are blocked from trading; the `restricted: true` flag you see on markets means exactly that). The app will show odds and liquidity; it will not touch an order endpoint. If trading is ever added it is its own release with its own ADR, its own consent screen, and its own key store.
+- **Read-only until a separate decision.** Market data is public and unauthenticated. Trading needs a wallet, an API key, funds, and — for Polymarket international — is geo-restricted (US users are blocked from trading; the `restricted: true` flag you see on markets means exactly that). The app shows odds and liquidity from these venues and never touches their order endpoints. *That separate decision has since been taken for one venue only:* **Polymarket US** (a distinct, CFTC-regulated USD exchange) has its own execution track — ADR-030 in docs/DECISIONS.md — with its own adapter, vault and release gates. 1.10 ships only the account connection and reads; no order can be placed by that build either.
 - **Local first, like everything else.** Market snapshots are stored in SQLite; nothing leaves the machine except the GET requests to the venue, and only when Setup → Privacy → internet is on.
 - **A market's rules are the claim.** Every market has a resolution text ("resolves Yes if…"). A link between a prediction and a market is only valid if the *prediction's proposition* and the *market's rules* mean the same thing. That match is the hard problem, not the HTTP.
 - **Probabilities, not prices.** Internally a market outcome is a probability in 0–1. Odds formats are presentation.
@@ -57,7 +57,7 @@ and from the running app: `GET /api/markets/search?q=…`, `GET /api/markets?tag
                                              creator track record, edge, confidence
 ```
 
-- `providers/markets/types.ts` — `MarketProvider` interface (`search`, `get`, `list`, `book`). Same pattern as `SearchProvider` / `LanguageModelProvider`: the app talks to the interface; Polymarket is the first adapter; Kalshi or Manifold can be added without touching callers.
+- `providers/markets/types.ts` — `MarketProvider` interface (`search`, `get`, `list`, `book`, `priceHistory`). Same pattern as `SearchProvider` / `LanguageModelProvider`: the app talks to the interface; Polymarket was the first adapter, Manifold the second (1.8); Kalshi can be added without touching callers.
 - `providers/markets/polymarket.ts` — the adapter (1.5, shipped).
 - Tables (1.6): `markets` (venue id, question, rules, outcomes with token ids, end date, event), `market_snapshots` (market id, retrieved at, per-outcome price, best bid/ask, liquidity, volume 24h), `prediction_market_links` (prediction id, market id, side = outcome label, match score, how matched, user status accepted/rejected, notes).
 - Jobs (1.6): `market.snapshot` (refresh the linked markets on a schedule and on demand), `market.match` (propose links for a prediction).
@@ -104,6 +104,19 @@ Delivered: playlist/channel bulk import with auto-extract, consensus proposition
 - Watch rules (local, no notifications outside the machine unless you add one): "market moved > X points since last snapshot", "consensus and market diverge by > Y", "market resolves within Z days and our side is pending".
 - Second venue (Kalshi or Manifold) behind the same interface, to check that the abstraction holds and to compare prices across venues.
 - Deferred, needs its own decision: any order placement; paper-trading ledger (record hypothetical positions and their P&L against snapshots) is the safe intermediate and is probably the right next step before real money is ever discussed.
+
+## Polymarket US (1.10, read-only foundation)
+
+A third venue behind the same `MarketProvider` interface, and the only one with an execution track. Verified live 2026-09-16 from this sandbox (public data, no account):
+
+| API | Base | Auth | Used for |
+|---|---|---|---|
+| Gateway | `https://gateway.polymarket.us` | none | `/v1/search`, `/v1/markets`, `/v1/market/slug/{slug}`, `/v1/market/id/{id}`, `/v2/leagues/{league}/events`, `/v1/markets/{slug}/book`, `/v1/markets/{slug}/bbo`, `/v1/price-history` |
+| Retail API | `https://api.polymarket.us` | key ID + Ed25519 signature | **1.10: reads only** — `/v1/account/balances`, `/v1/portfolio/positions`, `/v1/orders/open`; targeted cancel wired but unused |
+
+Shapes worth knowing: one instrument per market (YES); NO is synthetic and `price.value` is always the YES price (buy NO at $0.40 = `ORDER_INTENT_BUY_SHORT` at `0.60`). `marketSides[]` carry durable ids and a `long` flag — the deprecated `outcomes` array's order varies, so it is never used for orientation. Markets publish `orderPriceMinTickSize`, `minimumTradeQty` (contracts; `0.01` = partial contracts), `feeCoefficient` (Θ in `Θ·C·p·(1−p)`; 0.06 on 2026-09-16 with a published change to 0.0695), `status`, `sportsMarketTypeV2`, `line`, `gameStartTime`. Books come wrapped as `{ marketData: { bids, offers, state } }`; price history takes a slug and needs `fidelity=1` for timestamp ranges. Balances arrive as JSON numbers, positions as decimal strings. No stable account identifier, no idempotency key, no retail sandbox — ADR-031 records the evidence and the resulting design.
+
+Try it: tick **Polymarket US** under Setup → Venues and search from the Markets page; `GET /api/markets/search?q=bitcoin&provider=polymarket_us`; with an account, Setup → Polymarket US account → Test connection.
 
 ## Open questions for the product owner
 

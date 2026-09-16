@@ -22,6 +22,9 @@ export function marketKeyFromInput(input: string): string {
   if (pm) return pm[3];
   const mf = /^https?:\/\/(www\.)?manifold\.markets\/[^/?#]+\/([^?#/]+)/i.exec(t);
   if (mf) return mf[2];
+  // Polymarket US event pages (1.10): the slug is the event's; the provider resolves markets under it.
+  const us = /^https?:\/\/(www\.)?polymarket\.us\/event\/([^?#/]+)/i.exec(t);
+  if (us) return us[2];
   return t.split(/[?#/]/)[0];
 }
 

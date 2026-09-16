@@ -1,0 +1,139 @@
+{
+ "_note": "Captured from GET https://gateway.polymarket.us/v1/markets/cpc-btc-100k-10-31-2026/book on 2026-09-16 (public).",
+ "marketData": {
+  "marketSlug": "cpc-btc-100k-10-31-2026",
+  "bids": [
+   {
+    "px": {
+     "value": "0.0600",
+     "currency": "USD"
+    },
+    "qty": "61.0000"
+   },
+   {
+    "px": {
+     "value": "0.0500",
+     "currency": "USD"
+    },
+    "qty": "241.0000"
+   },
+   {
+    "px": {
+     "value": "0.0400",
+     "currency": "USD"
+    },
+    "qty": "27876.4100"
+   },
+   {
+    "px": {
+     "value": "0.0300",
+     "currency": "USD"
+    },
+    "qty": "62483.0000"
+   }
+  ],
+  "offers": [
+   {
+    "px": {
+     "value": "0.0700",
+     "currency": "USD"
+    },
+    "qty": "4433.0300"
+   },
+   {
+    "px": {
+     "value": "0.0800",
+     "currency": "USD"
+    },
+    "qty": "18374.0000"
+   },
+   {
+    "px": {
+     "value": "0.1100",
+     "currency": "USD"
+    },
+    "qty": "13.2200"
+   },
+   {
+    "px": {
+     "value": "0.4900",
+     "currency": "USD"
+    },
+    "qty": "40.0000"
+   },
+   {
+    "px": {
+     "value": "0.6100",
+     "currency": "USD"
+    },
+    "qty": "29.0000"
+   },
+   {
+    "px": {
+     "value": "0.9900",
+     "currency": "USD"
+    },
+    "qty": "3250.0000"
+   }
+  ],
+  "state": "MARKET_STATE_OPEN",
+  "stats": {
+   "openPx": {
+    "value": "0.1700",
+    "currency": "USD"
+   },
+   "closePx": {
+    "value": "0.1300",
+    "currency": "USD"
+   },
+   "lowPx": {
+    "value": "0.0300",
+    "currency": "USD"
+   },
+   "highPx": {
+    "value": "0.4900",
+    "currency": "USD"
+   },
+   "lastTradePx": {
+    "value": "0.0700",
+    "currency": "USD"
+   },
+   "settlementPx": {
+    "value": "0.1300",
+    "currency": "USD"
+   },
+   "sharesTraded": "26504.6500",
+   "notionalTraded": {
+    "value": "196588.5600",
+    "currency": "USD"
+   },
+   "lastTradeQty": "8.9800",
+   "openInterest": "26748.7500",
+   "openSetTime": "2026-09-12T21:04:58.845038306Z",
+   "closeSetTime": "2026-09-12T21:00:47.673279469Z",
+   "highSetTime": "2026-09-14T01:48:54.094115230Z",
+   "lowSetTime": "2026-09-16T01:13:54.378263659Z",
+   "lastTradeSetTime": "2026-09-16T14:53:14.343954825Z",
+   "settlementSetTime": "2026-09-12T21:00:47.673395303Z",
+   "openInterestSetTime": "2026-09-16T14:53:14.473842967Z",
+   "notionalSetTime": "2026-09-16T14:53:14.343954825Z",
+   "settlementPriceCalculationMethod": "SETTLEMENT_PRICE_CALCULATION_METHOD_EVENT_TIER_2",
+   "currentPx": {
+    "value": "0.0600",
+    "currency": "USD"
+   },
+   "lastPriceSample": {
+    "longPx": {
+     "value": "0.0700",
+     "currency": "USD"
+    },
+    "shortPx": {
+     "value": "0.93",
+     "currency": "USD"
+    },
+    "ts": "2026-09-16T15:26:01.420262169Z"
+   }
+  },
+  "transactTime": "2026-09-16T15:26:01.420262169Z"
+ }
+}

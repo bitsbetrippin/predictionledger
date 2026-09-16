@@ -4,6 +4,30 @@ All notable changes to Prediction Ledger. Format follows [Keep a Changelog](http
 
 Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
 
+## 1.10.0 — 2026-09-16 · Polymarket US foundation: account connection and read-only US market data
+
+First release of the Polymarket US track (requirements ACC-01…06, OPS-01/02 foundation). **No order can be placed by this build**: the trading adapter has no create/preview/modify method, the mode row defaults to paper with live authorization absent, and live-control routes answer `501`.
+
+### Added
+- **`polymarket_us` market provider** (`providers/markets/polymarketUs.ts`) against `gateway.polymarket.us`: search, get (slug/id), list (league → categories), book (NO side mirrored from YES), price history (`fidelity=1` timestamp ranges). Records carry **contract constraints** (`markets.constraints_json`): status, tick size, minimum quantity, fee coefficient, durable side ids with the `long` flag, sport market type, line, game/event start. Orientation never comes from the deprecated `outcomes` array (its order varies). Existing `polymarket`/`manifold` rows are untouched (A01).
+- **`TradingAdapter`** interface (`providers/trading/types.ts`) — reads + targeted cancel only — with the Polymarket US implementation behind the pinned official SDK (`polymarket-us@0.1.1`, loaded lazily; used as signed transport only), a scripted **fake adapter** for every test, credential shape checks + Ed25519 public-key **fingerprint** (`credentials.ts`), and a registry with a test seam.
+- **Account connection service** (`services/tradingAccounts.ts`) and routes (`/api/trading/status|audit|connection/test|connection|sync|policy`): test → save → refresh → disconnect; local binding with continuity `first|same_credential|user_asserted|unverified`; disconnect disarms first, then removes credentials, keeps history, and says plainly that it is not venue revocation.
+- **Protected secret namespace**: `trading.*` secrets are refused by the ordinary `SecretStore` methods and readable only through a vault handle held by the trading service (OPS-01). Redaction of key material and venue auth headers from every adapter error, audit detail and sync error; pino redact paths extended.
+- Migration **012**: `trading_accounts`, `trading_account_syncs`, `trading_audit_events` (append-only, enforced by triggers), `trading_policy` (default `paper`), `markets.constraints_json`.
+- **Portable backups** (OPS-02): manual backups scrub `trading.*` secrets and live authorization from the copy and mark the binding `needs_rebind`; startup resets a live mode found in the database to paper and flags a connected binding without secrets.
+- Setup → **Polymarket US account** card: developer-portal steps, key ID / secret, Test connection, Save / Replace, Refresh account, Disconnect, status, last validation, buying power / positions / open orders, identity limitation note, release gates, earlier bindings, audit trail. Polymarket US selectable as a venue for discovery.
+- Export bundle now includes the secret-free trading bindings and audit trail; `polymarket.us/event/<slug>` accepted by the manual link box.
+- Scripts: `npm run test:trading`, `npm run trading:read-check` (opt-in, owner-run, read-only; credentials from env vars).
+- Fixtures under `fixtures/trading/` (captured public responses + synthetic account shapes); ADR-030 (execution module supersedes the read-only rule, gate by gate) and ADR-031 (spec §14 answers with evidence).
+
+### Changed
+- Refreshing a stored market no longer clears its event when the venue answer lacks one (COALESCE on `event_*`).
+- Repository URL corrected to `github.com/bitsbetrippin/predictionledger` (package name stays `prediction-ledger`).
+- Verification matrix brought forward to 1.10.0 with exact counts; README, SETUP, API, ARCHITECTURE, PREDICTION_MARKETS and BUILD_PLAN updated.
+
+### Not in this release (by design)
+- Order preview/create/modify, intents, reservations, reconciliation, WebSocket streams, the Trades page — 1.12 → 1.14 after their gates. Targeted cancellation on disconnect is wired but structurally empty (no app order can exist yet).
+
 ## [1.9.0] — 2026-09-16 — Paper trading
 The intermediate step the markets plan called for before real money is ever discussed: a hypothetical position ledger that scores the signals. **The app still never places an order.**
 ### Added

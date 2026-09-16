@@ -40,7 +40,7 @@ export function MarketsPage() {
 
       <div className="row controls">
         <input value={q} placeholder="Search Polymarket (e.g. Bitcoin 100k, Fed rate cut, Lions Bills)" onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && q.trim().length >= 2) void search(); }} style={{ minWidth: 340 }} />
-        <select value={venue} onChange={(e) => setVenue(e.target.value as MarketProviderId)} aria-label="Venue"><option value="polymarket">Polymarket</option><option value="manifold">Manifold</option></select>
+        <select value={venue} onChange={(e) => setVenue(e.target.value as MarketProviderId)} aria-label="Venue"><option value="polymarket">Polymarket</option><option value="manifold">Manifold</option><option value="polymarket_us">Polymarket US</option></select>
         <button type="button" disabled={!!busy || q.trim().length < 2} onClick={search}>Search</button>
         <button type="button" disabled={!!busy || !rows?.length} onClick={refreshAll}>{busy?.startsWith("Refresh") ? busy : "Refresh all prices"}</button>
       </div>

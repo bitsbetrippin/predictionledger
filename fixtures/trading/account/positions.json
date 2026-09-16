@@ -1,0 +1,39 @@
+{
+ "_note": "SYNTHETIC, shaped after GET /v1/portfolio/positions. Decimal string fields are authoritative; integer ones are deprecated/rounded.",
+ "positions": {
+  "cpc-btc-100k-10-31-2026": {
+   "netPosition": "10",
+   "qtyBought": "10",
+   "qtySold": "0",
+   "cost": {
+    "value": "0.70",
+    "currency": "USD"
+   },
+   "realized": {
+    "value": "0",
+    "currency": "USD"
+   },
+   "bodPosition": "10",
+   "expired": false,
+   "updateTime": "2026-09-16T11:00:00Z",
+   "marketMetadata": {
+    "slug": "cpc-btc-100k-10-31-2026",
+    "title": "When will Bitcoin cross $100k again?",
+    "outcome": "Before November 2026",
+    "eventSlug": "btc-100k"
+   },
+   "cashValue": {
+    "value": "0.60",
+    "currency": "USD"
+   },
+   "qtyAvailable": "10",
+   "netPositionDecimal": "10.5",
+   "qtyBoughtDecimal": "10.5",
+   "qtySoldDecimal": "0",
+   "bodPositionDecimal": "10.5",
+   "qtyAvailableDecimal": "10.5"
+  }
+ },
+ "nextCursor": "",
+ "eof": true
+}

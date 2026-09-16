@@ -31,7 +31,7 @@ Then commit the generated `package-lock.json` (GitHub Desktop will show it as a 
 ```
 npm test
 ```
-Report: the final summary (`# pass N / # fail N`) and, for any failure, the `not ok` block. Expected on Windows: the fake-yt-dlp end-to-end test is skipped (needs a POSIX shell); everything else should pass. The ffmpeg integration tests run only if ffmpeg is on PATH.
+Report: the final summary (`# pass N / # fail N`) and, for any failure, the `not ok` block. Expected on Windows: the fake-yt-dlp end-to-end test is skipped (needs a POSIX shell); everything else should pass. The ffmpeg integration tests run only if ffmpeg is on PATH. 1.10 expects 98 tests discovered; `npm run test:trading` runs only the 17 Polymarket US tests (all against a fake venue).
 
 ## 4. Start, stop, port walk
 ```
@@ -59,5 +59,8 @@ Report the score table `promptfoo` prints; it goes into `docs/VERIFICATION.md`.
 
 ## 10. Backup and restart recovery
 Setup → Backups → **Back up now** (report the file name). Start a long transcription, kill the terminal, `npm start` again: the video should resume from the next chunk. Report what the Library shows after restart.
+
+## 11. Polymarket US account (1.10, optional, read-only)
+Only if you have a Polymarket US API key. Setup → **Polymarket US account** → paste Key ID + Secret → **Test connection** (report the code and the buying-power line; the venue makes no trade) → **Save & connect** → **Refresh account** → **Disconnect**. Then, in a terminal, `POLYMARKET_US_KEY_ID=… POLYMARKET_US_SECRET_KEY=… npm run trading:read-check` (PowerShell: `$env:POLYMARKET_US_KEY_ID="…"; $env:POLYMARKET_US_SECRET_KEY="…"; npm run trading:read-check`) and paste its last line. Confirm that Setup → Mode still reads *Paper* throughout. Report any 401/403 text verbatim (it is redacted, but note whether it names "verification" or "restricted").
 
 When these are in, the release is verified on your platform; the remaining platform column in `docs/VERIFICATION.md` is filled the same way.

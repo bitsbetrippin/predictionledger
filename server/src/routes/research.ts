@@ -8,9 +8,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { ExportBundle } from "@prediction-ledger/shared";
-import { APP_VERSION } from "../config.js";
 import type { AppContext } from "../context.js";
-import { buildCsv } from "../services/export.js";
+import { buildCsv, buildExportBundle } from "../services/export.js";
 import { matchupKey } from "../analysis/sports.js";
 
 const researchSchema = z.object({
@@ -124,20 +123,7 @@ export function registerResearchRoutes(app: FastifyInstance, ctx: AppContext): v
 
   // ---- Export (never includes settings or secrets) ----
   app.get("/api/export/json", async (_req, reply) => {
-    const bundle: ExportBundle = {
-      exportedAt: new Date().toISOString(),
-      appVersion: APP_VERSION,
-      videos: ctx.videos.list(),
-      predictions: ctx.predictions.list({ includeDismissed: true }),
-      plans: ctx.predictions.list({ includeDismissed: true }).flatMap((p) => ctx.plans.listForPrediction(p.id)),
-      runs: ctx.research.allRuns(),
-      sources: ctx.research.allSources(),
-      evidence: ctx.research.allEvidence(),
-      assessments: ctx.research.allAssessments(),
-      games: ctx.games.list(),
-      markets: ctx.markets.list(),
-      marketLinks: ctx.markets.allLinks(),
-    };
+    const bundle = buildExportBundle(ctx);
     reply.header("content-disposition", `attachment; filename="prediction-ledger-export-${bundle.exportedAt.slice(0, 10)}.json"`);
     return bundle;
   });

@@ -1,0 +1,19 @@
+{
+ "_note": "SYNTHETIC, shaped after GET /v1/account/balances (docs.polymarket.us, 2026-09-16). Balances arrive as JSON numbers.",
+ "balances": [
+  {
+   "currentBalance": 100.5,
+   "currency": "USD",
+   "lastUpdated": "2026-09-16T12:00:00Z",
+   "buyingPower": 95.25,
+   "assetNotional": 10,
+   "assetAvailable": 5.25,
+   "pendingCredit": 0,
+   "openOrders": 5.25,
+   "unsettledFunds": 0,
+   "pendingWithdrawals": [],
+   "marginRequirement": 0,
+   "balanceReservation": null
+  }
+ ]
+}

@@ -44,8 +44,16 @@ gantt
 | **1.2** | Sports picks | Game-related predictions reduce to win / spread / total and are settled from the final score with a code-generated plan and a capped look-up budget. | 1.1 |
 | **1.0.0-rc.1** | Milestone 5b — Release candidate | Model download job, timeout setting, security tests, doctor script, first-run runbook, static wiring review. `1.0.0` tag gated on the first verified run. | 0.6 |
 | **1.0** | Milestone 5 — MVP | Promptfoo regression suite over labeled fixtures, restart/cancel/rate-limit hardening, Windows and macOS verified, troubleshooting docs, tagged release. | 0.5 |
+| **1.3 → 1.4** | Sports settlement | Validate scores from trusted sources; one game record per matchup settles every pick by rule. | 1.2 |
+| **1.5 → 1.9** | Prediction markets (read-only) | Polymarket/Manifold data, stored links and snapshots, creator signals, consensus and alerts, paper trading. | 1.4 |
+| **1.10** | Polymarket US foundation (delivered) | Connect a Polymarket US account (reads only), discover US markets with contract constraints, masked credentials in a protected vault, portable backups. No submission path. | 1.9 |
+| **1.11** | Source subscriptions + verified contracts | Bounded channel subscriptions with provenance; execution-specific contract verification that blocks every near-match. | 1.10 gate |
+| **1.12** | Forecasts, decisions, US paper engine | Immutable forecasts (versioned estimator), pure trade/no-trade decisions, atomic reservations, execution-aware paper fills. | 1.11 gate |
+| **1.13** | Manual-live execution | Preview → one bounded IOC order → reconciliation; NO-price conversion; `submission_unknown` drills. Owner-run capped smoke test. | 1.12 gate |
+| **1.14** | Bounded automation + Trades dashboard | Explicit arming with a policy hash, scheduler, emergency stop, evidence drill-downs, secret-free export. | 1.13 gate |
+| **2.0** | Verified release | Upgrade/restore/duplicate-process drills, Windows verification on real content, qualification evidence (or "gate unmet"). | 1.14 gate |
 
-Post-MVP candidates (not scheduled): whisper.cpp engine, OS-keychain secrets, SSE live progress, desktop shell (Tauri), live broadcast ingestion, multi-language UI.
+Post-MVP candidates (not scheduled): whisper.cpp engine, OS-keychain secrets, SSE live progress, desktop shell (Tauri), live broadcast ingestion, multi-language UI. The 1.11 → 2.0 rows follow the owner's September 2026 requirements pack (ACC/SRC/MAT/FOR/RSK/EXE/AUTO/DASH/OPS ids); each depends on the previous release's acceptance tests passing, and live features stay disabled until then.
 
 ---
 
@@ -373,6 +381,21 @@ The 1.0 backlog split in two: 0.6 is everything that could be built and verified
 | Deterministic settlement plan (`plan.sports.v1`), capped research budget, `sports_assessment` template | VP-01, RS-01, VD-01 | AG-05 | ✓ |
 | Dashboard chip, Kind filter, pick card | UX-03, UX-04 | AG-10 | ✓ (statically checked) |
 | Fixture `nfl-picks` + tests (normalisation, plan, pipeline) | — | AG-14 | ✓ 52/52 |
+
+## 10a. Release 1.10 — Polymarket US foundation (delivered)
+
+| Item | Req. | Agent | Done |
+|---|---|---|---|
+| `polymarket_us` market provider with contract constraints; venue-namespaced records; existing rows untouched (A01) | ACC-01 | AG-13, AG-11 | ✓ |
+| `TradingAdapter` (reads + targeted cancel; no create/preview) behind the pinned `polymarket-us@0.1.1` SDK; fake adapter; registry seam | ACC-01, EXE-01 (interface only) | AG-13 | ✓ |
+| Account connection service + routes: test, save/replace, refresh, disconnect; local binding + fingerprint; continuity rules (A02–A05, A08) | ACC-02, ACC-03, ACC-06 | AG-05, AG-13 | ✓ |
+| Protected `trading.` vault; redaction; pino paths; strict bodies; fixed hosts (A06, A07) | ACC-04, OPS-01 | AG-15 | ✓ |
+| `trading_policy` row (paper default, no live authorization); live modes refused with gates; `501` controls | ACC-05 | AG-05 | ✓ |
+| Migration 012; append-only audit triggers; portable backup scrub; startup rebind/disarm (O02, O05 subset) | OPS-02, OPS-05 | AG-11 | ✓ |
+| Setup → Polymarket US card; venue selectors | ACC-02 | AG-10 | ✓ (typechecked; browser walk-through pending owner) |
+| ADR-030 / ADR-031 with dated evidence; README, SETUP, API, ARCHITECTURE, PREDICTION_MARKETS, VERIFICATION | §14 | AG-02, AG-16 | ✓ |
+| Tests: 17 new (credentials, adapters, service A01–A08/OPS-02, routes), fake venue only; regression 98/98 in the sandbox | 03 §1.10 | AG-14 | ✓ |
+| Owner-run read-only account check (`npm run trading:read-check`) | ACC-02 live | owner | **pending** |
 
 ## 11. Working agreements
 

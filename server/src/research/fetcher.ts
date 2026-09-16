@@ -19,7 +19,7 @@ import dns from "node:dns/promises";
 import { checkUrlSyntax, isIpLiteral, isPublicAddress } from "./urlSafety.js";
 import { extractHtml, type ExtractedPage } from "./htmlExtract.js";
 
-export const FETCH_USER_AGENT = "PredictionLedger/0.3 (+https://github.com/bitsbetrippin/prediction-ledger; local research tool)";
+export const FETCH_USER_AGENT = "PredictionLedger/0.3 (+https://github.com/bitsbetrippin/predictionledger; local research tool)";
 const MAX_BYTES = 5 * 1024 * 1024;
 const TIMEOUT_MS = 20_000;
 const MAX_REDIRECTS = 5;

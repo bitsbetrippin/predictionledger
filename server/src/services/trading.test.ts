@@ -74,7 +74,7 @@ test("A02/A05 — test + save: connection and buying power appear, zero order ca
     assert.equal(before.policy.mode, "paper");
     assert.equal(before.armed, false);
     assert.equal(before.submissionAvailable, false);
-    assert.deepEqual(before.features, { submission: true, automation: false });
+    assert.deepEqual(before.features, { submission: true, automation: true }, "1.14: both features exist; both stay behind their gates");
 
     const t = await ctx.trading.testConnection({ keyId: KEY_A, secretKey: SECRET_A });
     assert.equal(t.ok, true, t.message);
@@ -103,8 +103,8 @@ test("A02/A05 — test + save: connection and buying power appear, zero order ca
     assert.equal(saved.sync?.ok, true);
     assert.equal(fake.orderCalls, 0, "no create/cancel calls");
     assert.deepEqual(fake.calls.map((c) => c.method), ["balances", "balances", "balances", "positions", "openOrders"], "test; connect re-tests; then one read-only sync");
-    // 1.13: the submission feature exists and no holds are open; strategy/contract/authorization gates stay unmet on a fresh account.
-    assert.ok(s.gates.every((g) => ["credentials_valid", "account_fresh", "reconciled", "submission_feature", "no_holds"].includes(g.id) ? g.satisfied : !g.satisfied), JSON.stringify(s.gates));
+    // 1.13/1.14: the feature gates, pause and breaker are satisfied; strategy/rehearsal/contract/authorization gates stay unmet on a fresh account.
+    assert.ok(s.gates.every((g) => ["credentials_valid", "account_fresh", "reconciled", "submission_feature", "automation_feature", "no_holds", "not_paused", "breaker_closed"].includes(g.id) ? g.satisfied : !g.satisfied), JSON.stringify(s.gates));
     assert.match(s.identityNote, /does not expose a stable account identifier/);
 
     // A06: canary in every surface a browser, an export, a job or a model could see.

@@ -74,12 +74,29 @@ export function registerDecisionRoutes(app: FastifyInstance, ctx: AppContext): v
   app.get<{ Params: { id: string } }>("/api/trading/decisions/:id/evidence", async (req, reply) => {
     const d = ctx.decisions.get(req.params.id);
     if (!d) return reply.code(404).send({ error: "not_found" });
+    // 1.14 (DASH-03): the current analysis is returned beside the immutable record, never merged into it.
+    const link = d.linkId ? ctx.markets.getLink(d.linkId) : undefined;
+    const prediction = ctx.predictions.get(d.predictionId);
+    const currentVerification = link ? ctx.markets.latestVerification(link.id) : undefined;
+    const currentForecast = ctx.forecasts.forPrediction(d.predictionId)[0];
     return {
       decision: d,
       forecast: d.forecastId ? ctx.forecasts.get(d.forecastId) : undefined,
       verification: d.verificationId ? ctx.markets.getVerification(d.verificationId) : undefined,
       dossier: buildDossier(ctx, d.predictionId, { asOf: d.clockAt }),
       reservation: d.reservationId ? ctx.risk.get(d.reservationId) : undefined,
+      intent: d.intentId ? ctx.execution.intent(d.intentId) : undefined,
+      current: {
+        asOf: new Date().toISOString(),
+        predictionRevision: prediction ? ctx.predictions.revisionCount(prediction.id) : undefined,
+        predictionMissing: !prediction,
+        normalizedStatement: prediction?.normalizedStatement,
+        verification: currentVerification && currentVerification.id !== d.verificationId ? currentVerification : undefined,
+        verificationChanged: !!currentVerification && currentVerification.id !== d.verificationId,
+        forecast: currentForecast && currentForecast.id !== d.forecastId ? currentForecast : undefined,
+        forecastChanged: !!currentForecast && currentForecast.id !== d.forecastId,
+        dossier: prediction ? buildDossier(ctx, d.predictionId, {}) : undefined,
+      },
     };
   });
   app.get("/api/trading/exposure", async () => { const p = ctx.trading.policy(); const now = new Date().toISOString(); const { marketsOpen: _m, ...e } = ctx.risk.exposure("paper", now.slice(0, 10)); return { ...e, limits: p.limits }; });

@@ -45,7 +45,10 @@ export function scrubTradingFromCopy(copyPath: string): NonNullable<BackupInfo["
       bindings = Number(db.prepare("UPDATE trading_accounts SET state = 'needs_rebind', reconcile_required = 1, last_validation_error = 'portable backup: credentials not included' WHERE state = 'connected'").run().changes);
     }
     if (has("trading_policy")) {
-      db.prepare("UPDATE trading_policy SET mode = CASE WHEN mode IN ('manual_live','auto_live') THEN 'paper' ELSE mode END, live_authorized_at = NULL, live_authorization_hash = NULL").run();
+      // 1.14: the automation authorization (policy hash / strategy / category) is part of the armed grant and leaves with it.
+      const cols = (db.prepare("PRAGMA table_info(trading_policy)").all() as { name: string }[]).map((c) => c.name);
+      const extra = cols.includes("authorized_policy_hash") ? ", authorized_policy_hash = NULL, authorized_strategy_version = NULL, authorized_category = NULL" : "";
+      db.prepare(`UPDATE trading_policy SET mode = CASE WHEN mode IN ('manual_live','auto_live') THEN 'paper' ELSE mode END, live_authorized_at = NULL, live_authorization_hash = NULL${extra}`).run();
       cleared = true;
     }
     if (has("trading_audit_events")) {

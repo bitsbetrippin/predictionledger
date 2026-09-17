@@ -23,7 +23,7 @@ import type {
   TradingAccountBinding, TradingAccountSync, TradingAuditEvent, TradingConnectionTest, TradingGate, TradingMode, TradingOpenOrderSummary, TradingPolicy, TradingPositionSummary, TradingStatus,
   RiskLimits,
 } from "@prediction-ledger/shared";
-import { LIVE_ACKNOWLEDGEMENT } from "@prediction-ledger/shared";
+import { AUTO_LIVE_ACKNOWLEDGEMENT, DEFAULT_AUTOMATION, LIVE_ACKNOWLEDGEMENT, type AutomationSettings, type CircuitBreakerState } from "@prediction-ledger/shared";
 import type { Database } from "../db/index.js";
 import type { SecretVault } from "../security/secrets.js";
 import { maskSecret } from "../security/secrets.js";
@@ -34,7 +34,9 @@ import { TradingAdapterError, type TradingAdapter } from "../providers/trading/t
 import { DEFAULT_LIMITS, POLICY_VERSION } from "../analysis/tradeDecision.js";
 
 /** 1.13: manual-live submission exists behind its gates; automation arrives with 1.14. */
-export const TRADING_FEATURES = { submission: true, automation: false } as const;
+export const TRADING_FEATURES = { submission: true, automation: true } as const;
+/** 1.14 (AUTO-01) pilot default: settled US paper positions required before automation can be armed ("paper rehearsal"). */
+export const PAPER_REHEARSAL_MIN_SETTLED = 20;
 /** The exact acknowledgement an owner must send to enter manual-live mode (ACC-05 / AUTO-01 groundwork). */
 export { LIVE_ACKNOWLEDGEMENT };
 export const TRADING_SECRET_NAMES = { keyId: "trading.polymarket_us.keyId", secretKey: "trading.polymarket_us.secretKey" } as const;
@@ -59,11 +61,16 @@ interface AccountRow {
   last_validated_at: string | null; last_validation_error: string | null; last_sync_at: string | null; disconnected_at: string | null;
 }
 interface SyncRow { id: string; binding_id: string; at: string; ok: number; error: string | null; balances_json: string; positions_json: string; open_orders_json: string; complete: number }
-interface PolicyRow { mode: TradingMode; live_authorized_at: string | null; live_authorization_hash: string | null; updated_at: string; policy_version: string | null; limits_json: string | null; budget_timezone: string | null; policy_hash: string | null }
+interface PolicyRow { mode: TradingMode; live_authorized_at: string | null; live_authorization_hash: string | null; updated_at: string; policy_version: string | null; limits_json: string | null; budget_timezone: string | null; policy_hash: string | null; authorized_policy_hash: string | null; authorized_strategy_version: string | null; authorized_category: string | null; pause_reason: string | null; paused_at: string | null; automation_json: string | null }
 
-/** sha256 over the canonical policy content (RSK-07): any change produces a new hash and is audited. */
-export function policyHashOf(policyVersion: string, limits: RiskLimits, budgetTimezone: string): string {
-  const canon = JSON.stringify({ policyVersion, budgetTimezone, limits: Object.fromEntries(Object.keys(limits).sort().map((k) => [k, (limits as unknown as Record<string, unknown>)[k]])) });
+const sortedKeys = (o: object) => Object.fromEntries(Object.keys(o).sort().map((k) => [k, (o as Record<string, unknown>)[k]]));
+
+/**
+ * sha256 over the canonical policy content (RSK-07): any change produces a new hash and is audited. Since 1.14 the
+ * scheduler budgets are part of it (AUTO-01: a scheduled run can never widen what the owner authorized).
+ */
+export function policyHashOf(policyVersion: string, limits: RiskLimits, budgetTimezone: string, automation: AutomationSettings = DEFAULT_AUTOMATION): string {
+  const canon = JSON.stringify({ policyVersion, budgetTimezone, limits: sortedKeys(limits), automation: sortedKeys(automation) });
   return crypto.createHash("sha256").update(canon).digest("hex");
 }
 
@@ -97,6 +104,7 @@ export class TradingAccountService {
       venue: "polymarket_us",
       policy,
       features: { ...TRADING_FEATURES },
+      breaker: this.breaker(binding?.id),
       armed: (policy.mode === "manual_live" || policy.mode === "auto_live") && !!policy.liveAuthorizedAt && !!binding,
       submissionAvailable: blockers.length === 0,
       dispatchBlockers: blockers,
@@ -113,13 +121,39 @@ export class TradingAccountService {
   }
 
   policy(): TradingPolicy {
-    const r = this.db.get<PolicyRow>("SELECT mode, live_authorized_at, live_authorization_hash, updated_at, policy_version, limits_json, budget_timezone, policy_hash FROM trading_policy WHERE id = 'default'");
+    const r = this.db.get<PolicyRow>("SELECT * FROM trading_policy WHERE id = 'default'");
     const policyVersion = r?.policy_version ?? POLICY_VERSION;
     const limits: RiskLimits = { ...DEFAULT_LIMITS, ...(r?.limits_json ? (JSON.parse(r.limits_json) as Partial<RiskLimits>) : {}) };
     const budgetTimezone = r?.budget_timezone ?? "UTC";
-    const policyHash = r?.policy_hash ?? policyHashOf(policyVersion, limits, budgetTimezone);
-    if (!r) return { mode: "paper", updatedAt: this.now().toISOString(), policyVersion, limits, budgetTimezone, policyHash };
-    return { mode: r.mode, liveAuthorizedAt: r.live_authorized_at ?? undefined, liveAuthorizationHash: r.live_authorization_hash ?? undefined, updatedAt: r.updated_at, policyVersion, limits, budgetTimezone, policyHash };
+    const automation: AutomationSettings = { ...DEFAULT_AUTOMATION, ...(r?.automation_json ? (JSON.parse(r.automation_json) as Partial<AutomationSettings>) : {}) };
+    // The hash is a pure function of the content; a 1.12/1.13 row (hashed without the automation budgets) is re-hashed on first read and stored.
+    const policyHash = policyHashOf(policyVersion, limits, budgetTimezone, automation);
+    if (r && r.policy_hash !== policyHash) this.db.run("UPDATE trading_policy SET policy_hash = ? WHERE id = 'default'", policyHash);
+    if (!r) return { mode: "paper", updatedAt: this.now().toISOString(), policyVersion, limits, budgetTimezone, policyHash, automation };
+    return {
+      mode: r.mode, liveAuthorizedAt: r.live_authorized_at ?? undefined, liveAuthorizationHash: r.live_authorization_hash ?? undefined, updatedAt: r.updated_at, policyVersion, limits, budgetTimezone, policyHash, automation,
+      authorizedPolicyHash: r.authorized_policy_hash ?? undefined, authorizedStrategyVersion: r.authorized_strategy_version ?? undefined, authorizedCategory: r.authorized_category ?? undefined,
+      pauseReason: r.pause_reason ?? undefined, pausedAt: r.paused_at ?? undefined,
+    };
+  }
+
+  /** 1.14 (AUTO-02): change the scheduler budgets. Part of the policy hash, so any change disarms and is audited like a limits change. */
+  setAutomation(patch: Partial<AutomationSettings>): TradingPolicy {
+    const prev = this.policy();
+    const automation: AutomationSettings = { ...prev.automation, ...patch };
+    for (const [k, v] of Object.entries(automation)) if (k !== "paperAutopilot" && (typeof v !== "number" || !Number.isFinite(v) || v < 0)) throw new Error(`Automation setting ${k} must be a non-negative number`);
+    if (typeof automation.paperAutopilot !== "boolean") throw new Error("paperAutopilot must be a boolean");
+    if (automation.intervalMs < 5_000) throw new Error("intervalMs must be at least 5000");
+    const hash = policyHashOf(prev.policyVersion, prev.limits, prev.budgetTimezone, automation);
+    if (hash === prev.policyHash) return prev;
+    const wasLive = prev.mode === "manual_live" || prev.mode === "auto_live" || !!prev.liveAuthorizedAt;
+    this.db.run(
+      `UPDATE trading_policy SET automation_json = ?, policy_hash = ?, ${wasLive ? "mode = 'paper', live_authorized_at = NULL, live_authorization_hash = NULL, authorized_policy_hash = NULL, authorized_strategy_version = NULL, authorized_category = NULL," : ""} updated_at = ? WHERE id = 'default'`,
+      JSON.stringify(automation), hash, this.now().toISOString(),
+    );
+    this.audit("policy.changed", this.connected()?.id, { from: prev.policyHash, to: hash, changed: Object.keys(patch).map((k) => `automation.${k}`), disarmed: wasLive });
+    if (wasLive) { this.audit("trading.disarmed", this.connected()?.id, { reason: "policy changed", previousMode: prev.mode }); this.onDisarmed?.("policy changed", prev.mode); }
+    return this.policy();
   }
 
   /**
@@ -132,17 +166,17 @@ export class TradingAccountService {
     const limits: RiskLimits = { ...prev.limits, ...patch, currency: "USD" };
     const tz = opts.budgetTimezone ?? prev.budgetTimezone;
     try { new Intl.DateTimeFormat("en-CA", { timeZone: tz }); } catch { throw new Error(`Unknown timezone "${tz}"`); }
-    const hash = policyHashOf(prev.policyVersion, limits, tz);
+    const hash = policyHashOf(prev.policyVersion, limits, tz, prev.automation);
     if (hash === prev.policyHash) return prev;
     const wasLive = prev.mode === "manual_live" || prev.mode === "auto_live" || !!prev.liveAuthorizedAt;
     this.db.transaction(() => {
       this.db.run(
-        `UPDATE trading_policy SET limits_json = ?, budget_timezone = ?, policy_hash = ?, ${wasLive ? "mode = 'paper', live_authorized_at = NULL, live_authorization_hash = NULL," : ""} updated_at = ? WHERE id = 'default'`,
+        `UPDATE trading_policy SET limits_json = ?, budget_timezone = ?, policy_hash = ?, ${wasLive ? "mode = 'paper', live_authorized_at = NULL, live_authorization_hash = NULL, authorized_policy_hash = NULL, authorized_strategy_version = NULL, authorized_category = NULL," : ""} updated_at = ? WHERE id = 'default'`,
         JSON.stringify(limits), tz, hash, this.now().toISOString(),
       );
     });
     this.audit("policy.changed", this.connected()?.id, { from: prev.policyHash, to: hash, changed: Object.keys(patch), budgetTimezone: tz, disarmed: wasLive });
-    if (wasLive) this.audit("trading.disarmed", this.connected()?.id, { reason: "policy changed", previousMode: prev.mode });
+    if (wasLive) { this.audit("trading.disarmed", this.connected()?.id, { reason: "policy changed", previousMode: prev.mode }); this.onDisarmed?.("policy changed", prev.mode); }
     return this.policy();
   }
 
@@ -155,16 +189,117 @@ export class TradingAccountService {
 
   gates(binding = this.connected(), syncAge: number | undefined = this.syncAgeSeconds(binding)): TradingGate[] {
     const validated = !!binding && !!binding.lastValidatedAt && !binding.lastValidationError;
+    const policy = this.policy();
+    const breaker = this.breaker(binding?.id);
     return [
       { id: "credentials_valid", label: "Credentials validated", satisfied: validated, detail: validated ? `validated ${binding!.lastValidatedAt}` : binding?.lastValidationError ?? "no connected, validated credential" },
       { id: "account_fresh", label: "Account state fresh (≤ 30 s)", satisfied: syncAge !== undefined && syncAge <= SYNC_FRESH_SECONDS, detail: syncAge === undefined ? "never synced" : `${syncAge} s old` },
       { id: "reconciled", label: "Binding reconciled", satisfied: !!binding && !binding.reconcileRequired, detail: binding?.reconcileRequired ? "credential or restore changed the binding; reconciliation (1.13) required" : "ok" },
       { id: "contract_verification", label: "Verified executable contract (1.11)", satisfied: this.hasVerifiedContract(), detail: this.hasVerifiedContract() ? "at least one link is verified equivalent" : "no link verified equivalent yet" },
-      { id: "strategy_qualified", label: "Qualified strategy + paper rehearsal (1.12)", satisfied: this.hasProductionQualification(), detail: this.hasProductionQualification() ? "a production qualification record exists" : "no production qualification record (paper evidence still accumulating)" },
-      { id: "submission_feature", label: "Order submission built and gated (1.13)", satisfied: TRADING_FEATURES.submission, detail: TRADING_FEATURES.submission ? "manual-live submission exists behind preview → confirm; automation does not" : "no submission code exists in this build" },
+      { id: "strategy_qualified", label: "Qualified strategy for the category (1.12)", satisfied: this.hasProductionQualification(), detail: this.hasProductionQualification() ? "a production qualification record exists" : "no production qualification record (paper evidence still accumulating; fixtures never count)" },
+      { id: "paper_rehearsal", label: `Paper rehearsal (≥ ${PAPER_REHEARSAL_MIN_SETTLED} settled US paper positions)`, satisfied: this.settledPaperCount() >= PAPER_REHEARSAL_MIN_SETTLED, detail: `${this.settledPaperCount()} settled` },
+      { id: "submission_feature", label: "Order submission built and gated (1.13)", satisfied: TRADING_FEATURES.submission, detail: TRADING_FEATURES.submission ? "manual-live submission exists behind preview → confirm" : "no submission code exists in this build" },
+      { id: "automation_feature", label: "Automatic execution built and gated (1.14)", satisfied: TRADING_FEATURES.automation, detail: TRADING_FEATURES.automation ? "the scheduler exists; it runs only under an explicit arming with the reviewed policy hash" : "no automation code exists in this build" },
       { id: "no_holds", label: "No unresolved reconciliation holds or unknown submissions", satisfied: this.openHoldCount(binding?.id) === 0, detail: this.openHoldCount(binding?.id) === 0 ? "none" : `${this.openHoldCount(binding?.id)} open` },
-      { id: "live_authorization", label: "Explicit owner live authorization", satisfied: !!this.policy().liveAuthorizedAt, detail: this.policy().liveAuthorizedAt ? `authorized ${this.policy().liveAuthorizedAt}` : "absent — set manual-live mode with the acknowledgement text" },
+      { id: "not_paused", label: "New orders not paused by the owner", satisfied: !policy.pauseReason, detail: policy.pauseReason ?? "not paused" },
+      { id: "breaker_closed", label: "Circuit breaker closed", satisfied: breaker.state !== "open", detail: breaker.state === "open" ? `open since ${breaker.openedAt} (${breaker.consecutiveFailures} consecutive failures)` : breaker.state },
+      { id: "live_authorization", label: "Explicit owner live authorization", satisfied: !!policy.liveAuthorizedAt, detail: policy.liveAuthorizedAt ? `authorized ${policy.liveAuthorizedAt}${policy.authorizedPolicyHash ? ` for automation under policy ${policy.authorizedPolicyHash.slice(0, 12)}…` : ""}` : "absent — set manual-live mode with the acknowledgement text, or arm automation with the reviewed policy hash" },
     ];
+  }
+
+  private settledPaperCount(): number {
+    return this.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM paper_us_positions WHERE status = 'settled'")?.n ?? 0;
+  }
+
+  /** A production (never fixture) qualification for this strategy version and category (FOR-06). */
+  qualificationFor(strategyVersion: string, category: string): boolean {
+    return !!this.db.get<{ n: number }>("SELECT 1 AS n FROM strategy_qualifications WHERE source = 'production' AND qualified = 1 AND strategy_version = ? AND category = ? LIMIT 1", strategyVersion, category);
+  }
+
+  // ---- 1.14: circuit breaker (AUTO-05) -----------------------------------------------------------------
+
+  breaker(bindingId = this.connected()?.id): CircuitBreakerState {
+    if (!bindingId) return { state: "closed", consecutiveFailures: 0 };
+    const r = this.db.get<{ breaker_json: string | null }>("SELECT breaker_json FROM trading_accounts WHERE id = ?", bindingId);
+    return r?.breaker_json ? (JSON.parse(r.breaker_json) as CircuitBreakerState) : { state: "closed", consecutiveFailures: 0 };
+  }
+
+  /**
+   * Record the outcome of an adapter call. Repeated failures open the breaker: no new orders (the dispatch marker
+   * re-reads the blockers), reads and cancels keep working, an alert is raised once per incident, and nothing re-arms by
+   * itself — a later successful read (after the cooldown) closes the breaker but the owner must arm again (AUTO-04/05).
+   */
+  recordAdapterOutcome(ok: boolean, code?: string): CircuitBreakerState {
+    const binding = this.connected();
+    if (!binding) return { state: "closed", consecutiveFailures: 0 };
+    const b = this.breaker(binding.id);
+    const now = this.now().toISOString();
+    const { breakerThreshold, breakerCooldownMs } = this.policy().automation;
+    let next: CircuitBreakerState;
+    if (ok) {
+      const cooled = b.state !== "open" || (b.openedAt !== undefined && Date.parse(now) - Date.parse(b.openedAt) >= breakerCooldownMs);
+      next = cooled ? { state: "closed", consecutiveFailures: 0 } : { ...b, state: "half_open", consecutiveFailures: 0 };
+      if (b.state !== "closed" && next.state === "closed") this.audit("breaker.closed", binding.id, { after: b.consecutiveFailures, incidentId: b.incidentId });
+    } else {
+      const failures = b.consecutiveFailures + 1;
+      next = { ...b, consecutiveFailures: failures, lastFailureAt: now, lastFailureCode: code };
+      if (b.state !== "open" && failures >= breakerThreshold) {
+        next = { ...next, state: "open", openedAt: now, incidentId: crypto.randomUUID() };
+        this.db.run("UPDATE trading_accounts SET breaker_json = ? WHERE id = ?", JSON.stringify(next), binding.id);
+        this.audit("breaker.opened", binding.id, { failures, code, incidentId: next.incidentId });
+        const p = this.policy();
+        if (p.mode === "auto_live" || p.mode === "manual_live" || p.liveAuthorizedAt) this.disarm(`circuit breaker opened after ${failures} consecutive adapter failures (${code ?? "unknown"})`);
+        this.onBreakerOpened?.(next, code);
+        return next;
+      }
+    }
+    this.db.run("UPDATE trading_accounts SET breaker_json = ? WHERE id = ?", JSON.stringify(next), binding.id);
+    return next;
+  }
+
+  /** Hooks for the alert service (set by the context; optional so this service has no hard dependency on it). */
+  onBreakerOpened?: (state: CircuitBreakerState, code?: string) => void;
+  onDisarmed?: (reason: string, previousMode: TradingMode) => void;
+
+  // ---- 1.14: owner pause / resume (AUTO-03) ------------------------------------------------------------
+
+  pause(reason: string): TradingPolicy {
+    const now = this.now().toISOString();
+    this.db.run("UPDATE trading_policy SET pause_reason = ?, paused_at = ?, updated_at = ? WHERE id = 'default'", reason, now, now);
+    this.audit("trading.paused", this.connected()?.id, { reason });
+    return this.policy();
+  }
+
+  resume(): TradingPolicy {
+    const prev = this.policy();
+    this.db.run("UPDATE trading_policy SET pause_reason = NULL, paused_at = NULL, updated_at = ? WHERE id = 'default'", this.now().toISOString());
+    this.audit("trading.resumed", this.connected()?.id, { previousReason: prev.pauseReason ?? null });
+    return this.policy();
+  }
+
+  /**
+   * 1.14 (AUTO-01): arm automatic trading. Every gate must hold, the owner must send the exact acknowledgement AND the
+   * policy hash they reviewed (a mismatch means the policy changed under them), and the strategy/category pair must
+   * hold a production qualification. The authorization records the hash; the scheduler refuses whenever the live hash
+   * differs, so nothing can silently widen it.
+   */
+  arm(input: { acknowledge?: string; policyHash?: string; category: string; strategyVersion: string }): TradingPolicy {
+    const prev = this.policy();
+    const gates = this.gates();
+    const required = ["credentials_valid", "account_fresh", "reconciled", "contract_verification", "strategy_qualified", "paper_rehearsal", "submission_feature", "automation_feature", "no_holds", "not_paused", "breaker_closed"];
+    const unmet = gates.filter((g) => required.includes(g.id) && !g.satisfied);
+    if (!unmet.some((g) => g.id === "strategy_qualified") && !this.qualificationFor(input.strategyVersion, input.category)) unmet.push({ id: "strategy_qualified", label: `Qualified strategy ${input.strategyVersion} for category ${input.category}`, satisfied: false, detail: "no production qualification record for this strategy/category (fixtures never count)" });
+    if (unmet.length) throw new TradingGateError(`auto_live is not available: ${unmet.map((g) => g.label).join("; ")}.`, unmet);
+    if (input.acknowledge !== AUTO_LIVE_ACKNOWLEDGEMENT) throw new TradingGateError(`auto_live requires the exact acknowledgement "${AUTO_LIVE_ACKNOWLEDGEMENT}".`, [{ id: "live_authorization", label: "Explicit owner automation authorization", satisfied: false, detail: "acknowledgement text missing or different" }]);
+    if (input.policyHash !== prev.policyHash) throw new TradingGateError("The policy hash you reviewed is not the current policy hash; review the current limits and budgets and arm again.", [{ id: "policy_reviewed", label: "Policy reviewed (hash matches)", satisfied: false, detail: `reviewed ${input.policyHash?.slice(0, 12) ?? "none"}… vs current ${prev.policyHash.slice(0, 12)}…` }]);
+    const at = this.now().toISOString();
+    const hash = crypto.createHash("sha256").update(JSON.stringify({ mode: "auto_live", at, policyHash: prev.policyHash, strategy: input.strategyVersion, category: input.category, binding: this.connected()?.id })).digest("hex");
+    this.db.run(
+      "UPDATE trading_policy SET mode = 'auto_live', live_authorized_at = ?, live_authorization_hash = ?, authorized_policy_hash = ?, authorized_strategy_version = ?, authorized_category = ?, updated_at = ? WHERE id = 'default'",
+      at, hash, prev.policyHash, input.strategyVersion, input.category, at,
+    );
+    this.audit("policy.mode_changed", this.connected()?.id, { from: prev.mode, to: "auto_live", liveAuthorizationHash: hash, authorizedPolicyHash: prev.policyHash, strategyVersion: input.strategyVersion, category: input.category, acknowledged: true });
+    return this.policy();
   }
 
   private openHoldCount(bindingId?: string): number {
@@ -270,6 +405,8 @@ export class TradingAccountService {
       this.vault.set(TRADING_SECRET_NAMES.secretKey, creds.secretKey);
       return this.connected()!;
     });
+    // AUTO-04: any credential change (rotation, replacement, rebind) returns to disarmed; the owner re-arms after reconciliation.
+    { const p = this.policy(); if (p.mode === "manual_live" || p.mode === "auto_live" || p.liveAuthorizedAt) this.disarm("credential change"); }
     let sync: TradingAccountSync | undefined;
     try {
       sync = await this.sync(signal);
@@ -343,10 +480,15 @@ export class TradingAccountService {
     }
     if (!this.opts.allowInternet()) throw new TradingAdapterError("network", "Internet access is disabled in Setup → Privacy.");
     try {
-      return await fn(creds, this.adapter());
+      const r = await fn(creds, this.adapter());
+      this.recordAdapterOutcome(true);
+      return r;
     } catch (err) {
       const message = safeErrorMessage(err, this.secretMaterial());
-      throw err instanceof TradingAdapterError ? new TradingAdapterError(err.code, message, err.status) : new TradingAdapterError("unknown", message);
+      const mapped = err instanceof TradingAdapterError ? new TradingAdapterError(err.code, message, err.status) : new TradingAdapterError("unknown", message);
+      // Venue refusals of a request (400/404) are not infrastructure failures; auth, rate limit, network, timeout and 5xx are.
+      if (mapped.code !== "bad_request" && mapped.code !== "not_found") this.recordAdapterOutcome(false, mapped.code);
+      throw mapped;
     }
   }
 
@@ -369,8 +511,12 @@ export class TradingAccountService {
     const binding = this.connected();
     if (p.mode !== "manual_live" && p.mode !== "auto_live") out.push(`mode is ${p.mode}`);
     if ((p.mode === "manual_live" || p.mode === "auto_live") && !p.liveAuthorizedAt) out.push("live authorization absent");
+    if (p.mode === "auto_live" && p.authorizedPolicyHash && p.authorizedPolicyHash !== p.policyHash) out.push("policy changed since the automation authorization");
+    if (p.pauseReason) out.push(`paused by owner: ${p.pauseReason}`);
     if (!binding) out.push("no connected account");
     else {
+      const b = this.breaker(binding.id);
+      if (b.state === "open") out.push(`circuit breaker open (${b.consecutiveFailures} consecutive adapter failures)`);
       if (binding.reconcileRequired) out.push("binding requires reconciliation");
       const paused = this.dispatchPauseReason(binding.id);
       if (paused) out.push(`dispatch paused: ${paused}`);
@@ -386,10 +532,16 @@ export class TradingAccountService {
    * 1.13: disarm — live modes fall back to paper and the authorization is cleared, in one statement. The dispatch
    * marker transaction re-reads this row, so no submission can begin after the disarm is recorded.
    */
-  disarm(reason: string): TradingPolicy {
+  disarm(reason: string, opts: { pause?: boolean } = {}): TradingPolicy {
     const prev = this.policy();
-    this.db.run("UPDATE trading_policy SET mode = CASE WHEN mode IN ('manual_live','auto_live') THEN 'paper' ELSE mode END, live_authorized_at = NULL, live_authorization_hash = NULL, updated_at = ? WHERE id = 'default'", this.now().toISOString());
-    this.audit("trading.disarmed", this.connected()?.id, { reason, previousMode: prev.mode });
+    const now = this.now().toISOString();
+    // One statement: mode, authorization and (for an emergency stop) the pause land together; the dispatch marker re-reads this row.
+    this.db.run(
+      `UPDATE trading_policy SET mode = CASE WHEN mode IN ('manual_live','auto_live') THEN 'paper' ELSE mode END, live_authorized_at = NULL, live_authorization_hash = NULL, authorized_policy_hash = NULL, authorized_strategy_version = NULL, authorized_category = NULL${opts.pause ? ", pause_reason = ?, paused_at = ?" : ""}, updated_at = ? WHERE id = 'default'`,
+      ...(opts.pause ? [reason, now] : []), now,
+    );
+    this.audit("trading.disarmed", this.connected()?.id, { reason, previousMode: prev.mode, paused: opts.pause === true });
+    if (prev.mode === "manual_live" || prev.mode === "auto_live" || prev.liveAuthorizedAt) this.onDisarmed?.(reason, prev.mode);
     return this.policy();
   }
 
@@ -427,9 +579,11 @@ export class TradingAccountService {
         this.db.run("UPDATE trading_accounts SET last_sync_at = ?, last_validated_at = ?, last_validation_error = NULL WHERE id = ?", at, at, binding.id);
         this.db.run("DELETE FROM trading_account_syncs WHERE binding_id = ? AND id NOT IN (SELECT id FROM trading_account_syncs WHERE binding_id = ? ORDER BY at DESC LIMIT ?)", binding.id, binding.id, SYNC_RETENTION);
       });
+      this.recordAdapterOutcome(true);
       return { id, bindingId: binding.id, at, ok: true, balances, positions, openOrders, complete };
     } catch (err) {
       const { code, message } = describeError(err, creds);
+      if (code !== "bad_request" && code !== "not_found") this.recordAdapterOutcome(false, code);
       const id = crypto.randomUUID();
       this.db.run("INSERT INTO trading_account_syncs (id, binding_id, at, ok, error, complete) VALUES (?, ?, ?, 0, ?, 0)", id, binding.id, at, `${code}: ${message}`);
       if (code === "unauthorized" || code === "forbidden" || code === "clock_skew") {
@@ -456,12 +610,13 @@ export class TradingAccountService {
   setMode(mode: TradingMode, opts: { acknowledge?: string } = {}): TradingPolicy {
     const prev = this.policy();
     if (mode === "auto_live") {
+      // Automation is armed only through `arm()` (acknowledgement + reviewed policy hash + qualified strategy/category); a bare mode switch never arms it.
       const unmet = this.gates().filter((g) => !g.satisfied && g.id !== "live_authorization");
-      throw new TradingGateError(`auto_live is not available in this build: ${unmet.map((g) => g.label).join("; ") || "automation ships with 1.14"}.`, unmet);
+      throw new TradingGateError(`auto_live is armed only through POST /api/trading/arm with the acknowledgement, the reviewed policy hash and a qualified strategy/category${unmet.length ? `; unmet: ${unmet.map((g) => g.label).join("; ")}` : ""}.`, unmet.length ? unmet : [{ id: "live_authorization", label: "Explicit owner automation authorization", satisfied: false, detail: "use /api/trading/arm" }]);
     }
     if (mode === "manual_live") {
       // 1.13: manual live needs the account gates (not strategy qualification) and an explicit owner acknowledgement.
-      const required = ["credentials_valid", "account_fresh", "reconciled", "submission_feature", "no_holds"];
+      const required = ["credentials_valid", "account_fresh", "reconciled", "submission_feature", "no_holds", "not_paused", "breaker_closed"];
       const unmet = this.gates().filter((g) => required.includes(g.id) && !g.satisfied);
       if (unmet.length) throw new TradingGateError(`manual_live is not available: ${unmet.map((g) => g.label).join("; ")}.`, unmet);
       if (opts.acknowledge !== LIVE_ACKNOWLEDGEMENT) throw new TradingGateError(`manual_live requires the exact acknowledgement "${LIVE_ACKNOWLEDGEMENT}".`, [{ id: "live_authorization", label: "Explicit owner live authorization", satisfied: false, detail: "acknowledgement text missing or different" }]);
@@ -472,7 +627,7 @@ export class TradingAccountService {
       return this.policy();
     }
     const wasLive = prev.mode === "manual_live" || prev.mode === "auto_live";
-    this.db.run("UPDATE trading_policy SET mode = ?, live_authorized_at = NULL, live_authorization_hash = NULL, updated_at = ? WHERE id = 'default'", mode, this.now().toISOString());
+    this.db.run("UPDATE trading_policy SET mode = ?, live_authorized_at = NULL, live_authorization_hash = NULL, authorized_policy_hash = NULL, authorized_strategy_version = NULL, authorized_category = NULL, updated_at = ? WHERE id = 'default'", mode, this.now().toISOString());
     this.audit("policy.mode_changed", this.connected()?.id, { from: prev.mode, to: mode, disarmed: wasLive });
     return this.policy();
   }
@@ -490,7 +645,7 @@ export class TradingAccountService {
     }
     const p = this.policy();
     if (p.mode === "manual_live" || p.mode === "auto_live" || p.liveAuthorizedAt) {
-      this.db.run("UPDATE trading_policy SET mode = 'paper', live_authorized_at = NULL, live_authorization_hash = NULL, updated_at = ? WHERE id = 'default'", this.now().toISOString());
+      this.db.run("UPDATE trading_policy SET mode = 'paper', live_authorized_at = NULL, live_authorization_hash = NULL, authorized_policy_hash = NULL, authorized_strategy_version = NULL, authorized_category = NULL, updated_at = ? WHERE id = 'default'", this.now().toISOString());
       this.audit("trading.disarmed", binding?.id, { reason: "startup", previousMode: p.mode });
       disarmed = true;
     }
@@ -512,6 +667,11 @@ export class TradingAccountService {
 
   private secretMaterial(): (string | undefined)[] {
     return [this.vault.get(TRADING_SECRET_NAMES.secretKey), this.vault.get(TRADING_SECRET_NAMES.keyId)];
+  }
+
+  /** Redact the trading secret material from free text (alerts, logs). The vault handle never leaves this service. */
+  redact(text: string): string {
+    return redactSecrets(text, this.secretMaterial());
   }
 
   audit(kind: string, bindingId: string | undefined, details: Record<string, unknown>): void {

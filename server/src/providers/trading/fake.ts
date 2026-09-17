@@ -53,6 +53,8 @@ export interface OrderBehaviour {
   rejectReason?: string;
   /** Delay stream events (ms) after the create response. */
   delayMs?: number;
+  /** Hold the create response for this long (the order exists at the venue meanwhile — an in-flight POST, U04). */
+  responseDelayMs?: number;
 }
 
 export const fakeBalance = (buyingPower = "100.00", currentBalance = "100.00"): TradingBalanceSummary => ({
@@ -201,6 +203,7 @@ export class FakeTradingAdapter implements TradingAdapter {
     this.orders.set(id, order);
     const run = () => this.runBehaviour(order, b);
     if (b.delayMs) setTimeout(run, b.delayMs); else run();
+    if (b.responseDelayMs) await new Promise((r) => setTimeout(r, b.responseDelayMs));
     if (b.mode === "drop_response") throw new TradingAdapterError("timeout", "Request timeout (response lost after the venue created the order)", 408);
     return { orderId: id, executions: [], raw: { id } };
   }

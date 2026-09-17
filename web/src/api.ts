@@ -367,7 +367,7 @@ export const VERIFICATION_LABEL: Record<ContractVerification["status"], string> 
 import type { ContractVerification as _CV, DecisionOutcome, EvidenceDossier as _ED, ForecastEvaluation, ForecastSnapshot, PaperUsBook, RiskExposure, RiskLimits, RiskReservation, TradeDecision } from "@prediction-ledger/shared";
 
 export interface LimitsResponse { policyVersion: string; limits: RiskLimits; budgetTimezone: string; policyHash: string; mode?: TradingMode }
-export interface DecisionEvidence { decision: TradeDecision; forecast?: ForecastSnapshot; verification?: _CV; dossier?: _ED; reservation?: RiskReservation }
+export interface DecisionEvidence { decision: TradeDecision; forecast?: ForecastSnapshot; verification?: _CV; dossier?: _ED; reservation?: RiskReservation; intent?: import("@prediction-ledger/shared").TradeIntent; current?: { asOf: string; predictionRevision?: number; predictionMissing: boolean; normalizedStatement?: string; verification?: _CV; verificationChanged: boolean; forecast?: ForecastSnapshot; forecastChanged: boolean; dossier?: _ED } }
 export const decisionsApi = {
   evaluate: (body: { predictionId: string; linkId?: string; candidateQuantity?: string; dryRun?: boolean }) => request<TradeDecision>("POST", "/api/trading/decisions", body),
   list: (f: { mode?: TradingMode; outcome?: DecisionOutcome; from?: string; to?: string; predictionId?: string; limit?: number } = {}) => request<TradeDecision[]>("GET", `/api/trading/decisions${qs({ mode: f.mode, outcome: f.outcome, from: f.from, to: f.to, predictionId: f.predictionId, limit: f.limit ? String(f.limit) : undefined })}`),
@@ -419,3 +419,32 @@ export const INTENT_LABEL: Record<IntentState, string> = {
   prepared: "Prepared", reserved: "Reserved (not sent)", submitting: "Sending…", acknowledged: "Accepted by venue (open)", filled: "Filled", partially_filled: "Partially filled", canceled: "Canceled (no fill)",
   rejected: "Rejected by venue", rejected_local: "Not sent", skipped: "Skipped", expired: "Expired (never sent)", submission_unknown: "Unknown — reconciling",
 };
+
+// ---------------------------------------------------------------------------
+// 1.14 — automation controls, the Trades ledger, summary, metrics and alerts
+// ---------------------------------------------------------------------------
+
+import type { AutomationCandidate, AutomationRun, AutomationSettings, EmergencyStopResult, ExternalLedgerRow, TradeLedgerFilter, TradeLedgerRow, TradingAlert, TradingMetrics, TradingSummary } from "@prediction-ledger/shared";
+
+export interface AutomationInfo { settings: AutomationSettings; live: { ok: boolean; reasons: string[] }; runs: AutomationRun[]; strategyVersion: string; categories: string[] }
+const ledgerQs = (f: TradeLedgerFilter) => qs({ from: f.from, to: f.to, category: f.category, creator: f.creator, status: f.status, mode: f.mode, reason: f.reason, external: f.includeExternal === false ? "false" : undefined, limit: f.limit ? String(f.limit) : undefined });
+export const automationApi = {
+  arm: (body: { acknowledge: string; policyHash: string; category: string; strategyVersion?: string }) => request<{ policy: TradingPolicy; gates: TradingGate[]; status: TradingStatus; scheduler: { ok: boolean; reasons: string[] } }>("POST", "/api/trading/arm", body),
+  pause: (reason: string) => request<{ policy: TradingPolicy; status: TradingStatus }>("POST", "/api/trading/pause", { reason }),
+  resume: () => request<{ policy: TradingPolicy; status: TradingStatus }>("POST", "/api/trading/resume", {}),
+  emergencyStop: (reason?: string) => request<EmergencyStopResult & { status: TradingStatus }>("POST", "/api/trading/emergency-stop", reason ? { reason } : {}),
+  cancelAll: (acknowledge: string) => request<{ requested: string[]; failed: { orderId: string; message?: string }[] }>("POST", "/api/trading/cancel-all", { acknowledge }),
+  info: () => request<AutomationInfo>("GET", "/api/trading/automation"),
+  setSettings: (patch: Partial<AutomationSettings>) => request<{ settings: AutomationSettings; policyHash: string; mode: TradingMode }>("PUT", "/api/trading/automation", patch),
+  tick: () => request<AutomationRun>("POST", "/api/trading/automation/tick", {}),
+  runs: (limit = 50) => request<AutomationRun[]>("GET", `/api/trading/automation/runs?limit=${limit}`),
+  run: (id: string) => request<AutomationRun & { candidates: AutomationCandidate[] }>("GET", `/api/trading/automation/runs/${id}`),
+  ledger: (f: TradeLedgerFilter = {}) => request<(TradeLedgerRow | ExternalLedgerRow)[]>("GET", `/api/trading/ledger${ledgerQs(f)}`),
+  ledgerCsvUrl: (f: TradeLedgerFilter = {}) => `/api/trading/ledger.csv${ledgerQs(f)}`,
+  ledgerJsonUrl: (f: TradeLedgerFilter = {}) => `/api/trading/ledger.json${ledgerQs(f)}`,
+  summary: () => request<TradingSummary>("GET", "/api/trading/summary"),
+  metrics: () => request<TradingMetrics>("GET", "/api/trading/metrics"),
+  alerts: (open = true) => request<TradingAlert[]>("GET", `/api/trading/alerts${qs({ open: open ? "true" : undefined })}`),
+  ackAlert: (id: string) => request<TradingAlert>("POST", `/api/trading/alerts/${id}/ack`, {}),
+};
+export const LEDGER_STATUSES = ["", "pending", "partial", "filled", "unknown", "rejected", "canceled", "open", "settled", "skipped", "needs_review", "eligible", "external"] as const;

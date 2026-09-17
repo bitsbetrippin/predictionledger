@@ -450,6 +450,26 @@ The 1.0 backlog split in two: 0.6 is everything that could be built and verified
 | **Capped owner-run smoke test** (SETUP §4.14: one contract, quantity 1, cents) — the only live check; no production order was placed in development | EXE-01…08 | owner | **pending — mandatory before "accepted"** |
 | Automation, emergency stop, remaining DASH filters, ACL script, upgrade rehearsal on real data | AUTO-*, DASH-*, OPS-* | 1.14 / 2.0 | — |
 
+## 10e. Release 1.14 — Automatic execution and dashboard (delivered; owner acceptance pending)
+
+| Item | Req. | Agent | Done |
+|---|---|---|---|
+| Migration 016 (policy authorization columns, pause, automation budgets; breaker state; `trading_alerts` keyed by incident; `automation_runs` / `automation_candidates`; decision/intent/audit indexes) | OPS-05 | AG-11 | ✓ |
+| Arming route with the exact `AUTO_LIVE_ACKNOWLEDGEMENT`, the reviewed policy hash (now covering the scheduler budgets), a production-qualified (strategy version, category) pair and the paper rehearsal; bare `auto_live` mode switch refused; authorization recorded in the audit | AUTO-01 | AG-05, AG-15 | ✓ |
+| `services/autoTrader.ts`: own timer loop, discovery (match → verify → revalidate), bounded candidates with a recorded reason per skip, per-source/per-tick budgets, `liveEnabled()` re-check before each send, orders only through the 1.13 preview → submit path | AUTO-02, AUTO-04 | AG-05, AG-07 | ✓ |
+| Disarm-on-change in one statement (limits, budgets, credentials, restart, restore, unknown, discrepancy, breaker) with a `disarmed` alert; pause / resume; emergency stop (disarm+pause, targeted cancels of app-owned orders only); separate account-wide cancel with its own sentence | AUTO-03 | AG-05, AG-15 | ✓ |
+| Circuit breaker on adapter faults; `services/tradingAlerts.ts` (incident-keyed dedupe, acknowledge / resolve); alerts for unknown submission, disconnection, failed cancel, risk limit, stale sync, resolution, discrepancy, breaker, disarmed, stop | AUTO-05, OPS-01/02 | AG-05, AG-13 | ✓ |
+| `services/ledger.ts`: summary tiles, ledger rows (intent / order / position / mark / cutoff / source / reason), external-trade labels, stale-mark indicator, filters (date, mode, status, reason, creator, category), CSV/JSON export without secrets; evidence drilldown with the *current* analysis shown separately from the frozen rationale; OPS-04 metrics | DASH-01…05, OPS-04 | AG-05, AG-10 | ✓ |
+| Routes (`routes/automation.ts`): arm / pause / resume / emergency-stop / cancel-all, automation settings / tick / runs, ledger / summary / metrics / exports, alerts; 1.13 stubs removed | §12 | AG-05 | ✓ |
+| Web: `AutomationCard` (state, hash, qualified categories, arm dialog, disarm, pause/resume, tick, budgets) on Setup; Trades page summary tiles, stop / pause / resume / disarm, alerts banner, ledger view with filters and exports, automation runs, current-vs-frozen evidence | DASH-01…05 | AG-10 | ✓ (typechecked; browser walk-through pending owner) |
+| Backup scrub and export exclude `authorized_*`; `startupCheck` clears authorization; D04 deletion guards keep covering automation rows | OPS-05, DASH-05 | AG-11, AG-15 | ✓ |
+| ADR-035; README, CHANGELOG, SETUP (§4.15 owner acceptance), API, ARCHITECTURE §6.5, PREDICTION_MARKETS, VERIFICATION | — | AG-02, AG-16 | ✓ |
+| Tests: 9 new — U01–U06, D01/D03, O03/O04 in `automation.test.ts` (8) and a full fake source-to-order flow in `autopilot.e2e.test.ts` (1; skipped on Windows / without ffmpeg); regression **170/170** in the sandbox | 03 §1.14 | AG-14 | ✓ |
+| Windows install / typecheck / build / test on the owner's machine | 03 §1.14 exit | owner | **pending** |
+| **Production qualification** of at least one (strategy version, category) pair from real settled events (≥ 100 with a market baseline) and 20 settled paper positions — arming is impossible until this exists | AUTO-01 gate | owner / 2.0 | **unmet — not waived** |
+| **1.13 capped smoke test** (SETUP §4.14) and **1.14 owner acceptance** (SETUP §4.15) | EXE / AUTO | owner | **pending — mandatory before "accepted"** |
+| Live-broadcast ingestion, ACL script, upgrade rehearsal on real data, multi-account | 2.0 | — | — |
+
 ## 11. Working agreements
 
 - **Small end-to-end increments.** Each release is usable on its own; nothing is merged that leaves the dashboard in a half-state.

@@ -22,7 +22,7 @@
  */
 
 import crypto from "node:crypto";
-import type { ExecutionRecord, IntentState, LivePosition, MarketProviderId, OrderPreviewRecord, OrderState, ReconciliationHold, SettlementEventRecord, TradeIntent, VenueOrderRecord } from "@prediction-ledger/shared";
+import { CANCEL_ALL_ACKNOWLEDGEMENT, type EmergencyStopResult, type ExecutionRecord, type IntentState, type LivePosition, type MarketProviderId, type OrderPreviewRecord, type OrderState, type ReconciliationHold, type SettlementEventRecord, type TradeIntent, type VenueOrderRecord } from "@prediction-ledger/shared";
 import type { AppContext } from "../context.js";
 import { D, Dec, dsum } from "../analysis/decimal.js";
 import { LIVE_INTENT_STATES, TERMINAL_ORDER_STATES, chosenCostOf, intentStateFor, mergeFilled, mergeOrderState, toVenueCreateBody } from "../analysis/orderState.js";
@@ -76,6 +76,8 @@ export class ExecutionService {
   private reconnectTimer?: NodeJS.Timeout;
   private reconnectDelayMs = 2_000;
   streamState: "closed" | "connecting" | "open" | "reconnecting" = "closed";
+  /** OPS-04 counters (process lifetime; the durable ones are derived from tables in the ledger service). */
+  readonly counters = { readRetries: 0, droppedDuplicates: 0, streamEvents: 0 };
 
   constructor(private readonly ctx: AppContext, opts: { now?: () => Date; faults?: FaultInjector } = {}) {
     this.now = opts.now ?? (() => new Date());
@@ -247,6 +249,9 @@ export class ExecutionService {
       this.ctx.trading.setDispatchPause(intent.bindingId!, `submission ${intentId.slice(0, 8)} has an unknown outcome`);
     });
     this.ctx.trading.audit("order.submission_unknown", intent.bindingId, { intentId, reason });
+    this.ctx.tradingAlerts.raise("unknown_submission", `unknown_submission:${intentId}`, `Submission ${intentId.slice(0, 8)} has an unknown outcome (${reason}). New orders are paused until you resolve it.`, { subject: intentId, details: { reason, marketSlug: intent.venueMarketId } });
+    // AUTO-04: an ambiguous submission during automatic trading returns to disarmed; the owner re-arms after resolving it.
+    if (this.ctx.trading.policy().mode === "auto_live") this.ctx.trading.disarm(`unknown submission ${intentId.slice(0, 8)}`);
   }
 
   /** An intent that never reached the venue: release its reservation and give the opportunity back. */
@@ -319,6 +324,7 @@ export class ExecutionService {
       const side = orderRow.side ?? ex.order?.side;
       const dup = this.ctx.db.get<{ id: string }>("SELECT id FROM executions WHERE id = ? OR (trade_id IS NOT NULL AND trade_id = ?)", ex.id, ex.tradeId ?? "");
       let applied = false;
+      if (dup) this.counters.droppedDuplicates++;
       if (!dup) {
         this.ctx.db.run(
           "INSERT INTO executions (id, order_id, intent_id, trade_id, type, quantity, yes_price, chosen_cost, fee, at, source, note, received_at, raw_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -393,12 +399,58 @@ export class ExecutionService {
     try {
       const r = await this.ctx.trading.withCredentials((creds, adapter) => adapter.cancelOrder(creds, order.id, order.marketSlug));
       this.ctx.trading.audit("order.cancel_requested", intent.bindingId, { intentId, venueOrderId: order.id, outcome: r.outcome });
-      if (r.outcome === "failed") this.openHold(intent.bindingId!, "failed_cancel", intentId, { venueOrderId: order.id, message: r.message }, at);
+      if (r.outcome === "failed") { this.openHold(intent.bindingId!, "failed_cancel", intentId, { venueOrderId: order.id, message: r.message }, at); this.ctx.tradingAlerts.raise("failed_cancel", `failed_cancel:${order.id}`, `Cancel of order ${order.id} failed: ${r.message ?? "unknown"}`, { subject: order.id }); }
       return { outcome: r.outcome, message: r.message };
     } catch (err) {
       this.openHold(intent.bindingId!, "failed_cancel", intentId, { venueOrderId: order.id, message: (err as Error).message }, at);
+      this.ctx.tradingAlerts.raise("failed_cancel", `failed_cancel:${order.id}`, `Cancel of order ${order.id} failed: ${(err as Error).message.slice(0, 200)}`, { subject: order.id });
       return { outcome: "failed", message: (err as Error).message };
     }
+  }
+
+  // ---- 1.14: emergency stop and account-wide cancel (AUTO-03) ---------------------------------------------
+
+  /**
+   * Emergency stop: ONE statement disarms and pauses (the dispatch marker re-reads that row, so no send can begin
+   * afterwards), then every app-owned order that is not terminal is targeted for cancellation. Positions and history
+   * are untouched; an in-flight POST is reconciled like any other (its id arrives, its remainder is canceled here or
+   * by the next reconcile). Orders the app did not place are never cancelled by this action.
+   */
+  async emergencyStop(reason = "emergency stop"): Promise<EmergencyStopResult> {
+    const stoppedAt = this.now().toISOString();
+    const previousMode = this.ctx.trading.policy().mode;
+    this.ctx.trading.disarm(reason, { pause: true });
+    this.ctx.trading.audit("trading.emergency_stop", this.ctx.trading.connected()?.id, { reason, previousMode });
+    this.ctx.tradingAlerts.raise("emergency_stop", `emergency_stop:${stoppedAt}`, `Emergency stop at ${stoppedAt}: disarmed, new orders paused, app-owned open orders targeted for cancellation.`, { details: { reason, previousMode } });
+    const cancellations: EmergencyStopResult["cancellations"] = [];
+    const binding = this.ctx.trading.connected();
+    if (binding) {
+      // Give an in-flight submission a moment to persist its id, then sweep every app-owned non-terminal order.
+      const open = this.ctx.db.all<{ id: string; intent_id: string }>("SELECT id, intent_id FROM venue_orders WHERE binding_id = ? AND intent_id IS NOT NULL AND state IN ('pending','open','partial','cancel_pending')", binding.id);
+      for (const o of open) {
+        const r = await this.cancelIntent(o.intent_id).catch((err: Error) => ({ outcome: "failed", message: err.message }));
+        cancellations.push({ intentId: o.intent_id, venueOrderId: o.id, outcome: r.outcome, message: r.message });
+      }
+    }
+    const positionsRetained = binding ? this.positions(binding.id).filter((p) => !p.settled && !D(p.localNet).isZero()).length : 0;
+    return { stoppedAt, previousMode, cancellations, positionsRetained, note: "Disarmed and paused. Only orders placed by this app were targeted; positions and history are retained. Resolve any failed cancellation, reconcile, then resume and re-arm deliberately." };
+  }
+
+  /** Account-wide cancellation — a separately labelled owner action that needs its own acknowledgement; never the default. */
+  async cancelAllAccountOrders(acknowledge: string): Promise<{ requested: string[]; failed: { orderId: string; message?: string }[] }> {
+    if (acknowledge !== CANCEL_ALL_ACKNOWLEDGEMENT) throw new ExecutionError(`Account-wide cancel requires the exact acknowledgement "${CANCEL_ALL_ACKNOWLEDGEMENT}".`, "acknowledgement_required", 409);
+    const binding = this.ctx.trading.connected();
+    if (!binding) throw new ExecutionError("No connected account.", "not_connected", 409);
+    const sync = await this.ctx.trading.sync();
+    const requested: string[] = []; const failed: { orderId: string; message?: string }[] = [];
+    for (const o of sync.openOrders) {
+      try {
+        const r = await this.ctx.trading.withCredentials((creds, adapter) => adapter.cancelOrder(creds, o.id, o.marketSlug));
+        if (r.outcome === "requested") requested.push(o.id); else failed.push({ orderId: o.id, message: r.message });
+      } catch (err) { failed.push({ orderId: o.id, message: (err as Error).message }); }
+    }
+    this.ctx.trading.audit("orders.cancel_all", binding.id, { requested: requested.length, failed: failed.length, acknowledged: true });
+    return { requested, failed };
   }
 
   // ---- reconciliation (EXE-05 / EXE-07 / EXE-08) --------------------------------------------------------------
@@ -464,6 +516,10 @@ export class ExecutionService {
     const holdsOpen = this.holds(binding.id, true).length;
     const paused = holdsOpen > 0 || unknownIntents.length > 0;
     this.ctx.trading.setDispatchPause(binding.id, paused ? `${holdsOpen} hold(s) open` : null);
+    for (const d of discrepancies) this.ctx.tradingAlerts.raise("discrepancy", `discrepancy:${binding.id}:${d.marketSlug}`, `Position discrepancy on ${d.marketSlug}: venue ${d.venueNet} vs local ${d.localNet}.`, { subject: d.marketSlug, details: d });
+    // AUTO-04: a discrepancy or an unresolved unknown submission during automatic trading returns to disarmed.
+    if ((discrepancies.length || unknownIntents.length) && this.ctx.trading.policy().mode === "auto_live") this.ctx.trading.disarm(`account reconciliation found ${discrepancies.length} discrepancy(ies), ${unknownIntents.length} unknown submission(s)`);
+    this.ctx.tradingAlerts.resolve(`stale_sync:${binding.id}`);
     this.ctx.trading.audit("reconcile.completed", binding.id, { ordersChecked, executionsAdded, activities: activities.length, settlements, unknown: unknownIntents.length, discrepancies: discrepancies.length, holdsOpen });
     return { bindingId: binding.id, syncedAt: sync.at, ordersChecked, executionsAdded, activitiesRead: activities.length, settlements, unknownIntents, discrepancies, holdsOpen, paused };
   }
@@ -478,7 +534,7 @@ export class ExecutionService {
         r = await this.ctx.trading.withCredentials((creds, adapter) => adapter.activities(creds, { cursor }));
       } catch (err) {
         // One retry of the same page (a reconnect mid-snapshot, E10); the cursor is unchanged so nothing is skipped or doubled.
-        if (err instanceof TradingAdapterError && (err.code === "network" || err.code === "timeout" || err.code === "venue_unavailable")) r = await this.ctx.trading.withCredentials((creds, adapter) => adapter.activities(creds, { cursor }));
+        if (err instanceof TradingAdapterError && (err.code === "network" || err.code === "timeout" || err.code === "venue_unavailable")) { this.counters.readRetries++; r = await this.ctx.trading.withCredentials((creds, adapter) => adapter.activities(creds, { cursor })); }
         else throw err;
       }
       for (const a of r.activities) if (!seen.has(a.id)) { seen.add(a.id); out.push(a); }
@@ -532,6 +588,7 @@ export class ExecutionService {
       }
     });
     this.ctx.trading.audit("settlement.recorded", bindingId, { marketSlug: a.marketSlug, kind, outcome, activityId });
+    this.ctx.tradingAlerts.raise("resolution", `resolution:${activityId}`, `${kind === "correction" ? "Settlement correction" : "Official settlement"} on ${a.marketSlug}: ${outcome}.`, { severity: "info", subject: a.marketSlug, details: { kind, outcome, events: n } });
     return n;
   }
 
@@ -663,6 +720,7 @@ export class ExecutionService {
   }
 
   private onStreamEvent(bindingId: string, e: Parameters<Parameters<TradingAdapter["openPrivateStream"]>[1]["onEvent"]>[0]): void {
+    this.counters.streamEvents++;
     try {
       if (e.kind === "execution") this.applyExecution(bindingId, e.execution, "stream");
       else if (e.kind === "order_snapshot") for (const o of e.orders) this.applyOrderSnapshot(bindingId, o, "stream");
@@ -677,6 +735,7 @@ export class ExecutionService {
     if (this.streamState === "closed") return;
     this.streamState = "reconnecting";
     this.ctx.trading.audit("stream.closed", this.streamBinding, { reason, reconnectInMs: this.reconnectDelayMs });
+    if (this.streamBinding) this.ctx.tradingAlerts.raise("disconnection", `disconnection:${this.streamBinding}`, `Private stream disconnected (${reason ?? "closed"}); reconnecting and reconciling.`, { subject: this.streamBinding });
     this.reconnectTimer = setTimeout(() => {
       void (async () => {
         const ok = await this.startStream();

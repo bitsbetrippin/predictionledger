@@ -22,6 +22,8 @@ This file is maintained by hand. **Rule:** a dependency is added to `package.jso
 | @noble/ed25519 | ^2.2.3 (transitive, via polymarket-us) | MIT | Paul Miller | Ed25519 request signatures inside the SDK |
 | ws | ^8.18 (transitive, via polymarket-us) | MIT | Einar Otto Stangvik and contributors | SDK WebSocket support — the private order/position stream (used since 1.13; loaded lazily by the SDK) |
 
+Release 1.14 (automatic execution, alerts, ledger) adds **no** runtime or build-time dependency: the scheduler is a `setInterval` in the server process, alerts and the ledger are SQL over existing tables, and every order still goes through the pinned SDK above.
+
 ## Build-time dependencies
 
 | Component | License | Origin | Used for |

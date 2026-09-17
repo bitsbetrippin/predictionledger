@@ -485,6 +485,48 @@ GET /v1/portfolio/activities (all pages) ────┘        trades attribute
 
 Trust rules: the browser cannot bypass a gate (every check is server-side, in T1/T2); a client can send only a preview id and the decision hash; no client order id or idempotency key is claimed (the venue has none — reconciliation is the only truth); an order the app did not place is never linked to an intent automatically; secrets never reach prompts, browser storage, logs, exports or fixtures (canary-tested).
 
+### 6.5 Automatic execution, controls, alerts and the ledger (1.14)
+
+```
+AutoTraderService (own setInterval loop, NOT a job) ── every intervalMs, one tick, skipped while another tick runs or the lease is held elsewhere
+   ├─ guards: account connected & validated, sync fresh (else sync + stale_sync alert), no holds, breaker closed, not paused
+   ├─ discover(): subscription-sourced picks without a US link → queue market.match (≤ maxMatchJobsPerTick)
+   │              accepted links without a verification   → contracts.verifyLink (reviewer "app", ≤ maxVerificationsPerTick)
+   │              verifications older than revalidateAfterMs → revalidateLink({ refresh: true })
+   ├─ candidates(): verified, unchanged, open, cutoff known and ≥ now + preEventBufferMs, opportunity NOT consumed, no open intent,
+   │                outside the re-evaluation window; per-source and per-tick budgets (maxEvaluationsPerTick / maxPerSourcePerTick)
+   ├─ for each candidate: decisions.evaluate (pure; caps → risk_limit alert)
+   │       └─ eligible AND liveEnabled() re-checked immediately before the send →
+   │              ExecutionService.preview → submit   (the 1.13 T1 / T2 / one-POST path, indicator 'automatic'; ≤ maxOrdersPerTick)
+   └─ automation_runs (+ automation_candidates with a reason per skip) + audit 'automation.tick'
+
+arming (POST /api/trading/arm) ─ gates: every manual-live gate + strategy_qualified(strategyVersion, category) — production evaluation only —
+                                  + paper_rehearsal (≥ 20 settled paper positions) + automation_feature + not_paused + breaker_closed
+                                  + the exact AUTO_LIVE_ACKNOWLEDGEMENT + policyHash === current hash(limits, budgetTimezone, automation)
+                                  → mode auto_live, authorized_policy_hash / _strategy_version / _category recorded, audit policy.mode_changed
+disarm-on-change ─ setLimits / setAutomation (hash changes), connect() (credential change), startupCheck (restart), backup restore (scrub),
+                   markUnknown, reconcile discrepancy, breaker open → ONE UPDATE clearing mode + authorized_* (+ pause when stopping) → 'disarmed' alert
+emergency stop ─ disarm+pause in one statement → audit trading.emergency_stop → alert → cancelIntent for every app-owned non-terminal venue order
+                 (external orders untouched; a separate /cancel-all route with CANCEL_ALL_ACKNOWLEDGEMENT cancels everything on the account)
+circuit breaker ─ trading_accounts.breaker_json: consecutive adapter failures (not 400/404) ≥ breakerThreshold → open (+ disarm, one alert);
+                  first success after breakerCooldownMs → closed via half_open
+TradingAlertService ─ trading_alerts keyed by incident (dedupe: count++, last_at); kinds unknown_submission | disconnection | failed_cancel | risk_limit |
+                      stale_sync | resolution | discrepancy | circuit_breaker | disarmed | emergency_stop; acknowledge / resolve
+TradeLedgerService ─ one LEFT JOIN over decisions → predictions/videos/markets → intents → venue orders → paper positions → verifications;
+                     summary tiles, metrics (read retries, dropped duplicates, stream events, lease age), CSV/JSON export (secret-free);
+                     external rows come only from venue_orders/executions the app did not place; marks older than 15 min are flagged stale
+```
+
+- **The scheduler is not the job queue.** `AutoTraderService` runs on its own timer inside the server process and touches the queue only to *enqueue* discovery work (`market.match`), so a long `model.download`, transcription or research job can never delay a tick, a cancel or the emergency stop (U02 measures this: tick + cancel complete in < 2 s while a slow job blocks the queue). It also never retries a send: every order goes through the 1.13 `preview → submit` functions, which commit T1/T2 and POST exactly once.
+- **Arming is a distinct route with a distinct sentence.** `PUT /api/trading/policy { mode: 'auto_live' }` always fails and points at `/api/trading/arm`; the arm body carries the acknowledgement, the policy hash the owner reviewed, the category and the strategy version. The hash now covers the scheduler budgets (`AutomationSettings`) as well as the limits and timezone, so any edit to either produces a new hash and the one-statement disarm.
+- **Qualification comes from production evaluation only.** `ForecastService.qualifiedCategories()` reads `strategy_qualifications` rows whose scope is `production` and whose estimator version is current; fixture-driven evaluations are stored with a different scope and never satisfy `strategy_qualified`. In development no production qualification exists, so arming is impossible on a real directory — by design, not by omission.
+- **The opportunity key is consumed by the first entry and never returned** (except when the venue refused and nothing was created, exactly as in 1.13): a re-run of the same tick, an edited policy, a reimported video, an IOC-canceled entry, a restart or a second process all see `opportunity_consumed` — no pyramiding and no top-ups (U03). After the event cutoff (minus the pre-event buffer) a candidate is skipped as `cutoff_passed`, so a late tick never places a catch-up entry (U05).
+- **Stop serializes against the send.** The emergency stop's UPDATE and T2's conditional UPDATE contend on the same row, so a tick that has not yet written its marker sees the stop (`stopped_mid_tick`) and one that has already sent proceeds to acknowledgement, then is cancelled by the targeted sweep (U04 with a 300 ms venue delay). Only orders whose `venue_orders` row is linked to an intent of ours are cancelled; the owner's own website orders stay open unless the separate cancel-all is invoked with its own sentence.
+- **Every return to a non-authorized state is one statement and raises one alert**, and the process boundary is honoured: a second `createContext` on the same directory (a second process or a restart) runs `startupCheck`, which clears `authorized_*` — the owner must re-review and re-arm (U05, O03).
+- **The ledger shows only what the venue confirmed.** Intent, venue order and position remain three separate state machines (1.13); the ledger row joins them read-only, labels external rows, flags stale marks and lists skipped/unknown decisions with their reason so "no order" is explained rather than invisible (D01/D03). Exports carry no credential and no authorized hash (portable backups scrub it too).
+
+Trust rules unchanged from 1.13, plus: the browser can never arm without the reviewed hash; no LLM output reaches `arm`, `setAutomation`, `pause`, `resume` or the stop; prompts, browser storage, logs, exports and fixtures stay secret-free (canary-tested in U05 / D03).
+
 ---
 
 ## 7. Security model

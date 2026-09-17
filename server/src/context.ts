@@ -39,6 +39,9 @@ import { PaperUsService } from "./services/paperUs.js";
 import { TradeDecisionService } from "./services/tradeDecisions.js";
 import { DispatchLeaseService } from "./services/dispatchLease.js";
 import { ExecutionService, type FaultInjector } from "./services/execution.js";
+import { TradingAlertService } from "./services/tradingAlerts.js";
+import { TradeLedgerService } from "./services/ledger.js";
+import { AutoTraderService } from "./services/autoTrader.js";
 import { createTradingAdapter } from "./providers/trading/registry.js";
 import { GuardedFetcher, type SourceFetcher } from "./research/fetcher.js";
 import { makeAudioExtractHandler, makeModelDownloadHandler, makeTranscribeHandler } from "./jobs/handlers/media.js";
@@ -83,6 +86,10 @@ export interface AppContext {
   /** 1.13: one dispatcher per data directory and the manual-live execution path (preview → confirm → reconcile). */
   lease: DispatchLeaseService;
   execution: ExecutionService;
+  /** 1.14: local trading alerts (deduped by incident), the Trades ledger/summary/metrics, and the execution scheduler. */
+  tradingAlerts: TradingAlertService;
+  ledger: TradeLedgerService;
+  autoTrader: AutoTraderService;
   fetcher: SourceFetcher;
   /** Builds the transcription engine selected in Setup (or a test override). */
   transcription: () => TranscriptionProvider;
@@ -126,6 +133,9 @@ export function createContext(overrides: Partial<Pick<AppContext, "fetcher" | "t
     decisions: undefined as unknown as TradeDecisionService,
     lease: new DispatchLeaseService(db, overrides.now, overrides.leaseHolder),
     execution: undefined as unknown as ExecutionService,
+    tradingAlerts: undefined as unknown as TradingAlertService,
+    ledger: undefined as unknown as TradeLedgerService,
+    autoTrader: undefined as unknown as AutoTraderService,
     fetcher: overrides.fetcher ?? new GuardedFetcher(),
     transcription:
       overrides.transcription ??
@@ -141,6 +151,12 @@ export function createContext(overrides: Partial<Pick<AppContext, "fetcher" | "t
   ctx.forecasts = new ForecastService(ctx);
   ctx.decisions = new TradeDecisionService(ctx, { now: overrides.now });
   ctx.execution = new ExecutionService(ctx, { now: overrides.now, faults: overrides.faults });
+  // Alerts never see secrets: every message and detail is redacted against the trading vault's material before storage.
+  ctx.tradingAlerts = new TradingAlertService(db, overrides.now, (text) => ctx.trading.redact(text));
+  ctx.ledger = new TradeLedgerService(ctx, overrides.now);
+  ctx.autoTrader = new AutoTraderService(ctx, { now: overrides.now });
+  ctx.trading.onBreakerOpened = (state, code) => ctx.tradingAlerts.raise("circuit_breaker", `circuit_breaker:${state.incidentId ?? state.openedAt}`, `Circuit breaker opened after ${state.consecutiveFailures} consecutive adapter failures (${code ?? "unknown"}). New orders stop; reads and cancels keep working; nothing re-arms by itself.`, { details: { code, failures: state.consecutiveFailures } });
+  ctx.trading.onDisarmed = (reason, previousMode) => ctx.tradingAlerts.raise("disarmed", `disarmed:${reason}:${previousMode}`, `Trading disarmed (was ${previousMode}): ${reason}. Reconcile, then re-arm deliberately.`, { severity: "warning", details: { reason, previousMode } });
 
   // Job handlers (Release 0.2). Later releases register audio/transcript/research/assessment kinds.
   jobs.register("prediction.extract", makeExtractHandler(ctx));

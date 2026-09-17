@@ -120,9 +120,47 @@ Provider calls made by every job now go through a resilience wrapper: 120 s per-
 
 Settings gain `sports: { enabled, trackSpreads }`.
 
+## Release 1.14 — automatic execution behind arming, pause / emergency stop, alerts, the Trades ledger
+
+All mutations: CSRF header + same origin; bodies `.strict()`. **Mode gates apply here exactly as in the UI.**
+
+### Arming, pause, stop (AUTO-01/03)
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/trading/arm` | `{ acknowledge, policyHash, category, strategyVersion? }` → `{ policy, gates, status, scheduler }`. Every gate (validated + fresh account, reconciled, verified contract, **production** qualification for `strategyVersion` (default: the build's estimator) and `category`, paper rehearsal, submission + automation features, no holds, not paused, breaker closed) must hold; `acknowledge` must equal `AUTO_LIVE_ACKNOWLEDGEMENT` (`I authorize automatic real-money orders under the policy hash I reviewed`); `policyHash` must equal the current `policy.policyHash` (else `409 gate_unmet` with gate `policy_reviewed`). Records `authorizedPolicyHash/StrategyVersion/Category` and the authorization hash. `PUT /api/trading/policy { mode: "auto_live" }` always answers `409`. |
+| POST | `/api/trading/pause` | `{ reason }` → owner pause (a dispatch blocker; the scheduler and manual submit refuse). |
+| POST | `/api/trading/resume` | clears the pause. Does not re-arm. |
+| POST | `/api/trading/emergency-stop` | `{ reason? }` → `EmergencyStopResult { stoppedAt, previousMode, cancellations[{ intentId, venueOrderId, outcome, message? }], positionsRetained, note }` + `status`. One statement disarms + pauses, then targeted cancels of **app-owned** open orders only. Idempotent. |
+| POST | `/api/trading/cancel-all` | `{ acknowledge }` = `CANCEL_ALL_ACKNOWLEDGEMENT` → cancels every open order on the account, including orders placed elsewhere. `409 acknowledgement_required` otherwise. Separately labelled; never part of the stop. |
+| GET | `/api/trading/status` | now carries `breaker` (`{ state closed|open|half_open, consecutiveFailures, openedAt?, lastFailureCode? }`) and the gates `paper_rehearsal`, `automation_feature`, `not_paused`, `breaker_closed`; `policy` carries `authorizedPolicyHash`, `pauseReason`, `automation`. |
+
+### Scheduler (AUTO-02/05)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/trading/automation` | `{ settings: AutomationSettings, live: { ok, reasons[] }, runs[], strategyVersion, categories[] }` — `categories` are the production-qualified ones for this estimator version. |
+| PUT | `/api/trading/automation` | any `AutomationSettings` field (`intervalMs ≥ 5000`, per-tick budgets, `minReevaluateMs`, `revalidateAfterMs`, `breakerThreshold`, `breakerCooldownMs`, `paperAutopilot`). Part of the policy hash: a change disarms and is audited. |
+| POST | `/api/trading/automation/tick` | run one tick now → `AutomationRun { id, startedAt, finishedAt, holder, mode, policyHash, outcome completed|skipped|failed, reason?, candidates, evaluated, ordered, skipped{reason: n}, notes[] }`. Sends only under an arming. |
+| GET | `/api/trading/automation/runs[?limit]`, `/api/trading/automation/runs/:id` | runs; one run with `candidates[]` (`predictionId, linkId?, marketId?, sourceKey, outcome ordered|evaluated|skipped|queued_work, reason, decisionId?, intentId?, at`). |
+
+### Ledger, summary, metrics, alerts (DASH-01…05, OPS-04)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/trading/summary` | `TradingSummary` — mode, `armedKind`, `paused`, account, buying power / balance / sync age (venue), `committed` (live reservations + positions), `realizedPnl` (official settlements), `fees`, `unrealizedPnl` + `markAt` + `markStale`, open/unknown intents, holds, alerts, breaker, lease, stream, last reconcile / tick. Paper books are separate resources (`/api/paper`, `/api/paper/us`). |
+| GET | `/api/trading/ledger?from&to&category&creator&status&mode&reason&external&limit` | `(TradeLedgerRow \| ExternalLedgerRow)[]`. `status ∈ pending, partial, filled, unknown, rejected, canceled, open, settled, skipped, needs_review, eligible, external`. A decision row carries contract/venue link, side, `pChosen`, `limitCost` / `wirePrice`, requested quantity/budget, filled quantity/cost/avg, fees, `intentState`, `orderState` (+ `rejectReason`), `positionState none|open|settled|unknown`, `settlement`, `mark { price, at, stale, unrealizedPnl }`, `cutoffAt`, creator, quote + timestamped link, `reasonCodes`. An external row has `external: true` and no rationale. |
+| GET | `/api/trading/ledger.csv`, `/api/trading/ledger.json` | the same rows with the same filters; CSV header `kind,decision_id,clock_at,…`; secret-free. |
+| GET | `/api/trading/metrics` | `TradingMetrics` counters: decisions, noTrades, intents, liveIntents, readRetries, unknownSubmissions, fills, droppedDuplicateEvents, reconciliationLagSeconds, automationRuns, alertsOpen, breaker. |
+| GET | `/api/trading/alerts?open=true` | `TradingAlert[]` (`kind, severity, incidentKey, subject?, message, details, firstAt, lastAt, count, acknowledgedAt?`). |
+| POST | `/api/trading/alerts/:id/ack` | acknowledge. |
+| GET | `/api/trading/decisions/:id/evidence` | gains `intent` and `current { asOf, predictionRevision, predictionMissing, normalizedStatement, verification?, verificationChanged, forecast?, forecastChanged, dossier? }` — the current analysis beside, never inside, the immutable record. |
+
+Audit kinds added: `automation.tick`, `automation.link_stale`, `trading.paused`, `trading.resumed`, `trading.emergency_stop`, `orders.cancel_all`, `breaker.opened`, `breaker.closed`; `policy.mode_changed` to `auto_live` carries `authorizedPolicyHash`, `strategyVersion`, `category`.
+
 ## Release 1.13 — manual-live execution (preview → confirm), orders, holds, reconciliation
 
-All mutations: CSRF header + same origin; bodies `.strict()`. Amounts are decimal strings in USD; prices are YES-denominated on the wire and chosen-side in the app's cost fields. **Mode gates apply here exactly as in the UI**: preview and submit answer `409` unless the policy is `manual_live` with a live authorization, an account is connected, this process holds the dispatch lease and no hold is open. `POST /api/trading/arm` and `/emergency-stop` still answer `501 feature_disabled` (automation, 1.14).
+All mutations: CSRF header + same origin; bodies `.strict()`. Amounts are decimal strings in USD; prices are YES-denominated on the wire and chosen-side in the app's cost fields. **Mode gates apply here exactly as in the UI**: preview and submit answer `409` unless the policy is a live mode with a live authorization, an account is connected, this process holds the dispatch lease and no hold is open. (In 1.13 `POST /api/trading/arm` and `/emergency-stop` answered `501`; see Release 1.14 above.)
 
 ### Arming (EXE-01)
 

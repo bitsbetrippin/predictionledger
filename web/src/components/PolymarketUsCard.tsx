@@ -12,7 +12,7 @@ import { useEffect, useState } from "react";
 import { LIVE_ACKNOWLEDGEMENT, type TradingConnectionTest, type TradingMode, type TradingStatus } from "@prediction-ledger/shared";
 import { ApiError, fmtAmount, tradingApi } from "../api";
 
-const MODE_LABELS: Record<TradingMode, string> = { disabled: "Disabled", paper: "Paper (no real orders)", manual_live: "Manual live (preview → confirm, real money)", auto_live: "Automatic live (not available until 1.14)" };
+const MODE_LABELS: Record<TradingMode, string> = { disabled: "Disabled", paper: "Paper (no real orders)", manual_live: "Manual live (preview → confirm, real money)", auto_live: "Automatic live (arm it in the Automatic execution card)" };
 
 export function PolymarketUsCard({ allowInternet }: { allowInternet: boolean }) {
   const [status, setStatus] = useState<TradingStatus | null>(null);
@@ -88,6 +88,7 @@ export function PolymarketUsCard({ allowInternet }: { allowInternet: boolean }) 
   const [ack, setAck] = useState<string | null>(null);
   const setMode = async (mode: TradingMode, acknowledge?: string) => {
     if (mode === "manual_live" && acknowledge === undefined) { setAck(""); return; }
+    if (mode === "auto_live") { setMsg({ kind: "error", text: "Automatic trading is armed only from the Automatic execution card below, with the acknowledgement and the reviewed policy hash." }); return; }
     setBusy("mode");
     setMsg(null);
     try {
@@ -124,7 +125,7 @@ export function PolymarketUsCard({ allowInternet }: { allowInternet: boolean }) 
     <fieldset className="card">
       <p className="muted small">
         Connecting an account lets the app <strong>read</strong> your Polymarket US balances, positions and open orders. Connecting never arms anything: the trading mode stays <strong>paper</strong>
-        until you choose <em>Manual live</em> here and type the acknowledgement. Even then, every order needs a preview and an explicit confirmation on the Trades page; nothing is automated (1.14).
+        until you choose <em>Manual live</em> here and type the acknowledgement. Even then, every order needs a preview and an explicit confirmation on the Trades page. Automatic orders exist only while the <em>Automatic execution</em> card below is armed against the policy hash you reviewed and a production-qualified strategy.
         Requests go only to <code>{status?.hosts.api ?? "api.polymarket.us"}</code>, signed with your key (Ed25519); the secret is encrypted on this computer and never shown again.
       </p>
       <details>
@@ -155,7 +156,7 @@ export function PolymarketUsCard({ allowInternet }: { allowInternet: boolean }) 
             <select value={status.policy.mode} disabled={busy !== null} onChange={(e) => void setMode(e.target.value as TradingMode)}>
               {(Object.keys(MODE_LABELS) as TradingMode[]).map((m) => <option key={m} value={m}>{MODE_LABELS[m]}</option>)}
             </select>
-            <small className="muted">{status.armed ? `Armed (manual live) since ${status.policy.liveAuthorizedAt?.slice(0, 19).replace("T", " ")}. Restarts, limit edits, backups/restores and credential changes disarm.` : "Manual live needs a fresh, validated account, no open holds and the typed acknowledgement; automatic live stays gated until 1.14."}</small>
+            <small className="muted">{status.armed ? `Armed (manual live) since ${status.policy.liveAuthorizedAt?.slice(0, 19).replace("T", " ")}. Restarts, limit edits, backups/restores and credential changes disarm.` : "Manual live needs a fresh, validated account, no open holds and the typed acknowledgement; automatic live is armed on the Automatic execution card, never here."}</small>
             {status.armed && <button type="button" className="danger" disabled={busy !== null} onClick={() => void disarm()}>Disarm now</button>}
           </div>
         </div>

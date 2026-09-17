@@ -8,8 +8,8 @@
  * Licensed under the Apache License 2.0 — see LICENSE and NOTICE in the repository root.
  */
 import { useEffect, useState } from "react";
-import type { DecisionOutcome, LivePosition, OrderPreviewRecord, PaperUsBook, ReconciliationHold, TradeDecision, TradeIntent, TradingMode, TradingStatus, VenueOrderRecord } from "@prediction-ledger/shared";
-import { ApiError, INTENT_LABEL, OUTCOME_LABEL, decisionsApi, executionApi, fmtUsd, paperUsApi, tradingApi, type DecisionEvidence, type ReconcileReport } from "../api";
+import type { AutomationRun, DecisionOutcome, ExternalLedgerRow, LivePosition, OrderPreviewRecord, PaperUsBook, ReconciliationHold, TradeDecision, TradeIntent, TradeLedgerFilter, TradeLedgerRow, TradingAlert, TradingMode, TradingStatus, TradingSummary, VenueOrderRecord } from "@prediction-ledger/shared";
+import { ApiError, INTENT_LABEL, LEDGER_STATUSES, OUTCOME_LABEL, automationApi, decisionsApi, executionApi, fmtUsd, paperUsApi, tradingApi, type DecisionEvidence, type ReconcileReport } from "../api";
 
 export function TradesPage() {
   const [decisions, setDecisions] = useState<TradeDecision[] | null>(null);
@@ -24,6 +24,13 @@ export function TradesPage() {
   const [selected, setSelected] = useState<DecisionEvidence | null>(null);
   const [preview, setPreview] = useState<{ decision: TradeDecision; preview: OrderPreviewRecord } | null>(null);
   const [report, setReport] = useState<ReconcileReport | null>(null);
+  // 1.14: the ledger (one row per decision, external orders labelled), the summary, alerts and scheduler runs.
+  const [summary, setSummary] = useState<TradingSummary | null>(null);
+  const [ledger, setLedger] = useState<(TradeLedgerRow | ExternalLedgerRow)[] | null>(null);
+  const [alerts, setAlerts] = useState<TradingAlert[]>([]);
+  const [runs, setRuns] = useState<AutomationRun[]>([]);
+  const [filter, setFilter] = useState<TradeLedgerFilter>({ limit: 300 });
+  const [view, setView] = useState<"ledger" | "decisions">("ledger");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -31,11 +38,11 @@ export function TradesPage() {
     try {
       const [d, b, st] = await Promise.all([decisionsApi.list({ mode: mode || undefined, outcome: outcome || undefined, limit: 300 }), paperUsApi.get(), tradingApi.status()]);
       setDecisions(d); setBook(b); setStatus(st);
-      const [i, o, p, h] = await Promise.all([executionApi.intents({ mode: "live", limit: 300 }), executionApi.orders({ limit: 300 }), executionApi.positions(), executionApi.holds(true)]);
-      setIntents(i); setOrders(o); setPositions(p); setHolds(h);
+      const [i, o, p, h, sm, lg, al, rn] = await Promise.all([executionApi.intents({ mode: "live", limit: 300 }), executionApi.orders({ limit: 300 }), executionApi.positions(), executionApi.holds(true), automationApi.summary(), automationApi.ledger({ ...filter, mode: (mode || filter.mode) as TradingMode | undefined }), automationApi.alerts(true), automationApi.runs(10)]);
+      setIntents(i); setOrders(o); setPositions(p); setHolds(h); setSummary(sm); setLedger(lg); setAlerts(al); setRuns(rn);
     } catch (e) { setError((e as Error).message); }
   };
-  useEffect(() => { void load(); }, [mode, outcome]);
+  useEffect(() => { void load(); }, [mode, outcome, filter]);
   // Live intents change from the venue side (stream / reconciliation): poll while any is open.
   useEffect(() => {
     const open = intents.some((i) => ["submitting", "acknowledged", "submission_unknown"].includes(i.state));
@@ -69,14 +76,31 @@ export function TradesPage() {
     } catch (e) { setError(apiMessage(e)); setPreview(null); await load(); } finally { setBusy(null); }
   };
   const armed = status?.armed ?? false;
+  const stop = async () => {
+    if (!window.confirm("EMERGENCY STOP: disarm now, pause new orders, and request cancellation of every open order this app placed (positions and history are kept; orders placed elsewhere are untouched). Continue?")) return;
+    await run("Stopping…", async () => { const r = await automationApi.emergencyStop("owner pressed Emergency stop"); setError(`Stopped at ${r.stoppedAt}: ${r.cancellations.length} app-owned order(s) targeted (${r.cancellations.filter((c) => c.outcome === "requested").length} requested, ${r.cancellations.filter((c) => c.outcome === "failed").length} failed), ${r.positionsRetained} position(s) retained. ${r.note}`); });
+  };
 
   return (
     <section className="page">
       <div className="row space-between">
         <h1>Trades</h1>
-        <span className="muted small">{armed ? `Manual live is ARMED: orders go to Polymarket US after preview → confirm. ${status?.submissionAvailable ? "" : `New orders blocked: ${status?.dispatchBlockers.join("; ")}.`}` : "Paper mode: decisions are evaluated, reserved and simulated against the venue's book; nothing is sent. Manual live is enabled in Setup → Polymarket US account."}</span>
+        <span className="muted small">{armed ? `${status?.policy.mode === "auto_live" ? "AUTOMATIC trading is ARMED under policy " + status.policy.authorizedPolicyHash?.slice(0, 12) + "…" : "Manual live is ARMED: orders go to Polymarket US after preview → confirm."} ${status?.submissionAvailable ? "" : `New orders blocked: ${status?.dispatchBlockers.join("; ")}.`}` : "Paper mode: decisions are evaluated, reserved and simulated against the venue's book; nothing is sent. Live modes are enabled in Setup."}</span>
       </div>
       {error && <div className="banner error" role="alert">{error} <button type="button" className="link" onClick={() => setError(null)}>dismiss</button></div>}
+      {summary && <SummaryTiles s={summary} book={book} />}
+      <div className="row controls small">
+        {summary?.account && <button type="button" className="danger" disabled={!!busy} onClick={() => void stop()}>Emergency stop</button>}
+        {summary?.paused ? <button type="button" disabled={!!busy} onClick={() => void run("Resuming…", () => automationApi.resume())}>Resume new orders</button> : summary?.account && <button type="button" disabled={!!busy} onClick={() => void run("Pausing…", () => automationApi.pause("owner pause (Trades)"))}>Pause new orders</button>}
+        {status?.armed && <button type="button" disabled={!!busy} onClick={() => void run("Disarming…", () => tradingApi.disarm("owner disarm (Trades)"))}>Disarm</button>}
+        <label>View <select value={view} onChange={(e) => setView(e.target.value as "ledger" | "decisions")}><option value="ledger">Ledger (every decision, order, position)</option><option value="decisions">Decisions (gates and forecasts)</option></select></label>
+      </div>
+      {alerts.length > 0 && (
+        <div className="banner warn" role="alert">
+          <strong>{alerts.length} open alert(s)</strong>
+          <ul className="plain small">{alerts.map((a) => <li key={a.id}><span className={`chip alert-${a.severity}`}>{a.kind.replace(/_/g, " ")}</span> {a.message} <span className="muted">· first {a.firstAt.slice(0, 19).replace("T", " ")}{a.count > 1 ? ` · ×${a.count}` : ""}</span> <button type="button" className="link" disabled={!!busy} onClick={() => void run("Acknowledging…", () => automationApi.ackAlert(a.id))}>acknowledge</button></li>)}</ul>
+        </div>
+      )}
       {holds.length > 0 && (
         <div className="banner warn" role="alert">
           <strong>{holds.length} reconciliation hold(s) — new orders are paused until each is resolved.</strong>
@@ -102,7 +126,9 @@ export function TradesPage() {
       </div>
       {report && <p className="small muted">Reconciled at {report.syncedAt}: {report.ordersChecked} order(s) read back, {report.executionsAdded} execution(s) added from {report.activitiesRead} activities, {report.settlements} settlement event(s), {report.unknownIntents.length} unknown submission(s), {report.discrepancies.length} discrepancy(ies), {report.holdsOpen} hold(s) open{report.paused ? " — dispatch paused" : ""}. <button type="button" className="link" onClick={() => setReport(null)}>dismiss</button></p>}
       {(intents.length > 0 || orders.length > 0) && <LiveSection intents={intents} orders={orders} positions={positions} busy={!!busy} onCancel={(id) => run("Cancelling…", () => executionApi.cancel(id))} />}
-      {decisions === null ? <p className="muted">Loading…</p> : decisions.length === 0 ? (
+      {view === "ledger" && <LedgerView rows={ledger} filter={filter} setFilter={setFilter} onOpen={(id) => void open(id)} selectedId={selected?.decision.id} runs={runs} />}
+      {view === "ledger" && selected && <aside className="detail"><DecisionDetail ev={selected} onClose={() => setSelected(null)} /></aside>}
+      {view === "decisions" && (decisions === null ? <p className="muted">Loading…</p> : decisions.length === 0 ? (
         <div className="empty-state"><p className="muted">No decisions yet. Open a prediction with a verified Polymarket US contract and choose <em>Evaluate paper decision</em> on its Markets tab.</p></div>
       ) : (
         <div className="split">
@@ -132,8 +158,90 @@ export function TradesPage() {
             {selected ? <DecisionDetail ev={selected} onClose={() => setSelected(null)} /> : <div className="empty-state"><p className="muted">Select a decision to see every gate, the forecast's contributions, the fills and the evidence it was made on.</p></div>}
           </aside>
         </div>
-      )}
+      ))}
     </section>
+  );
+}
+
+/** DASH-01: live figures come only from the venue's sync and official settlements; paper books are shown apart and never summed in. */
+function SummaryTiles({ s, book }: { s: TradingSummary; book: PaperUsBook | null }) {
+  return (
+    <div className="stats">
+      <div className="stat"><span className="label">Mode / account</span><strong>{s.armed ? `${s.armedKind === "auto" ? "AUTO" : "MANUAL"} live` : s.mode}{s.paused ? " · PAUSED" : ""}</strong><span className="muted small">{s.account ? `key ${s.account.keyIdHint ?? "—"} · ${s.account.state}` : "no account connected"} · lease {s.lease.heldByThisProcess ? "held" : "not held"} · stream {s.stream}</span></div>
+      <div className="stat"><span className="label">Buying power (venue)</span><strong>{s.buyingPower ? fmtUsd(s.buyingPower) : "—"}</strong><span className={`muted small ${s.stale ? "warn" : ""}`}>{s.syncAt ? `synced ${s.syncAgeSeconds ?? "?"} s ago${s.stale ? " — STALE" : ""}` : "never synced"}</span></div>
+      <div className="stat"><span className="label">Committed risk (live)</span><strong>{fmtUsd(s.committed)}</strong><span className="muted small">{s.openPositions} open position(s) · {s.openIntents} order(s) in flight{s.unknownIntents ? ` · ${s.unknownIntents} UNKNOWN` : ""}</span></div>
+      <div className="stat"><span className="label">Realized P&L (official settlements)</span><strong className={s.realizedPnl.startsWith("-") ? "neg" : "pos"}>{fmtUsd(s.realizedPnl)}</strong><span className="muted small">fees {fmtUsd(s.fees)}</span></div>
+      <div className="stat"><span className="label">Unrealized (marked)</span><strong className={s.unrealizedPnl?.startsWith("-") ? "neg" : "pos"}>{s.unrealizedPnl ? fmtUsd(s.unrealizedPnl) : "—"}</strong><span className={`muted small ${s.markStale ? "warn" : ""}`}>{s.markAt ? `mark ${s.markAt.slice(0, 16).replace("T", " ")}${s.markStale ? " — STALE mark" : ""}` : s.openPositions ? "no mark available" : "no open live position"}</span></div>
+      <div className="stat"><span className="label">Holds / alerts / breaker</span><strong>{s.holdsOpen} / {s.alertsOpen} / {s.breaker.state}</strong><span className="muted small">last reconcile {s.lastReconcileAt ? s.lastReconcileAt.slice(11, 19) : "—"} · last tick {s.lastAutomationRunAt ? s.lastAutomationRunAt.slice(11, 19) : "—"}</span></div>
+      {book && <div className="stat"><span className="label">US paper book (separate)</span><strong>{fmtUsd(book.bankroll)}</strong><span className="muted small">realized {fmtUsd(book.realizedPnl)} · {book.open} open · never summed with live</span></div>}
+    </div>
+  );
+}
+
+/** DASH-02/04: one row per decision (skipped included) joined with its intent, order, position and settlement; external orders labelled. */
+function LedgerView({ rows, filter, setFilter, onOpen, selectedId, runs }: { rows: (TradeLedgerRow | ExternalLedgerRow)[] | null; filter: TradeLedgerFilter; setFilter: (f: TradeLedgerFilter) => void; onOpen: (decisionId: string) => void; selectedId?: string; runs: AutomationRun[] }) {
+  const set = (patch: Partial<TradeLedgerFilter>) => setFilter({ ...filter, ...patch });
+  return (
+    <div>
+      <div className="row controls small">
+        <label>From <input type="date" value={filter.from?.slice(0, 10) ?? ""} onChange={(e) => set({ from: e.target.value ? `${e.target.value}T00:00:00Z` : undefined })} /></label>
+        <label>To <input type="date" value={filter.to?.slice(0, 10) ?? ""} onChange={(e) => set({ to: e.target.value ? `${e.target.value}T23:59:59Z` : undefined })} /></label>
+        <label>Status <select value={filter.status ?? ""} onChange={(e) => set({ status: e.target.value || undefined })}>{LEDGER_STATUSES.map((s) => <option key={s} value={s}>{s || "all"}</option>)}</select></label>
+        <label>Mode <select value={filter.mode ?? ""} onChange={(e) => set({ mode: (e.target.value || undefined) as TradingMode | undefined })}><option value="">all</option><option value="paper">paper</option><option value="manual_live">manual live</option><option value="auto_live">auto live</option></select></label>
+        <label>Creator <input type="text" placeholder="channel id or name" value={filter.creator ?? ""} onChange={(e) => set({ creator: e.target.value || undefined })} /></label>
+        <label>Category / event <input type="text" placeholder="sports, ev-…" value={filter.category ?? ""} onChange={(e) => set({ category: e.target.value || undefined })} /></label>
+        <label>Reason code <input type="text" placeholder="OPPORTUNITY_CONSUMED" value={filter.reason ?? ""} onChange={(e) => set({ reason: e.target.value || undefined })} /></label>
+        <a className="small" href={automationApi.ledgerCsvUrl(filter)} target="_blank" rel="noreferrer noopener">Export CSV</a>
+        <a className="small" href={automationApi.ledgerJsonUrl(filter)} target="_blank" rel="noreferrer noopener">Export JSON</a>
+      </div>
+      {rows === null ? <p className="muted">Loading…</p> : rows.length === 0 ? <div className="empty-state"><p className="muted">No rows match. Every evaluation — skipped ones included — appears here once a decision exists.</p></div> : (
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>When</th><th>Contract</th><th>Side · p</th><th>Price (cost / wire)</th><th>Requested</th><th>Filled</th><th>Fees</th><th>Order state</th><th>Position</th><th>Cutoff</th><th>Source</th><th>Reason / outcome</th></tr></thead>
+            <tbody>
+              {rows.map((r) => r.external ? (
+                <tr key={`x-${r.venueOrderId}`} className="fs-not_applicable">
+                  <td className="small">{r.firstSeenAt.slice(0, 16).replace("T", " ")}</td>
+                  <td className="small">{r.marketSlug}</td>
+                  <td>{r.side?.toUpperCase() ?? "?"}</td>
+                  <td className="small">{r.yesPrice ?? "?"} YES</td>
+                  <td>{r.quantity ?? "?"}</td>
+                  <td>{r.filledQuantity}</td>
+                  <td>{fmtUsd(r.fees)}</td>
+                  <td><span className="chip">{r.orderState}</span></td>
+                  <td className="small muted">—</td>
+                  <td className="small muted">—</td>
+                  <td><span className="chip">EXTERNAL</span></td>
+                  <td className="small muted">not placed by this app — no rationale exists</td>
+                </tr>
+              ) : (
+                <tr key={r.decisionId} className={selectedId === r.decisionId ? "selected" : r.intentState === "submission_unknown" ? "fs-incompatible" : ""} onClick={() => onOpen(r.decisionId)} style={{ cursor: "pointer" }}>
+                  <td className="small">{r.clockAt.slice(0, 16).replace("T", " ")}<div className="muted">{r.mode}{r.submittedAt ? ` · sent ${r.submittedAt.slice(11, 19)}` : ""}</div></td>
+                  <td className="small">{r.marketUrl ? <a href={r.marketUrl} target="_blank" rel="noreferrer noopener" onClick={(e) => e.stopPropagation()}>{r.question ?? r.marketSlug ?? r.venueMarketId}</a> : r.question ?? r.venueMarketId}{r.category && <div className="muted">{r.category}</div>}</td>
+                  <td>{r.side ? <>{r.side.toUpperCase()} <span className="muted small">{r.sideLabel}</span><div className="small">p {r.pChosen}</div></> : "—"}</td>
+                  <td className="small">{r.limitCost ? `${r.limitCost} / ${r.wirePrice}` : "—"}{r.avgFillPrice && <div className="muted">filled avg {r.avgFillPrice} YES</div>}</td>
+                  <td className="small">{r.requestedQuantity ? `${r.requestedQuantity} · ${fmtUsd(r.requestedBudget)}` : "—"}</td>
+                  <td className="small">{r.filledQuantity ? `${r.filledQuantity}${r.filledCost ? ` · ${fmtUsd(r.filledCost)}` : ""}` : "—"}</td>
+                  <td>{fmtUsd(r.fees)}</td>
+                  <td>{r.intentState ? <><span className={`chip intent-${r.intentState}`}>{INTENT_LABEL[r.intentState] ?? r.intentState}</span>{r.orderState && <div className="muted small">venue: {r.orderState}{r.rejectReason ? ` · ${r.rejectReason}` : ""}</div>}</> : <span className="muted small">no order</span>}</td>
+                  <td className="small">{r.positionState}{r.settlement && <div className="muted">{r.settlement.kind} {r.settlement.outcome ?? ""} {r.settlement.amount ? fmtUsd(r.settlement.amount) : ""}</div>}{r.mark && <div className={`muted ${r.mark.stale ? "warn" : ""}`}>mark {r.mark.price ?? "?"}{r.mark.stale ? " (stale)" : ""}{r.mark.unrealizedPnl ? ` · ${fmtUsd(r.mark.unrealizedPnl)}` : ""}</div>}</td>
+                  <td className="small">{r.cutoffAt ? r.cutoffAt.slice(0, 16).replace("T", " ") : "—"}</td>
+                  <td className="small">{r.creatorName ?? r.creatorKey ?? "—"}{r.timestampUrl && <div><a href={r.timestampUrl} target="_blank" rel="noreferrer noopener" onClick={(e) => e.stopPropagation()}>quote ↗</a></div>}</td>
+                  <td className="small"><span className={`chip outcome-${r.outcome}`}>{OUTCOME_LABEL[r.outcome]}</span>{r.reasonCodes.length > 0 && <div className="muted">{r.reasonCodes.join(", ")}</div>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {runs.length > 0 && (
+        <details className="small">
+          <summary>Automation runs (last {runs.length})</summary>
+          <table><thead><tr><th>Started</th><th>Mode</th><th>Outcome</th><th>Candidates</th><th>Evaluated</th><th>Ordered</th><th>Skipped</th><th>Notes</th></tr></thead>
+            <tbody>{runs.map((r) => <tr key={r.id}><td>{r.startedAt.slice(0, 19).replace("T", " ")}</td><td>{r.mode}</td><td>{r.outcome}{r.reason ? ` — ${r.reason}` : ""}</td><td>{r.candidates}</td><td>{r.evaluated}</td><td>{r.ordered}</td><td>{Object.entries(r.skipped).map(([k, v]) => `${k} ×${v}`).join(", ") || "—"}</td><td className="muted">{r.notes.join(" · ")}</td></tr>)}</tbody></table>
+        </details>
+      )}
+    </div>
   );
 }
 
@@ -183,6 +291,15 @@ function DecisionDetail({ ev, onClose }: { ev: DecisionEvidence; onClose: () => 
           <summary>Evidence at decision time — {ev.dossier.supporting.length} supporting · {ev.dossier.contradicting.length} contradicting · {ev.dossier.excludedAsOf} not yet known</summary>
           <p>“{ev.dossier.quote.text}” {ev.dossier.quote.timestampUrl && <a href={ev.dossier.quote.timestampUrl} target="_blank" rel="noreferrer noopener">open at timestamp</a>}</p>
           <ul className="plain">{[...ev.dossier.supporting, ...ev.dossier.contradicting].map((it) => <li key={it.evidenceId}><span className={`chip stance-${it.stance}`}>{it.stance}</span> <a href={it.source.url} target="_blank" rel="noreferrer noopener">{it.source.title ?? it.source.url}</a> — “{it.excerpt.slice(0, 160)}”</li>)}</ul>
+        </details>
+      )}
+      {ev.current && (
+        <details className="small" open={ev.current.verificationChanged || ev.current.forecastChanged}>
+          <summary>Current analysis (separate from the record above{ev.current.verificationChanged || ev.current.forecastChanged ? " — has changed since the decision" : ""})</summary>
+          <p className="muted">As of {ev.current.asOf}{ev.current.predictionMissing ? " · the prediction has since been deleted (the record above stands)" : ` · prediction revision ${ev.current.predictionRevision ?? "?"}`}{ev.current.normalizedStatement ? ` · now reads: “${ev.current.normalizedStatement}”` : ""}</p>
+          {ev.current.verification && <p>Contract verification now v{ev.current.verification.version}: <strong>{ev.current.verification.status}</strong> · cutoff {ev.current.verification.cutoffAt ?? "unknown"}</p>}
+          {ev.current.forecast && <p>Latest forecast: pYes <strong>{ev.current.forecast.pYes}</strong> / pNo <strong>{ev.current.forecast.pNo}</strong> · {ev.current.forecast.status} · as of {ev.current.forecast.asOf}</p>}
+          {!ev.current.verificationChanged && !ev.current.forecastChanged && <p className="muted">No newer verification or forecast exists.</p>}
         </details>
       )}
       <details className="small"><summary>Raw inputs (immutable)</summary><pre className="prompt">{JSON.stringify(d.inputs, null, 2)}</pre></details>

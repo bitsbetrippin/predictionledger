@@ -271,6 +271,11 @@ export const CSRF_HEADER = "x-prediction-ledger";
 export const CSRF_VALUE = "1";
 /** 1.13 (EXE-01): the exact text an owner must send to enter manual-live mode; anything else is refused server-side. */
 export const LIVE_ACKNOWLEDGEMENT = "I understand this places real orders with real money";
+/** 1.14 (AUTO-01): the exact text an owner must send to arm automatic trading, together with the policy hash they reviewed. */
+export const AUTO_LIVE_ACKNOWLEDGEMENT = "I authorize automatic real-money orders under the policy hash I reviewed";
+/** 1.14 (AUTO-03): account-wide cancellation is a separately labelled owner action, never the default. */
+export const CANCEL_ALL_ACKNOWLEDGEMENT = "Cancel every open order on this account, including orders I placed elsewhere";
+export const DEFAULT_AUTOMATION: AutomationSettings = { intervalMs: 60_000, maxEvaluationsPerTick: 10, maxOrdersPerTick: 1, maxPerSourcePerTick: 2, maxMatchJobsPerTick: 3, maxVerificationsPerTick: 5, minReevaluateMs: 300_000, revalidateAfterMs: 600_000, breakerThreshold: 5, breakerCooldownMs: 300_000, paperAutopilot: false };
 
 // ---------------------------------------------------------------------------
 // Release 0.2 — videos, transcripts, predictions, validation plans
@@ -1162,7 +1167,7 @@ export interface TradingConnectionTest {
 
 export interface TradingPolicy {
   mode: TradingMode;
-  /** Present only after an explicit owner authorization (1.14). Absent in 1.10. */
+  /** Present only after an explicit owner authorization (1.13 manual, 1.14 auto). Absent in 1.10. */
   liveAuthorizedAt?: string;
   liveAuthorizationHash?: string;
   updatedAt: string;
@@ -1170,8 +1175,230 @@ export interface TradingPolicy {
   policyVersion: string;
   limits: RiskLimits;
   budgetTimezone: string;
-  /** sha256 of {policyVersion, limits, budgetTimezone}; any change disarms and is audited. */
+  /** sha256 of {policyVersion, limits, budgetTimezone, automation}; any change disarms and is audited. */
   policyHash: string;
+  /** 1.14 (AUTO-01): the policy hash / strategy / category the owner authorized for automatic trading; scheduled runs refuse when the live hash differs. */
+  authorizedPolicyHash?: string;
+  authorizedStrategyVersion?: string;
+  authorizedCategory?: string;
+  /** 1.14 (AUTO-03): owner pause of new orders (distinct from a reconciliation pause); set by Pause and by Emergency stop. */
+  pauseReason?: string;
+  pausedAt?: string;
+  /** 1.14 (AUTO-02): scheduler budgets; part of the policy hash. */
+  automation: AutomationSettings;
+}
+
+/** 1.14 — execution scheduler budgets and the circuit-breaker thresholds (all part of the policy hash). */
+export interface AutomationSettings {
+  /** Scheduler tick interval. */
+  intervalMs: number;
+  /** Evaluations (decisions) per tick across every source. */
+  maxEvaluationsPerTick: number;
+  /** New live orders per tick. */
+  maxOrdersPerTick: number;
+  /** Evaluations per source (creator) per tick — fair share. */
+  maxPerSourcePerTick: number;
+  /** Bounded discovery work per tick: market.match jobs, contract verifications, revalidations. */
+  maxMatchJobsPerTick: number;
+  maxVerificationsPerTick: number;
+  /** A prediction is not re-evaluated more often than this unless its contract or verification changed. */
+  minReevaluateMs: number;
+  /** Verified links older than this are revalidated against the venue before they can be traded again. */
+  revalidateAfterMs: number;
+  /** Consecutive adapter failures that open the circuit breaker, and how long it stays open before a successful read may close it. */
+  breakerThreshold: number;
+  breakerCooldownMs: number;
+  /** When true and the mode is paper, the scheduler evaluates and paper-dispatches on its own (the paper soak); never touches a live account. */
+  paperAutopilot: boolean;
+}
+
+export interface CircuitBreakerState {
+  state: "closed" | "open" | "half_open";
+  consecutiveFailures: number;
+  openedAt?: string;
+  lastFailureAt?: string;
+  lastFailureCode?: string;
+  incidentId?: string;
+}
+
+/** 1.14 (AUTO-05): a local, deduplicated alert; one row per incident key, counted on repeats. */
+export interface TradingAlert {
+  id: string;
+  kind: "unknown_submission" | "disconnection" | "failed_cancel" | "risk_limit" | "stale_sync" | "resolution" | "discrepancy" | "circuit_breaker" | "disarmed" | "emergency_stop";
+  severity: "info" | "warning" | "critical";
+  incidentKey: string;
+  subject?: string;
+  message: string;
+  details: Record<string, unknown>;
+  firstAt: string;
+  lastAt: string;
+  count: number;
+  acknowledgedAt?: string;
+}
+
+/** 1.14 (AUTO-02/05): one scheduler tick, with every candidate's outcome persisted. */
+export interface AutomationRun {
+  id: string;
+  startedAt: string;
+  finishedAt?: string;
+  holder: string;
+  mode: TradingMode;
+  policyHash: string;
+  outcome: "completed" | "skipped" | "failed";
+  reason?: string;
+  candidates: number;
+  evaluated: number;
+  ordered: number;
+  skipped: Record<string, number>;
+  notes: string[];
+}
+
+export interface AutomationCandidate {
+  id: string;
+  runId: string;
+  predictionId: string;
+  linkId?: string;
+  marketId?: string;
+  sourceKey: string;
+  outcome: "ordered" | "evaluated" | "skipped" | "queued_work";
+  reason: string;
+  decisionId?: string;
+  intentId?: string;
+  at: string;
+}
+
+/** 1.14 (DASH-01): live/paper summary; live figures come only from the venue's sync and official settlements. */
+export interface TradingSummary {
+  mode: TradingMode;
+  armed: boolean;
+  armedKind?: "manual" | "auto";
+  paused?: string;
+  account?: { bindingId: string; keyIdHint?: string; state: string };
+  buyingPower?: string;
+  currentBalance?: string;
+  syncAt?: string;
+  syncAgeSeconds?: number;
+  stale: boolean;
+  /** Reservations + open live positions (all-in). */
+  committed: string;
+  realizedPnl: string;
+  fees: string;
+  /** Marked from the latest stored market snapshot; `markStale` when the snapshot is older than the mark window. */
+  unrealizedPnl?: string;
+  markAt?: string;
+  markStale: boolean;
+  openPositions: number;
+  openIntents: number;
+  unknownIntents: number;
+  holdsOpen: number;
+  alertsOpen: number;
+  breaker: CircuitBreakerState;
+  lease: DispatchLease;
+  stream: string;
+  lastReconcileAt?: string;
+  lastAutomationRunAt?: string;
+}
+
+/** 1.14 (DASH-02/04): one ledger row per decision, joined with its intent, venue order, position state and settlement. */
+export interface TradeLedgerRow {
+  decisionId: string;
+  clockAt: string;
+  mode: TradingMode;
+  outcome: DecisionOutcome;
+  reasonCodes: string[];
+  predictionId: string;
+  creatorKey?: string;
+  creatorName?: string;
+  videoId?: string;
+  videoTitle?: string;
+  quote?: string;
+  timestampUrl?: string;
+  marketId: string;
+  venueMarketId: string;
+  marketSlug?: string;
+  marketUrl?: string;
+  question?: string;
+  category?: string;
+  eventId?: string;
+  cutoffAt?: string;
+  side?: "yes" | "no";
+  sideLabel?: string;
+  pChosen?: string;
+  /** Executable price at decision (chosen-side cost) and the YES wire price. */
+  limitCost?: string;
+  wirePrice?: string;
+  requestedQuantity?: string;
+  requestedBudget?: string;
+  filledQuantity?: string;
+  filledCost?: string;
+  avgFillPrice?: string;
+  fees?: string;
+  intentId?: string;
+  intentState?: IntentState;
+  venueOrderId?: string;
+  orderState?: OrderState;
+  rejectReason?: string;
+  submittedAt?: string;
+  acknowledgedAt?: string;
+  positionState: "none" | "open" | "settled" | "unknown";
+  settlement?: { kind: SettlementEventRecord["kind"]; outcome?: string; amount?: string; at: string };
+  mark?: { price?: string; at?: string; stale: boolean; unrealizedPnl?: string };
+  external: false;
+}
+
+/** 1.14: an order on the account that this app did not place — labelled, never given a rationale. */
+export interface ExternalLedgerRow {
+  external: true;
+  venueOrderId: string;
+  marketSlug: string;
+  side?: "yes" | "no";
+  quantity?: string;
+  filledQuantity: string;
+  yesPrice?: string;
+  avgPrice?: string;
+  fees?: string;
+  orderState: OrderState;
+  venueCreatedAt?: string;
+  firstSeenAt: string;
+}
+
+export interface TradeLedgerFilter {
+  from?: string;
+  to?: string;
+  category?: string;
+  creator?: string;
+  status?: string;
+  mode?: TradingMode;
+  reason?: string;
+  includeExternal?: boolean;
+  limit?: number;
+}
+
+/** 1.14 (OPS-04): redacted counters for the local dashboard and soak reports. */
+export interface TradingMetrics {
+  at: string;
+  decisions: number;
+  noTrades: number;
+  intents: number;
+  liveIntents: number;
+  readRetries: number;
+  unknownSubmissions: number;
+  fills: number;
+  droppedDuplicateEvents: number;
+  reconciliationLagSeconds?: number;
+  lastReconcileAt?: string;
+  automationRuns: number;
+  lastAutomationRunAt?: string;
+  alertsOpen: number;
+  breaker: CircuitBreakerState;
+}
+
+export interface EmergencyStopResult {
+  stoppedAt: string;
+  previousMode: TradingMode;
+  cancellations: { intentId: string; venueOrderId: string; outcome: string; message?: string }[];
+  positionsRetained: number;
+  note: string;
 }
 
 export interface TradingGate {
@@ -1192,8 +1419,10 @@ export interface TradingAuditEvent {
 export interface TradingStatus {
   venue: TradingVenueId;
   policy: TradingPolicy;
-  /** Feature flags: what this build can do at all. 1.13: submission true (manual live), automation false. */
+  /** Feature flags: what this build can do at all. 1.13: submission (manual live); 1.14: automation (auto-live behind arming). */
   features: { submission: boolean; automation: boolean };
+  /** 1.14: circuit breaker state of the connected account's adapter calls. */
+  breaker: CircuitBreakerState;
   /** True only when a live mode is set, authorized, the account is connected, and no hold pauses dispatch. */
   armed: boolean;
   submissionAvailable: boolean;

@@ -39,6 +39,14 @@ export interface CohortResult {
 export class ForecastService {
   constructor(private readonly ctx: AppContext) {}
 
+  /** The versioned estimator this build trades on (FOR-06: automation accepts only a qualified strategy/category version). */
+  readonly strategyVersion = ESTIMATOR_VERSION;
+
+  /** Categories with a production (never fixture) qualification for the current estimator version. */
+  qualifiedCategories(): string[] {
+    return this.ctx.db.all<{ category: string }>("SELECT DISTINCT category FROM strategy_qualifications WHERE source = 'production' AND qualified = 1 AND strategy_version = ? ORDER BY category", ESTIMATOR_VERSION).map((r) => r.category);
+  }
+
   /** Creator identity for cohorts and clusters: venue channel id, else channel name, else the video itself. */
   creatorKey(video: VideoSummary | undefined): string {
     if (!video) return "unknown";

@@ -7,8 +7,7 @@
  * Application routes, distinct from venue routes. Every mutation is Zod-validated with `.strict()` so a
  * client cannot smuggle a base URL, a mode or a budget through a connection body (ACC-04/05). The CSRF
  * guard registered in index.ts applies to all of them. Order submission lives in routes/execution.ts (1.13,
- * preview → confirm only); the automation controls (arm / emergency-stop) answer 501 `feature_disabled` until 1.14
- * so the gate is visible, not silent.
+ * preview → confirm only); arming, pause and the emergency stop live in routes/automation.ts (1.14).
  */
 
 import type { FastifyInstance } from "fastify";
@@ -110,10 +109,7 @@ export function registerTradingRoutes(app: FastifyInstance, ctx: AppContext): vo
     }
   });
 
-  // Automation controls are not built in this release (1.14). They answer explicitly so nothing can be mistaken for silent success.
-  for (const path of ["/api/trading/arm", "/api/trading/emergency-stop"]) {
-    app.post(path, async (_req, reply) => reply.code(501).send({ error: "feature_disabled", message: "Automated (auto_live) trading is not part of this build (1.13). Manual-live orders go through preview → confirm; automation arrives with its release gates (1.14).", features: TRADING_FEATURES }));
-  }
+  // 1.14: /api/trading/arm, /pause, /resume, /emergency-stop and /cancel-all live in routes/automation.ts.
 }
 
 const money = z.string().regex(/^\d+(\.\d{1,8})?$/, "decimal string");

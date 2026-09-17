@@ -241,3 +241,8 @@ tr.selected td { background: var(--surface); }
 .chip.intent-submission_unknown { background: #fdecec; color: var(--error); border: 1px solid var(--error); }
 .warn { color: #c98a1a; }
 .ok { color: var(--ok); }
+
+/* 1.14 — alerts */
+.chip.alert-critical { background: #fdecec; color: var(--error); border: 1px solid var(--error); }
+.chip.alert-warning { background: #fff4e5; color: #7a3e00; }
+.chip.alert-info { background: var(--chip-cloud); }

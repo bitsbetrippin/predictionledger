@@ -7,6 +7,55 @@ Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assist
 ## Legend
 **Executed** = the command/test ran and passed on that platform. **Static** = code and docs reviewed for that platform's behaviour, not run. **—** = not yet attempted.
 
+## Release 1.14.0 — Automatic execution behind arming, pause / emergency stop, alerts, the Trades ledger (2026-09-17)
+
+**Baseline.** 1.13.0 as executed in the sandbox: 161 · 161 passed · 0 failed (owner's Windows runs of 1.10–1.13 still pending, see below).
+
+**This release, executed.** Linux cloud sandbox, Node v22.22.2, sources compiled with `tsc` against the repository's `tsconfig.base.json` plus the same type stubs as before (`fastify` in-memory router, `zod` shim; the pinned `polymarket-us@0.1.1` loaded for the SDK test with `fetch` stubbed). Every order in every test goes to the fake venue. **No real credential was used and no production order was placed.** The production qualification record that AUTO-01 requires was inserted **by SQL as a labelled test shortcut** (`automation.test.ts` / `autopilot.e2e.test.ts`); the application itself writes production records only from a passing evaluation over ≥ 100 settled events (F08).
+
+| Command (sandbox equivalent) | Result |
+|---|---|
+| `node --test "dist/server/src/**/*.test.js"` (= `npm test`) | **170 tests · 170 passed · 0 failed · 0 skipped · 0 cancelled**. 1.13.0 had 161; the 9 new tests are listed below. |
+| `node --test dist/server/src/services/automation.test.js` | 8 · 8 passed (≈ 4.6 s) — U01, U02 (pipeline half + slow-job isolation), U03, U04, U05, U06, D01/D03, O03+O04 |
+| `node --test dist/server/src/services/autopilot.e2e.test.js` | 1 · 1 passed (≈ 4.7 s; fake yt-dlp + fake model + fake venues; skips on Windows / without ffmpeg) |
+| `tsc -p tsconfig.json --noEmit` for `server/src` + `shared/src` (= `npm run typecheck`, server/shared) | **0 errors** (stub-only filter TS7006/TS2347/TS2307). |
+| `tsc -p tsconfig.json --noEmit` for `web/src` (= `npm run typecheck`, web) | **0 errors** (filter TS7006/TS2307 — React's own types are not installed in the sandbox). |
+| `npm run build` (Vite bundle) | **not executed** in the sandbox (no registry). Pending owner run. |
+| O04 timing (inside `automation.test.ts`, sandbox machine) | ledger of 500 rows over **10,010** decisions: **73.6 ms** · summary **3.1 ms** · filtered query **5.3 ms** (target p95 < 1 s). |
+
+**Owner machine (Windows 11, Node 26.7.0):** `npm install` (no new direct dependencies), `npm run typecheck`, `npm run build`, `npm test` — **pending owner execution**; record counts here. `autopilot.e2e.test.ts` skips itself on Windows (POSIX shell wrapper for the fake yt-dlp) — the same chain is covered by `automation.test.ts` U02 from the extracted pick onward.
+
+### Requirement → test matrix (fake venue for every order; nothing touched a real account)
+
+| Test id (03-Acceptance-Test-Plan) | Requirement | Where | Status |
+|---|---|---|---|
+| U01 | AUTO-01, ACC-05 | `services/automation.test.ts` "U01 — arming automation needs every gate…" → no qualification / no rehearsal → `strategy_qualified` + `paper_rehearsal`; a **fixture** qualification never counts; wrong category → `strategy_qualified`; wrong text → `live_authorization`; stale hash → `policy_reviewed`; `PUT /policy {auto_live}` → 409 and mode unchanged; `POST /arm` → `auto_live`, `authorizedPolicyHash` = the exact current hash, audit `policy.mode_changed` carries it; a budget edit disarms, clears the authorization, raises a `disarmed` alert, scheduler refuses | ✓ executed |
+| U02 | AUTO-02 | `services/autopilot.e2e.test.ts` (end to end): saved channel polled → `video.import` through a **fake yt-dlp** (manual captions) → `prediction.extract` by a **fake model** (one sports pick; exactly one model call) → tick 1 queues `market.match` → the match finds the contract on the **fake US venue** and auto-accepts the exact matchup → tick 2 runs the computed checklist (`verified_equivalent`), builds a **qualified** forecast, an eligible `auto_live` decision and **one** venue create call with the automatic indicator; the audit graph links video → prediction → link → verification → forecast → decision → preview → intent → order → executions → audit events; tick 3 skips `opportunity_consumed`. `automation.test.ts` "U02 — from an extracted pick…": the same chain from the pick, plus a blocked job on the queue (concurrency 1) while a tick and a cancel complete in < 2 s | ✓ executed (**partial on Windows**: the e2e file skips there; the pipeline half runs) |
+| U03 | AUTO-02, EXE-03 | "U03 — a consumed contract opportunity survives…" → re-run of the video, same-creator video, another creator, policy edit + re-arm, IOC-canceled entry (0 filled) and a second process on the same directory: `opportunity_consumed` every time, **one** create call in the whole test | ✓ executed |
+| U04 | AUTO-03 | "U04 — an emergency stop racing a tick…" → three candidates, first POST held 300 ms in flight; stop lands mid-tick: exactly the in-flight create call, mode `paper` + `pauseReason`, the in-flight order's id persisted and cancelled (targeted), an external open order **never** targeted by the stop, positions retained, `emergency_stop` alert; afterwards ticks skip; `cancel-all` refuses without its own acknowledgement and cancels the external order with it | ✓ executed |
+| U05 | AUTO-04 | "U05 — restart, a sleep past the cutoff, a restored older database, a credential rotation and a strategy change…" → clock past the cutoff: candidates `cutoff_passed`, never evaluated; a backup taken while armed with an in-flight intent restores as `paper`, no authorization, needs rebind, the intent becomes `submission_unknown` and is never re-sent; a different key → `trading.disarmed (credential change)`; a budget change disarms; **zero** create calls across all transitions | ✓ executed |
+| U06 | AUTO-05 | "U06 — repeated adapter failures open the circuit breaker once…" → 5 consecutive 503s open it (state `open`, disarmed, blocker listed, tick skipped), **one** `circuit_breaker` alert without the secret; 429 and 401 count, 400 does not; a success inside the cooldown → `half_open`, after the cooldown → `closed` (audited); mode stays `paper` — no automatic re-arm | ✓ executed |
+| D01 | DASH-01/02/04 | "D01/D03 — the ledger lists pending, partial, filled, unknown, rejected, external and settled rows…" → partial: intent `partially_filled`, order `canceled`, position `open`, fees .10, mark flagged stale; rejected with reason; unknown with position `unknown`; external rows with no rationale/quote/reason; skipped decisions listed; filters by status, mode, creator, reason, date, category; summary: buying power from the venue, unknown count, open positions, stale mark, holds/alerts, realized 0 without official settlement | ✓ executed (D01's "settled" rows are covered by 1.13 E12 through the same ledger join) |
+| D02 | DASH-03 | 1.13 "D02 — editing the prediction after a live decision…" (immutable record); 1.14: `GET /api/trading/decisions/:id/evidence` returns `current` (latest revision, verification, forecast, dossier) beside the record; the Trades detail shows it under its own heading | ✓ executed (record immutability) · **static** (the `current` block is typechecked and rendered; no automated assertion on its contents yet) |
+| D03 | DASH-02/05 | same test: `/api/trading/ledger?status=unknown`, `.csv` (one line per row, header, external line, no secret), `.json` (rows match the service), `/api/trading/metrics` counts match the tables | ✓ executed |
+| D04 | DASH-05 | 1.13 "D04 — a video, prediction or market linked to a live order cannot be deleted…"; live history has no reset/delete route | ✓ executed (1.13) |
+| O03 | OPS-03 | "O03 (scheduler) — a second process on the same database never dispatches without the lease…" → its tick is `skipped` with the lease reason and zero create calls; 1.13 O03 covers the marker transaction | ✓ executed |
+| O04 | OPS-04 | same test: 10,000 synthetic decisions inserted; ledger / summary / filtered query timings above; `/api/trading/metrics` counters | ✓ executed (**sandbox machine only**; the owner's Windows timing is pending) |
+| — | migrations | `core.test.ts` (schema version 16; three new tables; 016 applies after 015) | ✓ executed |
+
+### Regression checks
+All 161 tests of 1.13.0 still pass; two assertions were updated for the 1.14 contract: `services/trading.test.ts` (`features.automation` is `true`; the gate list gains `automation_feature`, `not_paused`, `breaker_closed`), `routes/trading.test.ts` (`/api/trading/arm` answers `409 gate_unmet` instead of `501`; `/api/trading/emergency-stop` and `/resume` are real).
+
+### Remaining gate failures / pending items for 1.14
+
+1. Owner `npm install` / `typecheck` / `build` / `test` on Windows with the real packages.
+2. **Automation cannot be armed on a real data directory**: no production strategy qualification exists (≥ 100 settled events with a market baseline, FOR-06/07). The arming, scheduling and stop paths are verified with the labelled SQL shortcut only. Reported as an unmet gate, not waived.
+3. The 1.13 capped owner-run smoke test (SETUP §4.14) is still pending; automation must not be armed before it has been done.
+4. Paper soak (O07) — `automation.paperAutopilot` exists for it; not run.
+5. The 1.10–1.13 items still open: real-key read check, Windows `secret.key` ACL, Setup walk-through, exit demos on a real US event, upgrade rehearsal from real data (016 is additive).
+
+The release is **not marked "accepted"** until 1 and 3 are recorded here; automation stays unavailable until 2 is met.
+
 ## Release 1.13.0 — Manual-live execution: preview → confirm, venue orders, reconciliation, settlement (2026-09-16)
 
 **Baseline.** 1.12.0 as executed in the sandbox: 138 · 138 passed · 0 failed (owner's Windows runs of 1.10–1.12 still pending, see below).

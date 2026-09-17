@@ -20,6 +20,7 @@ import { setTradingAdapterForTests } from "../providers/trading/registry.js";
 import { registerCsrfGuard } from "../security/csrf.js";
 import { registerTradingRoutes } from "./trading.js";
 import { registerExecutionRoutes } from "./execution.js";
+import { registerAutomationRoutes } from "./automation.js";
 
 after(() => { delete process.env.PL_DATA_DIR; setTradingAdapterForTests(undefined); });
 
@@ -38,6 +39,7 @@ test("trading routes: CSRF/origin enforced, strict bodies refuse host overrides,
   registerCsrfGuard(app, () => [ORIGIN]);
   registerTradingRoutes(app, ctx);
   registerExecutionRoutes(app, ctx);
+  registerAutomationRoutes(app, ctx);
   try {
     // A07: a mutation without the custom header, or from another origin, is refused before any handler runs.
     const noHeader = await app.inject({ method: "PUT", url: "/api/trading/connection", payload: { keyId: KEY, secretKey: SECRET } });
@@ -88,7 +90,7 @@ test("trading routes: CSRF/origin enforced, strict bodies refuse host overrides,
     assert.equal(sync.statusCode, 200);
     assert.equal(sync.json().ok, true);
 
-    // ACC-05 / EXE-01: manual_live without the exact acknowledgement is refused with the live_authorization gate; auto_live stays gated in 1.13.
+    // ACC-05 / EXE-01: manual_live without the exact acknowledgement is refused with the live_authorization gate; auto_live can never be set through the policy route (1.14: only /api/trading/arm, and only with a production qualification).
     const live = await app.inject({ method: "PUT", url: "/api/trading/policy", headers: csrf, payload: { mode: "manual_live" } });
     assert.equal(live.statusCode, 409);
     assert.equal(live.json().error, "gate_unmet");
@@ -98,16 +100,24 @@ test("trading routes: CSRF/origin enforced, strict bodies refuse host overrides,
     assert.ok(auto.json().gates.some((g: { id: string }) => g.id === "strategy_qualified"));
     const paper = await app.inject({ method: "PUT", url: "/api/trading/policy", headers: csrf, payload: { mode: "disabled" } });
     assert.equal(paper.json().policy.mode, "disabled");
-    // 1.13: direct order placement does not exist (preview → confirm only); automation controls still answer 501.
+    // 1.13: direct order placement does not exist (preview → confirm only).
     const direct = await app.inject({ method: "POST", url: "/api/trading/orders", headers: csrf, payload: {} });
     assert.equal(direct.statusCode, 409);
     assert.equal(direct.json().error, "preview_required");
     const previewOff = await app.inject({ method: "POST", url: "/api/trading/decisions/00000000-0000-4000-8000-000000000000/preview", headers: csrf, payload: {} });
     assert.equal(previewOff.statusCode, 404, "unknown decision → 404 (the mode gate is checked on the decision, see execution tests)");
-    for (const url of ["/api/trading/arm", "/api/trading/emergency-stop"]) {
-      const r = await app.inject({ method: "POST", url, headers: csrf, payload: {} });
-      assert.equal(r.statusCode, 501, url);
-      assert.equal(r.json().error, "feature_disabled");
+    // 1.14: arming is a real route that refuses without every gate (no qualification here); the emergency stop is real and idempotent.
+    {
+      const arm = await app.inject({ method: "POST", url: "/api/trading/arm", headers: csrf, payload: { acknowledge: "x", policyHash: "0".repeat(64), category: "sports" } });
+      assert.equal(arm.statusCode, 409);
+      assert.equal(arm.json().error, "gate_unmet");
+      assert.ok(arm.json().gates.some((g: { id: string }) => g.id === "strategy_qualified"));
+      const stop = await app.inject({ method: "POST", url: "/api/trading/emergency-stop", headers: csrf, payload: {} });
+      assert.equal(stop.statusCode, 200);
+      assert.ok(["paper", "disabled"].includes(stop.json().status.policy.mode), "a non-live mode is left as it was; a live one falls to paper");
+      assert.ok(stop.json().status.policy.pauseReason);
+      const resume = await app.inject({ method: "POST", url: "/api/trading/resume", headers: csrf, payload: {} });
+      assert.equal(resume.statusCode, 200);
     }
     const badMode = await app.inject({ method: "PUT", url: "/api/trading/policy", headers: csrf, payload: { mode: "yolo" } });
     assert.equal(badMode.statusCode, 400);

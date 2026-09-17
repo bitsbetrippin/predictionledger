@@ -31,6 +31,7 @@ import { registerTradingRoutes } from "./routes/trading.js";
 import { registerSubscriptionRoutes } from "./routes/subscriptions.js";
 import { registerDecisionRoutes } from "./routes/decisions.js";
 import { registerExecutionRoutes } from "./routes/execution.js";
+import { registerAutomationRoutes } from "./routes/automation.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const webDist = path.resolve(here, "..", "..", "web", "dist");
@@ -75,6 +76,7 @@ async function main(): Promise<void> {
   registerSubscriptionRoutes(app, ctx);
   registerDecisionRoutes(app, ctx);
   registerExecutionRoutes(app, ctx);
+  registerAutomationRoutes(app, ctx);
 
   if (fs.existsSync(webDist)) {
     await app.register(fastifyStatic, { root: webDist, prefix: "/", wildcard: false });
@@ -98,6 +100,8 @@ async function main(): Promise<void> {
   startMarketRefresh(ctx);
   startSubscriptionPolling(ctx);
   const stopExecution = startExecutionLoop(ctx);
+  // 1.14: the execution scheduler runs on its own timer, never inside the job queue; it sends only under an arming.
+  ctx.autoTrader.start();
 
   // This exact line is what scripts/start.mjs waits for before opening the browser.
   console.log(`PREDICTION_LEDGER_READY ${origin}`);
@@ -105,6 +109,7 @@ async function main(): Promise<void> {
 
   const shutdown = async (signal: string) => {
     app.log.info(`received ${signal}, shutting down`);
+    ctx.autoTrader.stop();
     await ctx.jobs.stop();
     stopExecution();
     await app.close();

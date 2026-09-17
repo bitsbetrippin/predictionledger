@@ -25,7 +25,7 @@ import crypto from "node:crypto";
 import { CANCEL_ALL_ACKNOWLEDGEMENT, type EmergencyStopResult, type ExecutionRecord, type IntentState, type LivePosition, type MarketProviderId, type OrderPreviewRecord, type OrderState, type ReconciliationHold, type SettlementEventRecord, type TradeIntent, type VenueOrderRecord } from "@prediction-ledger/shared";
 import type { AppContext } from "../context.js";
 import { D, Dec, dsum } from "../analysis/decimal.js";
-import { LIVE_INTENT_STATES, TERMINAL_ORDER_STATES, chosenCostOf, intentStateFor, mergeFilled, mergeOrderState, toVenueCreateBody } from "../analysis/orderState.js";
+import { LIVE_INTENT_STATES, TERMINAL_ORDER_STATES, chosenCostOf, intentStateFor, mergeFilled, mergeOrderState, toVenueCreateBody, signedFilledQuantity } from "../analysis/orderState.js";
 import { decide, type DecisionBook, type DecisionInput } from "../analysis/tradeDecision.js";
 import { rulesHash } from "../analysis/contractVerification.js";
 import type { ActivityRecord, OrderRequest, PrivateStreamHandle, VenueExecution, VenueOrder } from "../providers/trading/types.js";
@@ -66,6 +66,8 @@ export interface ReconcileReport {
 
 const PREVIEW_TTL_MS = 60_000;
 const CANDIDATE_WINDOW_MS = 120_000;
+/** The emergency stop waits at most this long for a POST already in flight (the adapter's own timeout is 20 s). */
+const IN_FLIGHT_WAIT_MS = 25_000;
 const MAX_ACTIVITY_PAGES = 200;
 
 export class ExecutionService {
@@ -78,6 +80,8 @@ export class ExecutionService {
   streamState: "closed" | "connecting" | "open" | "reconnecting" = "closed";
   /** OPS-04 counters (process lifetime; the durable ones are derived from tables in the ledger service). */
   readonly counters = { readRetries: 0, droppedDuplicates: 0, streamEvents: 0 };
+  /** Dispatches whose POST is in flight (2.0, RV-13): the emergency stop waits for them before its sweep. */
+  private readonly inFlight = new Set<Promise<unknown>>();
 
   constructor(private readonly ctx: AppContext, opts: { now?: () => Date; faults?: FaultInjector } = {}) {
     this.now = opts.now ?? (() => new Date());
@@ -86,20 +90,23 @@ export class ExecutionService {
 
   // ---- preview (EXE-02) ---------------------------------------------------------------------------------
 
-  async preview(decisionId: string, o: { now?: string; book?: DecisionBook } = {}): Promise<OrderPreviewRecord> {
-    const now = o.now ?? this.now().toISOString();
+  async preview(decisionId: string, o: { now?: string; book?: DecisionBook; origin?: "owner" | "scheduler" } = {}): Promise<OrderPreviewRecord> {
     const { decision, binding } = this.liveGate(decisionId);
-    const fresh = await this.redecide(decision.id, now, o.book);
+    // RV-03: the instant is taken after the fresh book and account state were gathered (unless the caller pinned it).
+    const fresh = await this.redecide(decision.id, o.now, o.book);
+    const now = fresh.now;
     if (fresh.result.outcome === "skipped") throw new ExecutionError(`The decision no longer passes its gates: ${fresh.result.reasonCodes.join(", ")}.`, "decision_not_eligible", 409, fresh.result.reasonCodes);
     if (!fresh.sameSizing) throw new ExecutionError("Price or account state changed since the decision was made; evaluate a new decision.", "decision_changed", 409, fresh.diff);
-    const req = this.requestFor(decision, fresh.marketSlug);
+    // RV-09: the venue's manual/automatic indicator follows who sends the order, not the mode the decision was made in.
+    const origin = o.origin ?? "owner";
+    const req = this.requestFor(decision, fresh.marketSlug, origin === "owner");
     const venue = await this.ctx.trading.withCredentials((creds, adapter) => adapter.previewOrder(creds, req));
     const id = crypto.randomUUID();
     const expiresAt = new Date(Date.parse(now) + PREVIEW_TTL_MS).toISOString();
     const s = decision.sizing!;
     const display: OrderPreviewRecord["display"] = {
       side: s.side, sideLabel: s.sideLabel, pChosen: s.pChosen, netEdge: s.netEdge, quantity: s.quantity, chosenCost: s.limitCost, yesWirePrice: s.wirePrice, worstCost: s.worstCost, feeBound: s.feeBound, estimatedEv: s.estimatedEv,
-      deadlineAt: (decision.inputs.deadlineAt as string | undefined) ?? undefined, policyHash: decision.policyHash, question: decision.question, marketUrl: decision.marketUrl, evidenceUrl: `/api/trading/decisions/${decision.id}/evidence`,
+      deadlineAt: (decision.inputs.deadlineAt as string | undefined) ?? undefined, policyHash: decision.policyHash, question: decision.question, marketUrl: decision.marketUrl, evidenceUrl: `/api/trading/decisions/${decision.id}/evidence`, origin,
     };
     this.ctx.db.run(
       "INSERT INTO order_previews (id, decision_id, decision_hash, binding_id, request_json, venue_json, display_json, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -117,7 +124,7 @@ export class ExecutionService {
   // ---- submit (EXE-03 / EXE-04) --------------------------------------------------------------------------
 
   async submit(previewId: string, o: { decisionHash: string; now?: string; book?: DecisionBook }): Promise<TradeIntent> {
-    const now = o.now ?? this.now().toISOString();
+    let now = o.now ?? this.now().toISOString();
     const preview = this.getPreview(previewId);
     if (!preview) throw new ExecutionError("Preview not found.", "not_found", 404);
     // Idempotent re-entry (E04/E05): the same contract can only ever have one live intent per account, and a repeat
@@ -137,12 +144,13 @@ export class ExecutionService {
     if (Date.parse(preview.expiresAt) <= Date.parse(now)) { this.consumePreview(preview.id, "expired", now); throw new ExecutionError("Preview expired; request a new preview.", "preview_expired", 409); }
     if (preview.display.policyHash && preview.display.policyHash !== policy.policyHash) { this.consumePreview(preview.id, "stale", now); throw new ExecutionError("Policy changed since the preview; evaluate a new decision.", "preview_stale", 409); }
     // Fresh inputs (E02): a changed price, evidence, policy or account state invalidates the preview.
-    const fresh = await this.redecide(decision.id, now, o.book);
+    const fresh = await this.redecide(decision.id, o.now, o.book);
+    now = fresh.now;
     if (fresh.result.outcome === "skipped" || !fresh.sameSizing) {
       this.consumePreview(preview.id, "stale", now);
       throw new ExecutionError(`Inputs changed since the preview (${fresh.result.outcome === "skipped" ? fresh.result.reasonCodes.join(", ") : "sizing differs"}); evaluate a new decision and preview again.`, "preview_stale", 409, fresh.diff);
     }
-    const req = this.requestFor(decision, fresh.marketSlug);
+    const req = this.requestFor(decision, fresh.marketSlug, preview.display.origin !== "scheduler");
     const s = decision.sizing!;
     this.faults?.at("before_reserve");
 
@@ -193,7 +201,9 @@ export class ExecutionService {
         this.finishUnsent(intentId, "rejected_local", reason, now);
         return { ok: false as const, reason };
       }
-      this.ctx.db.run("UPDATE trade_intents SET state = 'submitting', dispatch_marker_at = ?, submitted_at = ?, updated_at = ? WHERE id = ? AND state = 'reserved'", now, now, now, intentId);
+      // RV-02: the marker must actually move THIS row from `reserved`; if another process expired or recovered it meanwhile, nothing is sent.
+      const changed = Number(this.ctx.db.run("UPDATE trade_intents SET state = 'submitting', dispatch_marker_at = ?, submitted_at = ?, updated_at = ? WHERE id = ? AND state = 'reserved'", now, now, now, intentId).changes);
+      if (changed !== 1) return { ok: false as const, reason: "intent is no longer reserved (recovered or expired by another process)" };
       return { ok: true as const };
     });
     if (!marked.ok) throw new ExecutionError(`Not sent: ${marked.reason}.`, "dispatch_blocked", 409);
@@ -201,17 +211,27 @@ export class ExecutionService {
     this.faults?.at("after_marker");
 
     // POST: exactly one attempt. The adapter's own request timeout bounds it; a timeout is ambiguous, never a retry.
-    const result = await this.createOnce(req);
+    const post = this.createOnce(req);
+    this.inFlight.add(post);
+    let result: Awaited<typeof post>;
+    try { result = await post; } finally { this.inFlight.delete(post); }
     this.faults?.at("after_post");
     const at = this.now().toISOString();
     if (result.kind === "created") {
+      const before = this.ctx.db.get<{ state: string }>("SELECT state FROM trade_intents WHERE id = ?", intentId)?.state;
       this.ctx.db.transaction(() => {
-        this.ctx.db.run("UPDATE trade_intents SET state = 'acknowledged', venue_order_id = ?, acknowledged_at = ?, updated_at = ? WHERE id = ?", result.orderId, at, at, intentId);
+        // RV-02: only a `submitting` (or a meanwhile-recovered `submission_unknown`) intent becomes acknowledged; the venue's answer settles the identity question.
+        this.ctx.db.run("UPDATE trade_intents SET state = 'acknowledged', venue_order_id = ?, acknowledged_at = ?, unknown_reason = NULL, updated_at = ? WHERE id = ? AND state IN ('submitting','submission_unknown')", result.orderId, at, at, intentId);
         this.upsertOrder(binding!.id, { id: result.orderId, marketSlug: req.marketSlug, side: req.side, state: "pending", filledQuantity: "0", quantity: req.quantity, yesPrice: req.yesPrice, createTime: at }, "rest", { intentId });
         this.ctx.db.run("UPDATE risk_reservations SET acknowledged = 1, updated_at = ? WHERE id = (SELECT reservation_id FROM trade_intents WHERE id = ?)", at, intentId);
         for (const ex of result.executions) this.applyExecution(binding!.id, ex, "create_response");
+        if (before === "submission_unknown") {
+          const hold = this.openHoldFor(binding!.id, "submission_unknown", intentId);
+          if (hold) this.ctx.db.run("UPDATE reconciliation_holds SET resolved_at = ?, resolution = ? WHERE id = ?", at, `venue answered the original POST with order ${result.orderId} (recovered by another process while in flight)`, hold.id);
+        }
       });
-      this.ctx.trading.audit("order.acknowledged", binding!.id, { intentId, venueOrderId: result.orderId });
+      this.ctx.trading.audit("order.acknowledged", binding!.id, { intentId, venueOrderId: result.orderId, recoveredWhileInFlight: before === "submission_unknown" || undefined });
+      if (before === "submission_unknown") { this.ctx.tradingAlerts.resolve(`unknown_submission:${intentId}`); this.refreshPause(binding!.id); }
       // Best effort: read the order back now; the stream and reconciliation carry the rest.
       try {
         const order = await this.ctx.trading.withCredentials((creds, adapter) => adapter.getOrder(creds, result.orderId));
@@ -258,7 +278,9 @@ export class ExecutionService {
   private finishUnsent(intentId: string, state: "rejected_local" | "expired", reason: string, at: string): void {
     const r = this.ctx.db.get<IntentRow>("SELECT * FROM trade_intents WHERE id = ?", intentId);
     if (!r) return;
-    this.ctx.db.run("UPDATE trade_intents SET state = ?, last_error = ?, updated_at = ? WHERE id = ?", state, reason, at, intentId);
+    // RV-02: only an intent that is still pre-wire can be finished as unsent; a concurrent acknowledgement wins.
+    const changed = Number(this.ctx.db.run("UPDATE trade_intents SET state = ?, last_error = ?, updated_at = ? WHERE id = ? AND state IN ('reserved','submitting','submission_unknown')", state, reason, at, intentId).changes);
+    if (changed !== 1) return;
     this.ctx.risk.release(r.reservation_id, at, reason);
     this.ctx.db.run("DELETE FROM trade_opportunities WHERE intent_id = ?", intentId);
   }
@@ -425,7 +447,9 @@ export class ExecutionService {
     const cancellations: EmergencyStopResult["cancellations"] = [];
     const binding = this.ctx.trading.connected();
     if (binding) {
-      // Give an in-flight submission a moment to persist its id, then sweep every app-owned non-terminal order.
+      // RV-13: wait (bounded) for any POST that was already in flight when the stop was recorded, so its order id is
+      // persisted and the sweep below targets it too; then sweep every app-owned non-terminal order.
+      await this.awaitInFlight(IN_FLIGHT_WAIT_MS);
       const open = this.ctx.db.all<{ id: string; intent_id: string }>("SELECT id, intent_id FROM venue_orders WHERE binding_id = ? AND intent_id IS NOT NULL AND state IN ('pending','open','partial','cancel_pending')", binding.id);
       for (const o of open) {
         const r = await this.cancelIntent(o.intent_id).catch((err: Error) => ({ outcome: "failed", message: err.message }));
@@ -434,6 +458,16 @@ export class ExecutionService {
     }
     const positionsRetained = binding ? this.positions(binding.id).filter((p) => !p.settled && !D(p.localNet).isZero()).length : 0;
     return { stoppedAt, previousMode, cancellations, positionsRetained, note: "Disarmed and paused. Only orders placed by this app were targeted; positions and history are retained. Resolve any failed cancellation, reconcile, then resume and re-arm deliberately." };
+  }
+
+  /** Resolve once every in-flight dispatch has settled, or after `maxMs` — whichever comes first. */
+  async awaitInFlight(maxMs: number): Promise<number> {
+    const pending = [...this.inFlight];
+    if (!pending.length) return 0;
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([Promise.allSettled(pending), new Promise<void>((resolve) => { timer = setTimeout(resolve, maxMs); timer.unref?.(); })]);
+    if (timer) clearTimeout(timer);
+    return pending.length;
   }
 
   /** Account-wide cancellation — a separately labelled owner action that needs its own acknowledgement; never the default. */
@@ -476,7 +510,8 @@ export class ExecutionService {
       if (order) this.applyOrderSnapshot(binding.id, order, "rest");
     }
     // 3. Activities: paginate fully (retry a failed page once), then trades → executions, resolutions → settlements.
-    const activities = await this.readAllActivities();
+    // RV-05: the venue lists activities newest-first; apply them oldest-first so an original and its correction keep their order.
+    const activities = (await this.readAllActivities()).sort((x, y) => (Date.parse(x.at ?? "") || 0) - (Date.parse(y.at ?? "") || 0));
     let executionsAdded = 0;
     let settlements = 0;
     for (const a of activities) {
@@ -589,6 +624,17 @@ export class ExecutionService {
     });
     this.ctx.trading.audit("settlement.recorded", bindingId, { marketSlug: a.marketSlug, kind, outcome, activityId });
     this.ctx.tradingAlerts.raise("resolution", `resolution:${activityId}`, `${kind === "correction" ? "Settlement correction" : "Official settlement"} on ${a.marketSlug}: ${outcome}.`, { severity: "info", subject: a.marketSlug, details: { kind, outcome, events: n } });
+    // RV-04: the meaning of `positionResolution.side` (winning side vs. the account's side) is not documented by the venue.
+    // When the venue also reports a realized amount whose sign contradicts what our reading implies for our own fills,
+    // the settlement is contested: a discrepancy hold pauses new orders until the owner checks the venue's statement.
+    const ours = dsum(this.ctx.db.all<{ amount: string | null }>("SELECT amount FROM settlement_events WHERE binding_id = ? AND venue_market_id = ? AND intent_id IS NOT NULL AND kind = ? AND observed_at = ?", bindingId, m.venue_id, kind, a.at ?? now).map((r) => D(r.amount ?? "0")));
+    if (a.realizedPnl !== undefined && n > 1 && !ours.isZero()) {
+      const venue = D(a.realizedPnl);
+      if (!venue.isZero() && venue.isNeg() !== ours.isNeg()) {
+        this.openHold(bindingId, "discrepancy", `settlement:${activityId}`, { marketSlug: a.marketSlug, activityId, resolutionSide: side, ourReading: outcome, ourAmount: ours.toString(), venueRealized: venue.toString(), note: "The venue's realized amount contradicts the app's reading of the resolution side; verify the settlement on the venue before trusting the ledger's P&L for this market." }, now);
+        this.ctx.tradingAlerts.raise("discrepancy", `settlement:${activityId}`, `Settlement on ${a.marketSlug} is contested: the app read ${outcome} (${ours} for our fills) but the venue reports realized ${venue}.`, { subject: a.marketSlug, details: { activityId, resolutionSide: side } });
+      }
+    }
     return n;
   }
 
@@ -606,7 +652,8 @@ export class ExecutionService {
       const key = this.venueMarketIdFor(slug) ?? slug;
       const settledIntents = new Set(this.ctx.db.all<{ intent_id: string }>("SELECT intent_id FROM settlement_events WHERE venue_market_id = ? AND intent_id IS NOT NULL", key).map((r) => r.intent_id));
       const localNet = dsum(ours.filter((o) => !settledIntents.has(o.intent_id!)).map((o) => (o.side === "no" ? D(o.filled_quantity).neg() : D(o.filled_quantity))));
-      const externalNet = dsum(external.map((o) => (o.side === "no" ? D(o.filled_quantity).neg() : D(o.filled_quantity))));
+      // RV-08: orders placed on the website may be sells; sign by action × side, never by side alone.
+      const externalNet = dsum(external.map((o) => signedFilledQuantity(o.intent_raw ?? undefined, o.side ?? undefined, o.filled_quantity)));
       const venue = snap?.positions.find((p) => p.marketSlug === slug);
       const settled = this.ctx.db.get<{ kind: SettlementEventRecord["kind"]; observed_at: string; outcome: string | null }>("SELECT kind, observed_at, outcome FROM settlement_events WHERE venue_market_id = ? AND binding_id = ? ORDER BY observed_at DESC, rowid DESC LIMIT 1", key, bindingId);
       const expected = localNet.add(externalNet);
@@ -658,6 +705,11 @@ export class ExecutionService {
         const o = this.ctx.db.get<OrderRow>("SELECT * FROM venue_orders WHERE id = ?", resolution.venueOrderId);
         if (!o) throw new ExecutionError("Unknown venue order id.", "not_found", 404);
         if (o.intent_id && o.intent_id !== intentId) throw new ExecutionError("That order already belongs to another intent.", "order_taken", 409);
+        // RV-10 / RV-14: the order must be on this intent's contract and side, with its side known (read it back first if not).
+        if (!o.side) throw new ExecutionError("That order's side is not known yet; reconcile (read it back) before linking it.", "order_side_unknown", 409);
+        const slug = this.ctx.db.get<{ market_slug: string | null }>("SELECT market_slug FROM trade_intents WHERE id = ?", intentId)?.market_slug ?? undefined;
+        if ((slug && o.market_slug !== slug && o.market_slug !== intent.venueMarketId) || o.side !== intent.side) throw new ExecutionError(`That order is ${o.side} on ${o.market_slug}; this submission was ${intent.side} on ${slug ?? intent.venueMarketId}. Only an order on the same contract and side can be this submission.`, "order_mismatch", 409);
+        if (o.quantity && !D(o.quantity).eq(intent.quantity)) throw new ExecutionError(`That order is for ${o.quantity} contracts; this submission was for ${intent.quantity}.`, "order_mismatch", 409);
         this.ctx.db.run("UPDATE venue_orders SET intent_id = ?, external = 0, updated_at = ? WHERE id = ?", intentId, at, o.id);
         this.ctx.db.run("UPDATE trade_intents SET venue_order_id = ?, state = 'acknowledged', acknowledged_at = ?, updated_at = ? WHERE id = ?", o.id, at, at, intentId);
         this.ctx.db.run("UPDATE risk_reservations SET acknowledged = 1, updated_at = ? WHERE id = ?", at, intent.reservationId);
@@ -766,13 +818,13 @@ export class ExecutionService {
     return { decision, policy, binding, market };
   }
 
-  private requestFor(decision: NonNullable<ReturnType<AppContext["decisions"]["get"]>>, marketSlug: string): OrderRequest {
+  private requestFor(decision: NonNullable<ReturnType<AppContext["decisions"]["get"]>>, marketSlug: string, manual: boolean): OrderRequest {
     const s = decision.sizing!;
-    return { marketSlug, side: s.side, action: "buy", yesPrice: s.wirePrice, quantity: s.quantity, timeInForce: "IOC", manual: decision.mode !== "auto_live" };
+    return { marketSlug, side: s.side, action: "buy", yesPrice: s.wirePrice, quantity: s.quantity, timeInForce: "IOC", manual };
   }
 
   /** Re-run the pure decision with a fresh book and account state; compare the sizing with the stored decision (E02). */
-  private async redecide(decisionId: string, now: string, book?: DecisionBook) {
+  private async redecide(decisionId: string, pinnedNow: string | undefined, book?: DecisionBook) {
     const decision = this.ctx.decisions.get(decisionId)!;
     const market = this.ctx.markets.get(decision.marketId)!;
     const marketSlug = market.constraints?.slug ?? market.slug;
@@ -783,13 +835,16 @@ export class ExecutionService {
     let freshBook = book;
     if (!freshBook) { try { freshBook = await this.ctx.decisions.fetchBook(market); } catch { freshBook = undefined; } }
     let sync = this.ctx.trading.latestSync(binding.id, true);
-    if (!sync || Date.parse(now) - Date.parse(sync.at) > policy.limits.syncMaxAgeMs) { try { sync = await this.ctx.trading.sync(); } catch { /* stale sync fails the gate below */ } }
+    if (!sync || Date.parse(pinnedNow ?? this.now().toISOString()) - Date.parse(sync.at) > policy.limits.syncMaxAgeMs) { try { sync = await this.ctx.trading.sync(); } catch { /* stale sync fails the gate below */ } }
+    // RV-03: the decision instant is taken after the book and account state were gathered (unless pinned by the caller).
+    const now = pinnedNow ?? this.now().toISOString();
     const usd = sync?.balances.find((b) => b.currency === "USD");
     const exposure = this.ctx.risk.exposure(binding.id, decision.dailyBucket);
     const c = market.constraints;
     const input: DecisionInput = {
       now, mode: policy.mode, offline: !this.ctx.settings.getPersisted().privacy.allowInternet, limits: policy.limits,
-      forecast: forecast ? { id: forecast.id, pYes: forecast.pYes, pNo: forecast.pNo, asOf: forecast.asOf, status: forecast.status, expiresAt: forecast.expiresAt } : undefined,
+      forecast: forecast ? { id: forecast.id, pYes: forecast.pYes, pNo: forecast.pNo, asOf: forecast.asOf, status: forecast.status, expiresAt: forecast.expiresAt, strategyVersion: forecast.strategyVersion, category: forecast.category } : undefined,
+      authorization: policy.mode === "auto_live" ? { strategyVersion: policy.authorizedStrategyVersion, category: policy.authorizedCategory } : undefined,
       verification: verification ? { id: verification.id, version: verification.version, status: verification.status, staleAt: verification.staleAt, cutoffAt: verification.cutoffAt, cutoffUnknown: verification.cutoffUnknown, rulesHash: verification.rulesHash, sideId: verification.sideId } : undefined,
       contract: { venue: market.provider, venueMarketId: market.venueId, eventId: market.event?.id ?? c?.eventId, status: c?.status, active: market.active, closed: market.closed, tickSize: c?.tickSize, minQuantity: c?.minQuantity, rulesHash: verification?.rulesHash ? rulesHash(market.description) : undefined, sides: (c?.sides ?? []).map((x) => ({ id: x.id, label: x.label, long: x.long, tradable: x.tradable })) },
       book: freshBook, fee: this.ctx.decisions.feeFor(market),
@@ -821,7 +876,7 @@ export class ExecutionService {
         opportunityConsumed: !!this.ctx.risk.opportunityConsumed(binding.id, market.provider, market.venueId),
       });
     };
-    return { ...first, marketSlug, recheck };
+    return { ...first, marketSlug, recheck, now };
   }
 
   private liveIntentFor(bindingId: string, provider: MarketProviderId, venueMarketId: string): TradeIntent | undefined {

@@ -7,7 +7,7 @@
  */
 import { useEffect, useState } from "react";
 import { AUTO_LIVE_ACKNOWLEDGEMENT, type AutomationSettings, type TradingStatus } from "@prediction-ledger/shared";
-import { ApiError, automationApi, tradingApi, type AutomationInfo } from "../api";
+import { ApiError, automationApi, forecastsApi, tradingApi, type AutomationInfo } from "../api";
 
 const LABEL: Record<keyof AutomationSettings, string> = {
   intervalMs: "Tick interval (ms)", maxEvaluationsPerTick: "Evaluations per tick", maxOrdersPerTick: "Orders per tick", maxPerSourcePerTick: "Evaluations per creator per tick", maxMatchJobsPerTick: "Market-match jobs per tick",
@@ -81,6 +81,10 @@ export function AutomationCard() {
           </div>
         </div>
       )}
+      <p className="small muted">
+        Reports (2.0): <a href="/api/trading/reports/qualification?category=sports&format=md" target="_blank" rel="noreferrer">qualification report</a> (settled held-out events, Brier vs market, calibration — says <em>pending</em> until ≥ 100 events) · <a href="/api/trading/reports/soak?format=md" target="_blank" rel="noreferrer">paper-soak report</a> (O07: seven days, ≥ 100 evaluations, no duplicate entry, no cap breach). Also <code>npm run report:qualification</code> / <code>npm run report:soak</code>.
+        {" "}<button type="button" disabled={busy} onClick={() => { if (window.confirm("Record a PRODUCTION evaluation for category \"sports\" over the real settled events in this database? A failed evaluation is recorded too and revokes an earlier pass. Fixtures never count.")) void run(() => forecastsApi.recordEvaluation("sports").then((r) => setMsg({ kind: r.gate.qualified ? "ok" : "error", text: r.report.statement })), undefined); }}>Record production evaluation (sports)</button>
+      </p>
       <h4>Scheduler budgets (part of the policy hash)</h4>
       <div className="grid-3">
         {Object.keys(form).map((k) => (

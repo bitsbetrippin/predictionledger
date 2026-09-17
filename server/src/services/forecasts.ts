@@ -44,7 +44,10 @@ export class ForecastService {
 
   /** Categories with a production (never fixture) qualification for the current estimator version. */
   qualifiedCategories(): string[] {
-    return this.ctx.db.all<{ category: string }>("SELECT DISTINCT category FROM strategy_qualifications WHERE source = 'production' AND qualified = 1 AND strategy_version = ? ORDER BY category", ESTIMATOR_VERSION).map((r) => r.category);
+    // RV-11 (2.0): the NEWEST production evaluation of each pair decides — a later failed evaluation revokes qualification.
+    return this.ctx.db.all<{ category: string; qualified: number }>(
+      "SELECT q.category, q.qualified FROM strategy_qualifications q WHERE q.source = 'production' AND q.strategy_version = ? AND q.rowid = (SELECT rowid FROM strategy_qualifications x WHERE x.source = 'production' AND x.strategy_version = q.strategy_version AND x.category = q.category ORDER BY x.created_at DESC, x.rowid DESC LIMIT 1) ORDER BY q.category", ESTIMATOR_VERSION,
+    ).filter((r) => r.qualified === 1).map((r) => r.category);
   }
 
   /** Creator identity for cohorts and clusters: venue channel id, else channel name, else the video itself. */
@@ -274,9 +277,10 @@ export class ForecastService {
 
   productionQualification(strategyVersion: string, category: string): StrategyQualification | undefined {
     const r = this.ctx.db.get<{ id: string; strategy_version: string; category: string; source: "production" | "fixture"; events: number; brier: string | null; baseline_brier: string | null; qualified: number; report_json: string; created_at: string }>(
-      "SELECT * FROM strategy_qualifications WHERE strategy_version = ? AND category = ? AND source = 'production' AND qualified = 1 ORDER BY created_at DESC LIMIT 1", strategyVersion, category,
+      "SELECT * FROM strategy_qualifications WHERE strategy_version = ? AND category = ? AND source = 'production' ORDER BY created_at DESC, rowid DESC LIMIT 1", strategyVersion, category,
     );
-    return r ? { id: r.id, strategyVersion: r.strategy_version, category: r.category, source: r.source, events: r.events, brier: r.brier ?? undefined, baselineBrier: r.baseline_brier ?? undefined, qualified: r.qualified === 1, reasons: (JSON.parse(r.report_json) as { gate?: { reasons?: string[] } }).gate?.reasons ?? [], createdAt: r.created_at } : undefined;
+    // RV-11: only the newest production record counts; a later evaluation that failed the gate revokes the earlier pass.
+    return r && r.qualified === 1 ? { id: r.id, strategyVersion: r.strategy_version, category: r.category, source: r.source, events: r.events, brier: r.brier ?? undefined, baselineBrier: r.baseline_brier ?? undefined, qualified: r.qualified === 1, reasons: (JSON.parse(r.report_json) as { gate?: { reasons?: string[] } }).gate?.reasons ?? [], createdAt: r.created_at } : undefined;
   }
 
   /**
@@ -317,9 +321,11 @@ export class ForecastService {
       const pos = d.intent_id ? this.ctx.db.get<{ pnl: string | null; status: string }>("SELECT pnl, status FROM paper_us_positions WHERE intent_id = ?", d.intent_id) : undefined;
       const perCreator: Record<string, number> = {};
       for (const c of f.contributions) if (c.selected) perCreator[c.sourceKey] = c.n;
+      // 2.0: a forecast without a usable probability (insufficient data / NaN) is a recorded abstention, never a scored event.
+      const scorable = f.status !== "insufficient_data" && Number.isFinite(Number(f.pYes));
       out.push({
-        pYes: Number(f.pYes), marketPYes: f.prior.p0 ? Number(f.prior.p0) : undefined, outcome: o === "yes" ? 1 : o === "no" ? 0 : null, groupKey: d.event_id ?? d.market_id,
-        traded: !!d.intent_id, skipReason: d.intent_id ? undefined : (JSON.parse(d.reason_codes_json) as string[])[0] ?? d.outcome, feeAdjustedReturn: pos?.pnl ? Number(pos.pnl) : 0,
+        pYes: scorable ? Number(f.pYes) : NaN, marketPYes: f.prior.p0 ? Number(f.prior.p0) : undefined, outcome: scorable ? (o === "yes" ? 1 : o === "no" ? 0 : null) : null, groupKey: d.event_id ?? d.market_id,
+        traded: !!d.intent_id, skipReason: d.intent_id ? undefined : (scorable ? (JSON.parse(d.reason_codes_json) as string[])[0] : "FORECAST_INSUFFICIENT") ?? d.outcome, feeAdjustedReturn: pos?.pnl ? Number(pos.pnl) : 0,
         creatorObservations: perCreator, independentClusters: new Set(f.contributions.filter((c) => c.selected).map((c) => c.clusterKey)).size,
       });
     }

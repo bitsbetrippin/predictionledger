@@ -382,6 +382,8 @@ export const forecastsApi = {
   get: (id: string) => request<ForecastSnapshot>("GET", `/api/forecasts/${id}`),
   forPrediction: (predictionId: string) => request<ForecastSnapshot[]>("GET", `/api/predictions/${predictionId}/forecasts`),
   evaluation: (category?: string) => request<ForecastEvaluation>("GET", `/api/forecasts/evaluation${qs({ category })}`),
+  /** 2.0: the deliberate owner action that writes a production evaluation record (qualified only when the gate passes). */
+  recordEvaluation: (category: string) => request<ForecastEvaluation & { report: { status: string; statement: string } }>("POST", "/api/forecasts/evaluation/record", { category, acknowledge: "I am recording a production evaluation over real settled events" }),
 };
 export const paperUsApi = {
   get: () => request<PaperUsBook>("GET", "/api/paper/us"),

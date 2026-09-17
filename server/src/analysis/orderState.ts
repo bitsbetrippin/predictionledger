@@ -97,6 +97,19 @@ export const TERMINAL_INTENT_STATES: IntentState[] = ["filled", "partially_fille
 /** Intent states that hold risk capacity or an entry opportunity open. */
 export const LIVE_INTENT_STATES: IntentState[] = ["reserved", "submitting", "acknowledged", "submission_unknown"];
 
+/**
+ * Signed YES-contract quantity an order's fills add to the account position (2.0, RV-08): BUY_LONG +q, SELL_LONG −q,
+ * BUY_SHORT −q, SELL_SHORT +q. Orders the app places are always buys; orders placed on the website may be sells.
+ */
+export function signedFilledQuantity(intentRaw: string | undefined, side: "yes" | "no" | undefined, filled: string): Dec {
+  const q = D(filled);
+  const sell = !!intentRaw && /SELL/i.test(intentRaw);
+  const s = side ?? sideOfIntent(intentRaw);
+  if (!s) return Dec.ZERO;
+  const long = s === "yes";
+  return long === !sell ? q : q.neg();
+}
+
 /** Chosen-side cost of a fill at a YES price. */
 export function chosenCostOf(side: "yes" | "no", yesPrice: string): string {
   return side === "yes" ? D(yesPrice).toString() : Dec.ONE.sub(yesPrice).toString();

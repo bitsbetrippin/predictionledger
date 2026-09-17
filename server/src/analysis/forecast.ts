@@ -252,7 +252,8 @@ export interface EvaluationReport {
 }
 
 export function evaluateForecasts(records: EvaluationRecord[], thresholds: QualificationThresholds = DEFAULT_QUALIFICATION): EvaluationReport {
-  const settled = records.filter((r) => r.outcome === 0 || r.outcome === 1);
+  // Only records with a finite probability and an official binary outcome are scored (F04/F07); the rest are counted as skipped.
+  const settled = records.filter((r) => (r.outcome === 0 || r.outcome === 1) && Number.isFinite(r.pYes));
   const events = settled.length;
   const groups = new Set(settled.map((r, i) => r.groupKey ?? `#${i}`)).size;
   const brier = events ? settled.reduce((s, r) => s + (r.pYes - r.outcome!) ** 2, 0) / events : undefined;
@@ -278,7 +279,9 @@ export function evaluateForecasts(records: EvaluationRecord[], thresholds: Quali
     if (typeof r.independentClusters === "number") minClusters = Math.min(minClusters, r.independentClusters);
   }
   const reasons: string[] = [];
-  if (events < thresholds.minEvents) reasons.push(`${events} settled events < ${thresholds.minEvents} required`);
+  // FOR-06: the threshold counts DISTINCT settled events (correlated decisions on one event count once), not decisions
+  // (2.0: found by the O07 harness, where 118 decisions covered 28 events).
+  if (groups < thresholds.minEvents) reasons.push(`${groups} distinct settled events${groups !== events ? ` (${events} settled decisions)` : ""} < ${thresholds.minEvents} required`);
   if (brier === undefined) reasons.push("no Brier score (no settled events)");
   else if (baselineBrier === undefined) reasons.push("market baseline Brier unavailable for every event (a price at decision time is required)");
   else if (brier > baselineBrier) reasons.push(`Brier ${brier.toFixed(4)} worse than the market baseline ${baselineBrier.toFixed(4)}`);

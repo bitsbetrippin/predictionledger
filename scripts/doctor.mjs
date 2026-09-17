@@ -59,6 +59,18 @@ if (fs.existsSync(path.join(dataDir, "prediction-ledger.db"))) {
   const st = fs.statSync(path.join(dataDir, "prediction-ledger.db"));
   say("Database", `${(st.size / 1024).toFixed(0)} KB, modified ${st.mtime.toISOString().slice(0, 19)}`);
   say("secret.key", exists(path.join(dataDir, "secret.key")));
+  // 2.0 (OPS-01 / O01): verify the key file's protection from the platform's own ACL, never inferred from a POSIX mode.
+  const keyFile = path.join(dataDir, "secret.key");
+  if (fs.existsSync(keyFile)) {
+    const aclModule = path.join(root, "server", "dist", "security", "keyFileAcl.js");
+    if (fs.existsSync(aclModule)) {
+      const { checkKeyFileProtection } = await import(aclModule);
+      const r = checkKeyFileProtection(keyFile);
+      say("secret.key protection", `${r.ok ? "OK" : "OPEN"} — ${r.method}: ${r.detail}${r.fix ? `  ← fix: ${r.fix}` : ""}`);
+    } else {
+      say("secret.key protection", "not checked (build the server first: npm run build)");
+    }
+  }
   say("tools/yt-dlp", exists(path.join(dataDir, "tools", process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp")));
   const models = path.join(dataDir, "models");
   say("models/", fs.existsSync(models) ? fs.readdirSync(models).join(", ") || "(empty)" : "none");

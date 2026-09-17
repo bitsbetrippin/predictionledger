@@ -85,7 +85,9 @@ export interface DecisionInput {
   mode: TradingMode;
   offline: boolean;
   limits: RiskLimits;
-  forecast?: { id: string; pYes: string; pNo: string; asOf: string; status: ForecastStatus; expiresAt?: string };
+  forecast?: { id: string; pYes: string; pNo: string; asOf: string; status: ForecastStatus; expiresAt?: string; strategyVersion?: string; category?: string };
+  /** 2.0 (RV-01): the automation authorization's scope; an auto-live decision must fall inside it (AUTO-01). */
+  authorization?: { strategyVersion?: string; category?: string };
   verification?: { id: string; version: number; status: ContractVerificationStatus; staleAt?: string; cutoffAt?: string; cutoffUnknown: boolean; rulesHash?: string; sideId?: string };
   contract: {
     venue: MarketProviderId;
@@ -164,6 +166,12 @@ export function dailyBucket(now: string, timezone: string): string {
   }
 }
 
+/**
+ * Tolerance for an input stamped slightly *after* `now` (a book fetched in the same call, an NTP step): anything
+ * further in the future is not fresh (2.0, RV-03). Inputs older than the limit are stale as before.
+ */
+export const CLOCK_SKEW_TOLERANCE_MS = 2_000;
+
 export function decide(input: DecisionInput): DecisionResult {
   const gates: DecisionGate[] = [];
   const codes: string[] = [];
@@ -212,21 +220,27 @@ export function decide(input: DecisionInput): DecisionResult {
   const expiredByStamp = !!f?.expiresAt && nowMs > ms(f.expiresAt)!;
   const fStatus: ForecastStatus | undefined = f ? (f.status === "insufficient_data" ? "insufficient_data" : expiredByStamp ? "expired" : f.status) : undefined;
   gate("forecast_status", "Forecast usable (not insufficient / expired)", fStatus === "experimental" || fStatus === "qualified", fStatus ?? "none", fStatus === "insufficient_data" ? "FORECAST_INSUFFICIENT" : fStatus === "expired" ? "FORECAST_EXPIRED" : "FORECAST_MISSING");
-  const fresh = fAsOf !== undefined && ages.forecastMs! <= L.forecastMaxAgeMs && ages.forecastMs! >= 0;
+  const fresh = fAsOf !== undefined && ages.forecastMs! <= L.forecastMaxAgeMs && ages.forecastMs! >= -CLOCK_SKEW_TOLERANCE_MS;
   gate("forecast_fresh", `Forecast age ≤ ${L.forecastMaxAgeMs / 60_000} min`, fresh, fAsOf === undefined ? "no forecast instant" : `${ages.forecastMs} ms old`, "FORECAST_STALE");
-  if (input.mode === "auto_live") gate("strategy_qualified", "Strategy qualified for automation", fStatus === "qualified", fStatus === "qualified" ? "qualified" : `forecast is ${fStatus ?? "absent"}; auto-live accepts only a qualified strategy`, "STRATEGY_NOT_QUALIFIED");
+  if (input.mode === "auto_live") {
+    gate("strategy_qualified", "Strategy qualified for automation", fStatus === "qualified", fStatus === "qualified" ? "qualified" : `forecast is ${fStatus ?? "absent"}; auto-live accepts only a qualified strategy`, "STRATEGY_NOT_QUALIFIED");
+    // RV-01: the owner armed one (strategy version, category) pair; a qualified forecast outside that pair is not authorized.
+    const a = input.authorization;
+    const inScope = !!a && !!f && !!a.strategyVersion && !!a.category && f.strategyVersion === a.strategyVersion && f.category === a.category;
+    gate("authorized_scope", "Forecast inside the armed strategy/category scope", inScope, !a || !a.strategyVersion || !a.category ? "no automation authorization scope" : !f ? "no forecast" : inScope ? `${a.strategyVersion} / ${a.category}` : `forecast is ${f.strategyVersion ?? "?"} / ${f.category ?? "?"}, armed for ${a.strategyVersion} / ${a.category}`, "AUTHORIZATION_SCOPE");
+  }
 
   // ---- book ----
   const bookAt = ms(input.book?.retrievedAt);
   if (bookAt !== undefined) ages.bookMs = nowMs - bookAt;
-  gate("book_fresh", `Order book age ≤ ${L.bookMaxAgeMs / 1000} s`, bookAt !== undefined && ages.bookMs! <= L.bookMaxAgeMs && ages.bookMs! >= 0, bookAt === undefined ? "no book" : `${ages.bookMs} ms old`, bookAt === undefined ? "BOOK_MISSING" : "BOOK_STALE");
+  gate("book_fresh", `Order book age ≤ ${L.bookMaxAgeMs / 1000} s`, bookAt !== undefined && ages.bookMs! <= L.bookMaxAgeMs && ages.bookMs! >= -CLOCK_SKEW_TOLERANCE_MS, bookAt === undefined ? "no book" : `${ages.bookMs} ms old`, bookAt === undefined ? "BOOK_MISSING" : "BOOK_STALE");
 
   // ---- account ----
   const acct = input.account;
   if (acct) {
     const syncAt = ms(acct.syncAt);
     if (syncAt !== undefined) ages.syncMs = nowMs - syncAt;
-    gate("sync_fresh", `Account sync age ≤ ${L.syncMaxAgeMs / 1000} s`, syncAt !== undefined && ages.syncMs! <= L.syncMaxAgeMs && ages.syncMs! >= 0, syncAt === undefined ? "never synced" : `${ages.syncMs} ms old`, syncAt === undefined ? "SYNC_MISSING" : "SYNC_STALE");
+    gate("sync_fresh", `Account sync age ≤ ${L.syncMaxAgeMs / 1000} s`, syncAt !== undefined && ages.syncMs! <= L.syncMaxAgeMs && ages.syncMs! >= -CLOCK_SKEW_TOLERANCE_MS, syncAt === undefined ? "never synced" : `${ages.syncMs} ms old`, syncAt === undefined ? "SYNC_MISSING" : "SYNC_STALE");
     gate("sync_complete", "Account snapshot complete", acct.complete, acct.complete ? "every page read" : "positions/orders not fully paged; absence cannot be inferred", "SYNC_INCOMPLETE");
   } else {
     const paperOk = input.mode === "paper" && !!input.paperBuyingPower;
@@ -338,6 +352,7 @@ export function decisionInputsRecord(input: DecisionInput, result: DecisionResul
     offline: input.offline,
     limits: input.limits,
     forecast: input.forecast,
+    authorization: input.authorization,
     verification: input.verification,
     contract: input.contract,
     book: input.book ? { retrievedAt: input.book.retrievedAt, bids: input.book.bids.slice(0, 5), asks: input.book.asks.slice(0, 5) } : undefined,

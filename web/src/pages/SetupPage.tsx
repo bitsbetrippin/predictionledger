@@ -9,7 +9,7 @@
  * sends an empty string, which deletes it.
  */
 import { useEffect, useState } from "react";
-import type { AnalysisStage, AppSettings, JobSummary, LlmProviderId, MediaStatus, ModelInfo, ProviderTestResult, ToolsStatus } from "@prediction-ledger/shared";
+import type { AnalysisStage, AppSettings, HealthResponse, JobSummary, LlmProviderId, MediaStatus, ModelInfo, ProviderTestResult, ToolsStatus } from "@prediction-ledger/shared";
 import { api, backups, content, media, pollJob, toPayload, youtube, type BackupInfo, type SecretUpdates } from "../api";
 import { PolymarketUsCard } from "../components/PolymarketUsCard";
 import { TradingLimitsCard } from "../components/TradingLimitsCard";
@@ -62,7 +62,8 @@ export function SetupPage() {
   const [backupList, setBackupList] = useState<BackupInfo[] | null>(null);
   const [backupMsg, setBackupMsg] = useState<string | null>(null);
   const loadBackups = () => backups.list().then(setBackupList).catch(() => setBackupList(null));
-  useEffect(() => { void loadBackups(); }, []);
+  const [keyFile, setKeyFile] = useState<HealthResponse["keyFileProtection"] | null>(null);
+  useEffect(() => { void loadBackups(); api.health().then((h) => setKeyFile(h.keyFileProtection ?? null)).catch(() => undefined); }, []);
   const backupNow = async () => {
     setBackupMsg(null);
     try {
@@ -439,8 +440,13 @@ export function SetupPage() {
         <p className="muted">Writes a consistent copy of the database (videos, transcripts, predictions, plans, evidence, verdicts, settings) and the secret key into the data directory's <code>backups/</code> folder while the app runs. Media files are not included — they can be re-imported. To restore: stop Prediction Ledger, copy the <code>.db</code> over <code>prediction-ledger.db</code> (and the <code>.secret.key</code> over <code>secret.key</code>), start again.</p>
         <div className="row">
           <button type="button" onClick={backupNow}>Back up now</button>
-          <small className="muted">Also: <code>npm run backup</code> from a terminal. Backups are also taken automatically before every database migration.</small>
+          <small className="muted">Also: <code>npm run backup</code> from a terminal. Backups are also taken automatically before every database migration (2.0: those copies are scrubbed of trading credentials and live authorization, like manual backups). Rehearse an upgrade on a copy first: <code>npm run upgrade:rehearse -- &lt;path-to-prediction-ledger.db&gt;</code>.</small>
         </div>
+        {keyFile && (
+          <p className={`small ${keyFile.ok ? "muted" : "error"}`}>
+            Secret key file protection ({keyFile.method === "icacls" ? "Windows ACL" : keyFile.method === "posix_mode" ? "file mode" : "not verified"}): {keyFile.ok ? "restricted to your account" : "NOT restricted"} — {keyFile.detail}{keyFile.fix ? <> · fix: <code>{keyFile.fix}</code></> : null}
+          </p>
+        )}
         {backupMsg && <div className="banner" role="status">{backupMsg}</div>}
         {backupList && backupList.length > 0 && (
           <div className="table-wrap">

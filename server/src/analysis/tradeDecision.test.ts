@@ -125,6 +125,11 @@ test("R05 — exact freshness boundaries: book 10 s vs 10.001 s; sync 30 s vs 30
   assert.ok(codes(at(10_000, 30_000, 1_800_001)).includes("FORECAST_STALE"));
   assert.equal(at(10_001, 30_001, 1_800_001).outcome, "skipped");
   assert.ok(codes(at(-5_000, 30_000, 1_800_000)).includes("BOOK_STALE"), "a book from the future is not fresh either");
+  // RV-03 (2.0): an input stamped a few hundred milliseconds after `now` (fetched in the same call) is fresh; beyond the tolerance it is not.
+  assert.equal(at(-300, -250, -100).outcome, "eligible", "book/sync/forecast up to 2 s ahead of now are inside the clock-skew tolerance");
+  assert.equal(at(-2_000, 30_000, 1_800_000).outcome, "eligible");
+  assert.ok(codes(at(-2_001, 30_000, 1_800_000)).includes("BOOK_STALE"));
+  assert.ok(codes(at(10_000, -2_001, 1_800_000)).includes("SYNC_STALE"));
 });
 
 test("R06 — cutoff: 12:54:59.999 is pre-cutoff; 12:55:00 and 12:55:00.001 block even with the market open; DST-equivalent instants agree; unknown cutoff blocks", () => {
@@ -155,7 +160,12 @@ test("contract, forecast and mode gates: unverified / stale / changed rules / cl
   assert.ok(codes(decide(f0({ forecast: { ...f0().forecast!, pYes: "1.2", pNo: "-0.2" } }))).includes("FORECAST_INVALID"));
   assert.ok(codes(decide(f0({ forecast: undefined }))).includes("FORECAST_MISSING"));
   assert.ok(codes(decide(f0({ mode: "auto_live" }))).includes("STRATEGY_NOT_QUALIFIED"), "an experimental forecast never drives automation");
-  assert.equal(decide(f0({ mode: "auto_live", forecast: { ...f0().forecast!, status: "qualified" } })).outcome, "eligible");
+  // RV-01 (2.0): a qualified forecast is not enough — it must fall inside the armed (strategy version, category) scope.
+  const qualified = { ...f0().forecast!, status: "qualified" as const, strategyVersion: "baseline-v1", category: "sports" };
+  assert.ok(codes(decide(f0({ mode: "auto_live", forecast: qualified }))).includes("AUTHORIZATION_SCOPE"), "no authorization scope → not eligible");
+  assert.ok(codes(decide(f0({ mode: "auto_live", forecast: qualified, authorization: { strategyVersion: "baseline-v1", category: "politics" } }))).includes("AUTHORIZATION_SCOPE"), "armed for another category → not eligible");
+  assert.ok(codes(decide(f0({ mode: "auto_live", forecast: qualified, authorization: { strategyVersion: "baseline-v2", category: "sports" } }))).includes("AUTHORIZATION_SCOPE"), "armed for another strategy version → not eligible");
+  assert.equal(decide(f0({ mode: "auto_live", forecast: qualified, authorization: { strategyVersion: "baseline-v1", category: "sports" } })).outcome, "eligible", "inside the armed scope → eligible");
   assert.equal(decide(f0({ mode: "manual_live" })).outcome, "needs_review", "manual mode: a human confirms");
   assert.ok(codes(decide(f0({ contract: { ...f0().contract, tickSize: undefined } }))).includes("CONSTRAINTS_UNSUPPORTED"));
   assert.ok(codes(decide(f0({ account: { syncAt: NOW, complete: false, buyingPower: "100", positions: [], openOrders: [] } }))).includes("SYNC_INCOMPLETE"));

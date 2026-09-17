@@ -120,6 +120,26 @@ Provider calls made by every job now go through a resilience wrapper: 120 s per-
 
 Settings gain `sports: { enabled, trackSpreads }`.
 
+## Release 2.0 — reports, health, review fixes
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/trading/reports/soak?from=&to=&format=md` | O07 paper-soak report (JSON, or markdown with `format=md`): thresholds (7 days, ≥ 100 evaluations, ≥ 10 events, 0 duplicate entries, 0 cap breaches, every intent explained), faults, abstention, paper P&L; `verdict` complete / incomplete with `shortfalls`. Read-only. |
+| GET | `/api/trading/reports/qualification?category=sports&strategyVersion=&asOf=&format=md` | FOR-06/07 report: distinct settled events, chronology and held-out rule, Brier vs market baseline, calibration bins with counts, coverage, fee-adjusted paper return, drawdown, per-creator observations, gate reasons, production record; `status` qualified / pending / failed and `eventsNeeded`. Never writes a record. |
+| POST | `/api/forecasts/evaluation/record` | `{ category, strategyVersion?, acknowledge: "I am recording a production evaluation over real settled events" }` (`.strict()`): the deliberate owner action that writes a **production** evaluation record with the gate's verdict (a failed record revokes an earlier pass, RV-11); audited (`qualification.recorded`); answers `201` with the evaluation and the qualification report. Arms nothing. |
+| GET | `/api/health` | gains `keyFileProtection { method: icacls | posix_mode | unavailable, ok, detail, fix? }` — the secret key file's protection as verified at startup (OPS-01). |
+
+Behaviour changes on existing routes (from the 2.0 review; see docs/VERIFICATION.md):
+- `POST /api/trading/decisions` in auto-live mode and every preview/submit re-decision apply the `authorized_scope` gate (`AUTHORIZATION_SCOPE`): the forecast's strategy version and category must equal the armed pair.
+- `POST /api/trading/decisions/:id/preview` accepts nothing new; the preview's `display.origin` is `owner` (manual indicator). The scheduler previews with `origin: scheduler` (automatic indicator).
+- `POST /api/trading/decisions/:id/submit`: a venue `429` now ends in `submission_unknown` (held, never resent) instead of `rejected_local`; a marker that no longer moves the row answers `409 dispatch_blocked` ("no longer reserved").
+- `POST /api/trading/intents/:id/resolve-unknown { venueOrderId }` refuses `409 order_mismatch` (other contract / side / quantity) and `409 order_side_unknown` (read the order back first).
+- `POST /api/trading/emergency-stop` waits up to 25 s for a POST already in flight before its cancel sweep.
+- Reconciliation may open a `discrepancy` hold with subject `settlement:<activityId>` when the venue's realized amount contradicts the app's reading of a resolution (contested settlement).
+- Decision / preview / submit take their instant after fetching the book and account state; a book stamped up to 2 s after that instant is fresh.
+
+CLI (read-only): `npm run report:soak [-- --from … --to … --json --out file]`, `npm run report:qualification [-- --category … --strategy … --as-of … --json --out file]`, `npm run upgrade:rehearse -- <db> [--interrupt-after n] [--keep]`.
+
 ## Release 1.14 — automatic execution behind arming, pause / emergency stop, alerts, the Trades ledger
 
 All mutations: CSRF header + same origin; bodies `.strict()`. **Mode gates apply here exactly as in the UI.**

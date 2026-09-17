@@ -14,6 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Database } from "./index.js";
+import { scrubTradingFromCopy } from "../services/backup.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -57,7 +58,17 @@ function loadMigrations(): MigrationFile[] {
  * to `<backupDir>/<timestamp>-pre-<version>.db` first (RT-04). Callers pass the file path
  * only for on-disk databases (never for ":memory:").
  */
-export function runMigrations(db: Database, backup?: { databasePath: string; backupDir: string }): number {
+export interface MigrationOptions {
+  /** Stop after this version (rehearsals build an older schema on purpose). */
+  upTo?: number;
+  /** Called after each applied migration — a rehearsal can throw here to simulate an interrupted upgrade (O05). */
+  afterEach?: (version: number) => void;
+  /** Receives log lines instead of the console. */
+  log?: (line: string) => void;
+}
+
+export function runMigrations(db: Database, backup?: { databasePath: string; backupDir: string }, opts: MigrationOptions = {}): number {
+  const log = opts.log ?? ((line: string) => { console.log(line); });
   db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
     version INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
@@ -67,7 +78,7 @@ export function runMigrations(db: Database, backup?: { databasePath: string; bac
   const applied = new Set(db.all<{ version: number }>("SELECT version FROM schema_migrations").map((r) => r.version));
   let current = applied.size ? Math.max(...applied) : 0;
   const migrations = loadMigrations();
-  const pending = migrations.filter((m) => !applied.has(m.version));
+  const pending = migrations.filter((m) => !applied.has(m.version) && (opts.upTo === undefined || m.version <= opts.upTo));
 
   if (backup && pending.length > 0 && current > 0 && fs.existsSync(backup.databasePath)) {
     fs.mkdirSync(backup.backupDir, { recursive: true });
@@ -76,8 +87,10 @@ export function runMigrations(db: Database, backup?: { databasePath: string; bac
     // Checkpoint WAL so the copy is a complete, consistent snapshot.
     db.exec("PRAGMA wal_checkpoint(TRUNCATE);");
     fs.copyFileSync(backup.databasePath, target);
-    // eslint-disable-next-line no-console
-    console.log(`[db] backup written before migration: ${target}`);
+    // 2.0 (RV-07 / OPS-02): a pre-migration backup is a portable copy like any other — trading credentials and the live
+    // authorization are scrubbed from the COPY (the live database is untouched); restoring it requires rebind + re-arm.
+    try { scrubTradingFromCopy(target); } catch (err) { log(`[db] warning: could not scrub trading material from the pre-migration backup: ${(err as Error).message}`); }
+    log(`[db] backup written before migration: ${target} (trading credentials and live authorization scrubbed)`);
   }
 
   for (const m of pending) {
@@ -86,8 +99,8 @@ export function runMigrations(db: Database, backup?: { databasePath: string; bac
       db.run("INSERT INTO schema_migrations (version, name) VALUES (?, ?)", m.version, m.name);
     });
     current = m.version;
-    // eslint-disable-next-line no-console
-    console.log(`[db] applied migration ${String(m.version).padStart(3, "0")}_${m.name}`);
+    log(`[db] applied migration ${String(m.version).padStart(3, "0")}_${m.name}`);
+    opts.afterEach?.(m.version);
   }
   return current;
 }

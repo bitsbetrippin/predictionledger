@@ -99,6 +99,11 @@ async function main(): Promise<void> {
   ctx.jobs.start();
   startMarketRefresh(ctx);
   startSubscriptionPolling(ctx);
+  {
+    const k = ctx.secrets.keyFileProtection;
+    if (k.ok) console.log(`[secrets] key file protection verified (${k.method}: ${k.detail})`);
+    else console.log(`[secrets] WARNING: the secret key file is not restricted to your account (${k.method}: ${k.detail}).${k.fix ? ` Fix: ${k.fix}` : ""}`);
+  }
   const stopExecution = startExecutionLoop(ctx);
   // 1.14: the execution scheduler runs on its own timer, never inside the job queue; it sends only under an arming.
   ctx.autoTrader.start();
@@ -128,11 +133,20 @@ async function main(): Promise<void> {
  */
 function startExecutionLoop(ctx: AppContext): () => void {
   const LEASE_TTL_MS = 60_000;
-  const held = ctx.lease.acquire(LEASE_TTL_MS);
+  let held = ctx.lease.acquire(LEASE_TTL_MS);
   if (!held) console.log("[execution] dispatch lease is held by another process on this data directory; this instance will not send live orders");
-  const recovered = ctx.execution.recoverAfterCrash();
-  if (recovered.expired.length || recovered.unknown.length) console.log(`[execution] recovery: ${recovered.expired.length} unsent intent(s) expired, ${recovered.unknown.length} marked submission_unknown (reconcile before trading)`);
-  const heartbeat = setInterval(() => { ctx.lease.acquire(LEASE_TTL_MS); }, LEASE_TTL_MS / 3);
+  // RV-02 (2.0): crash recovery touches `reserved` / `submitting` intents, so it runs only in the process that holds the
+  // dispatch lease — a second process must never expire or mark unknown a submission the first one still has in flight.
+  // If the lease is acquired later (the other process died), recovery runs once at that moment.
+  let recoveredOnce = false;
+  const recover = () => {
+    if (recoveredOnce) return;
+    recoveredOnce = true;
+    const recovered = ctx.execution.recoverAfterCrash();
+    if (recovered.expired.length || recovered.unknown.length) console.log(`[execution] recovery: ${recovered.expired.length} unsent intent(s) expired, ${recovered.unknown.length} marked submission_unknown (reconcile before trading)`);
+  };
+  if (held) recover(); else console.log("[execution] crash recovery deferred until this process holds the dispatch lease");
+  const heartbeat = setInterval(() => { held = ctx.lease.acquire(LEASE_TTL_MS); if (held) recover(); }, LEASE_TTL_MS / 3);
   heartbeat.unref();
   let reconciling = false;
   const tick = async (force: boolean) => {

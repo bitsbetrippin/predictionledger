@@ -470,6 +470,21 @@ The 1.0 backlog split in two: 0.6 is everything that could be built and verified
 | **1.13 capped smoke test** (SETUP §4.14) and **1.14 owner acceptance** (SETUP §4.15) | EXE / AUTO | owner | **pending — mandatory before "accepted"** |
 | Live-broadcast ingestion, ACL script, upgrade rehearsal on real data, multi-account | 2.0 | — | — |
 
+## 10f. Release 2.0.0-rc.1 — Review fixes, drills, reports, requirement audit (delivered as RC; owner evidence pending)
+
+| Item | Req. | Agent | Done |
+|---|---|---|---|
+| Code review of the 1.13/1.14 execution path (wrong side/price, unauthorized send, duplicates, ambiguous recovery, overspending, leakage, rationale, fills/settlement, migration/restore); 14 findings fixed on the production path with regressions (`review20.test.ts`) | EXE, AUTO, RSK, OPS | AG-15, AG-05, AG-14 | ✓ (2 × P1, 12 × P2; 0 open) |
+| Upgrade rehearsal service + CLI (`npm run upgrade:rehearse`), `runMigrations` options, authentic 1.9.0 fixture, O05 test (interrupted + rerun, byte-level inventory, isolation, disarmed, scrubbed pre-migration backup, drill on upgraded data) | OPS-05, OPS-02 | AG-11, AG-14 | ✓ |
+| Key-file protection: Windows ACL applied and verified by parsing `icacls`, POSIX mode verified; health/doctor/Setup reporting; O01 parser tests | OPS-01, ACC-04 | AG-08, AG-15 | ✓ (Windows run pending owner) |
+| Reports: paper soak (O07 thresholds, faults, abstention, P&L) and qualification (distinct settled events, chronology, Brier vs baseline, calibration, coverage, creators, paper return, drawdown, gate; qualified / pending / failed); routes, CLI, Setup links; FOR-06 distinct-event fix | FOR-06/07, AUTO-05 | AG-05, AG-14 | ✓ |
+| Soak harness rehearsal (compressed seven days, outage / 429 / sleep / restart) + attached synthetic reports under docs/reports | O07 | AG-14 | ✓ (harness) |
+| Requirement audit: every ID in 02 → tests + owner evidence (VERIFICATION); ADR-036; README/CHANGELOG/SETUP §4.16/API/ARCHITECTURE §6.6/PREDICTION_MARKETS | — | AG-02, AG-16 | ✓ |
+| Tests: 23 new (193/193 in the sandbox); typechecks clean | 03 §2.0 | AG-14 | ✓ |
+| Windows install / typecheck / build / test on real content; `npm run doctor` ACL OK; upgrade rehearsal on the owner's real 1.9 data; restore drill | O01, O05, O06 | owner | **pending** |
+| Capped smoke test (§4.14), automation acceptance (§4.15), real seven-day soak + report (§4.16), first real settlement | EXE, AUTO, O07 | owner | **pending — mandatory before 2.0.0** |
+| **Production qualification** (≥ 100 distinct settled real events with a market baseline) | FOR-06 / AUTO-01 | owner / data | **unmet — not waived; automation unavailable** |
+
 ## 11. Working agreements
 
 - **Small end-to-end increments.** Each release is usable on its own; nothing is merged that leaves the dashboard in a half-state.

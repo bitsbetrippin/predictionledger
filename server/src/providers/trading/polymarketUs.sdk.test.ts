@@ -94,7 +94,7 @@ test("pinned SDK — the real polymarket-us client posts the adapter's order bod
   assert.equal(await classify({ status: 400, json: { message: "ORD_REJECT_REASON_INVALID_PRICE_INCREMENT" } }), "not_created:bad_request");
   assert.equal(await classify({ status: 401, json: { message: "invalid signature" } }), "not_created:unauthorized");
   assert.equal(await classify({ status: 403, json: { message: "trading restricted" } }), "not_created:forbidden");
-  assert.equal(await classify({ status: 429, json: { message: "rate limited" } }), "not_created:rate_limited");
+  assert.equal(await classify({ status: 429, json: { message: "rate limited" } }), "ambiguous:rate_limited", "2.0 (RV-12): a 429 does not prove nothing was created — held for the owner, never resent");
 
   // 4. Reads used by reconciliation: GET /v1/order/{id} and GET /v1/portfolio/activities normalise to decimal strings.
   const reads = await withFetch([{ status: 200, json: load("order-partial-canceled.json") }, { status: 200, json: load("activities.json") }], async () => {

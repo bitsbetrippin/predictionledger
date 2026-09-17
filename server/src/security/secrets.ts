@@ -24,6 +24,7 @@
 
 import crypto from "node:crypto";
 import fs from "node:fs";
+import { applyKeyFileProtection, checkKeyFileProtection, type AclReport } from "./keyFileAcl.js";
 import type { Database } from "../db/index.js";
 
 const ALGO = "aes-256-gcm";
@@ -49,12 +50,18 @@ export interface SecretVault {
 
 export class SecretStore {
   private readonly key: Buffer;
+  /** 2.0 (OPS-01): how the key file is protected on this platform, verified (not inferred) at startup. */
+  readonly keyFileProtection: AclReport;
 
   constructor(
     private readonly db: Database,
     keyFilePath: string,
   ) {
+    const created = !fs.existsSync(keyFilePath);
     this.key = loadOrCreateKey(keyFilePath);
+    // A fresh key gets the explicit ACL / mode; an existing one is verified and tightened if it is too open.
+    const check = created ? applyKeyFileProtection(keyFilePath) : checkKeyFileProtection(keyFilePath);
+    this.keyFileProtection = check.ok || check.method === "unavailable" ? check : applyKeyFileProtection(keyFilePath);
   }
 
   private guard(name: string): void {

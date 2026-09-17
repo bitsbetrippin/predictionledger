@@ -42,6 +42,7 @@ import { ExecutionService, type FaultInjector } from "./services/execution.js";
 import { TradingAlertService } from "./services/tradingAlerts.js";
 import { TradeLedgerService } from "./services/ledger.js";
 import { AutoTraderService } from "./services/autoTrader.js";
+import { ReportService } from "./services/reports.js";
 import { createTradingAdapter } from "./providers/trading/registry.js";
 import { GuardedFetcher, type SourceFetcher } from "./research/fetcher.js";
 import { makeAudioExtractHandler, makeModelDownloadHandler, makeTranscribeHandler } from "./jobs/handlers/media.js";
@@ -90,6 +91,8 @@ export interface AppContext {
   tradingAlerts: TradingAlertService;
   ledger: TradeLedgerService;
   autoTrader: AutoTraderService;
+  /** 2.0: the paper-soak (O07) and qualification (FOR-06/07) reports, derived read-only. */
+  reports: ReportService;
   fetcher: SourceFetcher;
   /** Builds the transcription engine selected in Setup (or a test override). */
   transcription: () => TranscriptionProvider;
@@ -136,6 +139,7 @@ export function createContext(overrides: Partial<Pick<AppContext, "fetcher" | "t
     tradingAlerts: undefined as unknown as TradingAlertService,
     ledger: undefined as unknown as TradeLedgerService,
     autoTrader: undefined as unknown as AutoTraderService,
+    reports: undefined as unknown as ReportService,
     fetcher: overrides.fetcher ?? new GuardedFetcher(),
     transcription:
       overrides.transcription ??
@@ -155,6 +159,7 @@ export function createContext(overrides: Partial<Pick<AppContext, "fetcher" | "t
   ctx.tradingAlerts = new TradingAlertService(db, overrides.now, (text) => ctx.trading.redact(text));
   ctx.ledger = new TradeLedgerService(ctx, overrides.now);
   ctx.autoTrader = new AutoTraderService(ctx, { now: overrides.now });
+  ctx.reports = new ReportService(ctx, overrides.now);
   ctx.trading.onBreakerOpened = (state, code) => ctx.tradingAlerts.raise("circuit_breaker", `circuit_breaker:${state.incidentId ?? state.openedAt}`, `Circuit breaker opened after ${state.consecutiveFailures} consecutive adapter failures (${code ?? "unknown"}). New orders stop; reads and cancels keep working; nothing re-arms by itself.`, { details: { code, failures: state.consecutiveFailures } });
   ctx.trading.onDisarmed = (reason, previousMode) => ctx.tradingAlerts.raise("disarmed", `disarmed:${reason}:${previousMode}`, `Trading disarmed (was ${previousMode}): ${reason}. Reconcile, then re-arm deliberately.`, { severity: "warning", details: { reason, previousMode } });
 

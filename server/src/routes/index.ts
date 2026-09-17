@@ -49,6 +49,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     dataDir: ctx.paths.root,
     schemaVersion: ctx.schemaVersion,
     uptimeSeconds: Math.round(process.uptime()),
+    keyFileProtection: { method: ctx.secrets.keyFileProtection.method, ok: ctx.secrets.keyFileProtection.ok, detail: ctx.secrets.keyFileProtection.detail, fix: ctx.secrets.keyFileProtection.fix },
   }));
 
   // ---- Settings -----------------------------------------------------------

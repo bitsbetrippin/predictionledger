@@ -109,7 +109,8 @@ export class AutoTraderService {
         if (policy.mode === "auto_live") { const g = this.liveEnabled(); if (!g.ok) { run.notes.push(`stopped mid-tick: ${g.reasons.join("; ")}`); this.record(run, c, "skipped", "stopped_mid_tick"); skip("stopped_mid_tick"); break; } }
         let decisionId: string | undefined;
         try {
-          const d = await this.ctx.decisions.evaluate({ predictionId: c.predictionId, linkId: c.link.id, now: startedAt });
+          // RV-03: the decision takes its own instant after fetching the book (a pinned tick clock is only for tests).
+          const d = await this.ctx.decisions.evaluate({ predictionId: c.predictionId, linkId: c.link.id, now: opts.now });
           decisionId = d.id;
           run.evaluated++;
           const capHit = d.reasonCodes.find((code) => CAP_CODES.has(code));
@@ -117,7 +118,7 @@ export class AutoTraderService {
           if (d.outcome !== "eligible") { this.record(run, c, "evaluated", `${d.outcome}:${d.reasonCodes.join(",") || "no_reason"}`, d.id); continue; }
           if (policy.mode !== "auto_live") { this.record(run, c, "evaluated", "paper_dispatched", d.id, d.intentId); continue; }
           if (run.ordered >= a.maxOrdersPerTick) { this.record(run, c, "evaluated", "tick_order_budget", d.id); skip("tick_order_budget"); continue; }
-          const preview = await this.ctx.execution.preview(d.id);
+          const preview = await this.ctx.execution.preview(d.id, { origin: "scheduler" });
           const intent = await this.ctx.execution.submit(preview.id, { decisionHash: d.rationaleHash });
           run.ordered++;
           this.record(run, c, "ordered", intent.state, d.id, intent.id);

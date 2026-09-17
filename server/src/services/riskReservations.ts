@@ -15,6 +15,7 @@ import crypto from "node:crypto";
 import type { MarketProviderId, RiskExposure, RiskReservation } from "@prediction-ledger/shared";
 import type { Database } from "../db/index.js";
 import { D, Dec, dsum } from "../analysis/decimal.js";
+import { dailyBucket as bucketOf } from "../analysis/tradeDecision.js";
 
 interface ReservationRow {
   id: string; decision_id: string; account_key: string; provider: MarketProviderId; venue_market_id: string; event_id: string | null; amount: string; filled_amount: string; daily_bucket: string;
@@ -28,7 +29,7 @@ export class RiskService {
    * What the account has at stake right now (open positions + live reservations), what today's bucket has committed
    * (reserved + filled, released remainders excluded), today's realized loss, and per-market / per-event totals.
    */
-  exposure(accountKey: string, dailyBucket: string, opts: { currency?: string } = {}): RiskExposure & { unreflectedReservations: string; marketsOpen: Set<string> } {
+  exposure(accountKey: string, dailyBucket: string, opts: { currency?: string; timezone?: string } = {}): RiskExposure & { unreflectedReservations: string; marketsOpen: Set<string> } {
     const reserved = this.db.all<ReservationRow>("SELECT * FROM risk_reservations WHERE account_key = ? AND state = 'reserved'", accountKey);
     const positions = accountKey === "paper" ? this.paperPositions() : this.livePositions(accountKey);
     const eventOf = new Map<string, string | undefined>();
@@ -44,10 +45,15 @@ export class RiskService {
     for (const p of positions) { const a = D(p.cost_total).add(p.fees); open = open.add(a); add(perMarket, p.venue_market_id, a); add(perEvent, eventOf.get(p.venue_market_id), a); }
     const bucketRows = this.db.all<ReservationRow>("SELECT * FROM risk_reservations WHERE account_key = ? AND daily_bucket = ?", accountKey, dailyBucket);
     const dailyCommitted = dsum(bucketRows.map((r) => (r.state === "reserved" ? D(r.amount) : D(r.filled_amount))));
-    const lossRows = accountKey === "paper"
-      ? this.db.all<{ pnl: string | null }>("SELECT pnl FROM paper_us_positions WHERE status = 'settled' AND substr(settled_at, 1, 10) = ?", dailyBucket)
+    // RV-06 (2.0): the settlement's day is its observed instant expressed in the BUDGET timezone — the same bucket rule
+    // as commitments — never the UTC date of the stored instant. The candidate window is generous; the bucket decides.
+    const tz = opts.timezone ?? this.db.get<{ budget_timezone: string }>("SELECT budget_timezone FROM trading_policy LIMIT 1")?.budget_timezone ?? "UTC";
+    const dayOf = (instant: string | null) => { try { return instant ? bucketOf(instant, tz) : undefined; } catch { return undefined; } };
+    const lossRows = (accountKey === "paper"
+      ? this.db.all<{ pnl: string | null; at: string | null }>("SELECT pnl, settled_at AS at FROM paper_us_positions WHERE status = 'settled' AND settled_at >= date(?, '-2 days') AND settled_at < date(?, '+2 days')", dailyBucket, dailyBucket)
       // Live (1.13): only official settlements carry a per-intent amount; the day is the settlement's observed day.
-      : this.db.all<{ pnl: string | null }>("SELECT amount AS pnl FROM settlement_events WHERE binding_id = ? AND intent_id IS NOT NULL AND amount IS NOT NULL AND substr(observed_at, 1, 10) = ?", accountKey, dailyBucket);
+      : this.db.all<{ pnl: string | null; at: string | null }>("SELECT amount AS pnl, observed_at AS at FROM settlement_events WHERE binding_id = ? AND intent_id IS NOT NULL AND amount IS NOT NULL AND observed_at >= date(?, '-2 days') AND observed_at < date(?, '+2 days')", accountKey, dailyBucket, dailyBucket)
+    ).filter((r) => dayOf(r.at) === dailyBucket);
     const net = dsum(lossRows.map((r) => D(r.pnl ?? "0")));
     const dailyRealizedLoss = net.isNeg() ? net.neg() : Dec.ZERO;
     const marketsOpen = new Set<string>([...reserved.map((r) => r.venue_market_id), ...positions.map((p) => p.venue_market_id)]);

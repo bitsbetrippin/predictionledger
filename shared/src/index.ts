@@ -264,6 +264,8 @@ export interface HealthResponse {
   /** Schema version applied by the migration runner. */
   schemaVersion: number;
   uptimeSeconds: number;
+  /** 2.0 (OPS-01): the secret key file's protection as verified at startup — a parsed Windows ACL or a POSIX mode. */
+  keyFileProtection?: { method: "icacls" | "posix_mode" | "unavailable"; ok: boolean; detail: string; fix?: string };
 }
 
 /** Header the browser must send on every mutating request (CSRF guard). */
@@ -1914,6 +1916,8 @@ export interface OrderPreviewRecord {
   request: Record<string, unknown>;
   venue?: Record<string, unknown>;
   display: {
+    /** 2.0: who requested the preview — the owner (manual indicator) or the scheduler (automatic indicator). */
+    origin?: "owner" | "scheduler";
     side: "yes" | "no";
     sideLabel?: string;
     pChosen: string;

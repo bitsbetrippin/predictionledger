@@ -1,6 +1,6 @@
 {
   "name": "prediction-ledger",
-  "version": "1.14.0",
+  "version": "2.0.0-rc.1",
   "private": true,
   "description": "Prediction Ledger \u2014 import a video, extract the predictions it makes, generate an inspectable validation plan, research what actually happened, and keep a ledger of the results. Runs entirely on localhost.",
   "license": "Apache-2.0",
@@ -31,7 +31,10 @@
     "markets": "node scripts/markets-probe.mjs",
     "test:trading": "npm run test:trading --workspace server",
     "trading:read-check": "node scripts/polymarket-us-read-check.mjs",
-    "doctor": "node scripts/doctor.mjs"
+    "doctor": "node scripts/doctor.mjs",
+    "upgrade:rehearse": "node scripts/upgrade-rehearsal.mjs",
+    "report:soak": "node scripts/report.mjs soak",
+    "report:qualification": "node scripts/report.mjs qualification"
   },
   "devDependencies": {
     "typescript": "^5.6.0"

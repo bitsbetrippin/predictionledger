@@ -79,7 +79,9 @@ export class TradeDecisionService {
   }
 
   async evaluate(o: EvaluateOptions): Promise<TradeDecision> {
-    const now = o.now ?? this.now().toISOString();
+    // RV-03: when the caller did not pin the instant, the decision's `now` is taken AFTER its asynchronous inputs
+    // (book, forecast build) have been gathered, so a book fetched in this very call is never "from the future".
+    let now = o.now ?? this.now().toISOString();
     const p = this.ctx.predictions.get(o.predictionId);
     if (!p) throw new DecisionError("Prediction not found.", "not_found", 404);
     const link = o.linkId ? this.ctx.markets.getLink(o.linkId) : this.ctx.markets.executableLinks(p.id)[0] ?? this.ctx.markets.linksForPrediction(p.id, false).find((l) => l.status === "accepted" && l.market?.provider === "polymarket_us");
@@ -98,6 +100,7 @@ export class TradeDecisionService {
     if (!book && market.provider === "polymarket_us" && settings.markets.enabled && settings.privacy.allowInternet) {
       try { book = await this.fetchBook(market); } catch { book = undefined; }
     }
+    if (!o.now) now = this.now().toISOString();
     const fee = o.fee ?? this.feeFor(market);
     let forecast = o.reuseForecast === false ? undefined : this.ctx.forecasts.latestUsable(p.id, link.id, now, verification?.id, policy.limits.forecastMaxAgeMs);
     if (!forecast && market.provider === "polymarket_us" && verification) {
@@ -113,7 +116,8 @@ export class TradeDecisionService {
       const paperBook = mode === "paper" ? this.ctx.paperUs.book() : undefined;
       const input: DecisionInput = {
         now, mode, offline: !settings.privacy.allowInternet, limits: policy.limits,
-        forecast: forecast ? { id: forecast.id, pYes: forecast.pYes, pNo: forecast.pNo, asOf: forecast.asOf, status: forecast.status, expiresAt: forecast.expiresAt } : undefined,
+        forecast: forecast ? { id: forecast.id, pYes: forecast.pYes, pNo: forecast.pNo, asOf: forecast.asOf, status: forecast.status, expiresAt: forecast.expiresAt, strategyVersion: forecast.strategyVersion, category: forecast.category } : undefined,
+        authorization: mode === "auto_live" ? { strategyVersion: policy.authorizedStrategyVersion, category: policy.authorizedCategory } : undefined,
         verification: verification ? { id: verification.id, version: verification.version, status: verification.status, staleAt: verification.staleAt, cutoffAt: verification.cutoffAt, cutoffUnknown: verification.cutoffUnknown, rulesHash: verification.rulesHash, sideId: verification.sideId } : undefined,
         contract: { venue: market.provider, venueMarketId: market.venueId, eventId: market.event?.id ?? c?.eventId, status: c?.status, active: market.active, closed: market.closed, tickSize: c?.tickSize, minQuantity: c?.minQuantity, rulesHash: verification?.rulesHash ? rulesHash(market.description) : undefined, sides: (c?.sides ?? []).map((s) => ({ id: s.id, label: s.label, long: s.long, tradable: s.tradable })) },
         book, fee, account, paperBuyingPower: paperBook?.bankroll,

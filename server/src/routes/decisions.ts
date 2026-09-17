@@ -51,6 +51,16 @@ export function registerDecisionRoutes(app: FastifyInstance, ctx: AppContext): v
   });
   // Static path registered before the parametric one (find-my-way prefers static anyway; order keeps simpler routers honest).
   app.get<{ Querystring: { strategy?: string; category?: string } }>("/api/forecasts/evaluation", async (req) => ctx.forecasts.evaluate({ strategyVersion: req.query.strategy, category: req.query.category }));
+  // 2.0 (FOR-06/07): the deliberate owner action that writes a PRODUCTION evaluation record. The record is `qualified`
+  // only when the gate passes on production data; a failed record is written too and revokes an earlier pass (RV-11).
+  // Fixture-sourced evaluations never reach this route. Nothing here arms anything.
+  app.post("/api/forecasts/evaluation/record", async (req, reply) => {
+    const parsed = z.object({ category: z.string().min(1).max(64), strategyVersion: z.string().min(1).max(64).optional(), acknowledge: z.literal("I am recording a production evaluation over real settled events") }).strict().safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", issues: parsed.error.issues });
+    const r = ctx.forecasts.evaluate({ strategyVersion: parsed.data.strategyVersion, category: parsed.data.category, record: true, source: "production" });
+    ctx.trading.audit("qualification.recorded", undefined, { category: parsed.data.category, strategyVersion: r.strategyVersion, events: r.events, groups: r.groups, qualified: r.gate.qualified, reasons: r.gate.reasons });
+    return reply.code(201).send({ ...r, report: ctx.reports.qualification({ category: parsed.data.category, strategyVersion: parsed.data.strategyVersion }) });
+  });
   app.get<{ Params: { id: string } }>("/api/forecasts/:id", async (req, reply) => ctx.forecasts.get(req.params.id) ?? reply.code(404).send({ error: "not_found" }));
   app.get<{ Params: { id: string } }>("/api/predictions/:id/forecasts", async (req) => ctx.forecasts.forPrediction(req.params.id));
 

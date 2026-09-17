@@ -188,8 +188,10 @@ export class PolymarketUsTradingAdapter implements TradingAdapter {
   }
 
   classifySubmitFailure(err: unknown): SubmitFailureClass {
+    // 2.0 (RV-12): a 429 is NOT proof that nothing was created — the venue documents no ordering between throttling and
+    // order creation and offers no idempotency key — so it is treated as ambiguous (held for the owner), never resent.
     const code = err instanceof TradingAdapterError ? err.code : "unknown";
-    return code === "bad_request" || code === "unauthorized" || code === "forbidden" || code === "not_found" || code === "rate_limited" || code === "clock_skew" || code === "host_not_allowed" || code === "sdk_missing" ? "not_created" : "ambiguous";
+    return code === "bad_request" || code === "unauthorized" || code === "forbidden" || code === "not_found" || code === "clock_skew" || code === "host_not_allowed" || code === "sdk_missing" ? "not_created" : "ambiguous";
   }
 
   async getOrder(creds: TradingCredentials, orderId: string, signal?: AbortSignal): Promise<VenueOrder | undefined> {

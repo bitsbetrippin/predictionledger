@@ -1,0 +1,39 @@
+{
+ "schemaVersion": 11,
+ "producedBy": "prediction-ledger 1.9.0 test suites (sandbox, 2026-09-17)",
+ "tables": {
+  "alerts": 4,
+  "assessments": 48,
+  "component_assessments": 19,
+  "evidence_items": 22,
+  "games": 1,
+  "jobs": 36,
+  "market_snapshots": 18,
+  "markets": 7,
+  "paper_marks": 1,
+  "paper_positions": 1,
+  "prediction_components": 69,
+  "prediction_market_links": 42,
+  "prediction_revisions": 5,
+  "predictions": 64,
+  "prompt_templates": 1,
+  "research_runs": 49,
+  "run_results": 18,
+  "schema_migrations": 11,
+  "search_cache": 16,
+  "secrets": 0,
+  "settings": 1,
+  "sources": 8,
+  "transcript_segments": 189,
+  "transcription_chunks": 1,
+  "validation_plans": 42,
+  "videos": 18
+ },
+ "sha256OfSql": "12fb8e12691cb6d39c34da0202c378fb48686092b66795914be7de94c1a07b37",
+ "addedByHand": [
+  "markets: 1 manifold market",
+  "market_snapshots: 1 (for the manifold market)",
+  "prompt_templates: 1 override",
+  "transcription_chunks: 1"
+ ]
+}

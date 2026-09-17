@@ -111,6 +111,18 @@ export function registerAutomationRoutes(app: FastifyInstance, ctx: AppContext):
   });
   app.get<{ Querystring: Record<string, string | undefined> }>("/api/trading/ledger.json", async (req) => ({ exportedAt: new Date().toISOString(), filter: filterOf(req.query), rows: ctx.ledger.rows(filterOf(req.query)), settlements: ctx.execution.settlements(), holds: ctx.execution.holds() }));
 
+  // ---- 2.0 reports (O07 soak, FOR-06/07 qualification) — read-only; `?format=md` renders markdown ----
+  app.get<{ Querystring: { from?: string; to?: string; format?: string } }>("/api/trading/reports/soak", async (req, reply) => {
+    const r = ctx.reports.soak({ from: req.query.from, to: req.query.to });
+    if (req.query.format === "md") { reply.header("content-type", "text/markdown; charset=utf-8"); return reply.send(ctx.reports.soakMarkdown(r)); }
+    return r;
+  });
+  app.get<{ Querystring: { strategyVersion?: string; category?: string; asOf?: string; format?: string } }>("/api/trading/reports/qualification", async (req, reply) => {
+    const r = ctx.reports.qualification({ strategyVersion: req.query.strategyVersion, category: req.query.category, asOf: req.query.asOf });
+    if (req.query.format === "md") { reply.header("content-type", "text/markdown; charset=utf-8"); return reply.send(ctx.reports.qualificationMarkdown(r)); }
+    return r;
+  });
+
   // ---- alerts (AUTO-05) ----
   app.get<{ Querystring: { open?: string; limit?: string } }>("/api/trading/alerts", async (req) => ctx.tradingAlerts.list({ openOnly: req.query.open === "true", limit: Math.min(Number(req.query.limit ?? 200) || 200, 1000) }));
   app.post<{ Params: { id: string } }>("/api/trading/alerts/:id/ack", async (req, reply) => ctx.tradingAlerts.acknowledge(req.params.id) ?? reply.code(404).send({ error: "not_found" }));

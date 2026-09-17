@@ -7,6 +7,111 @@ Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assist
 ## Legend
 **Executed** = the command/test ran and passed on that platform. **Static** = code and docs reviewed for that platform's behaviour, not run. **—** = not yet attempted.
 
+## Release 2.0.0-rc.1 — Review fixes, upgrade rehearsal, key-file ACL, soak/qualification reports, requirement audit (2026-09-17)
+
+**Status: RELEASE CANDIDATE, not 2.0.0.** The pack's exit evidence for 2.0 is "upgrade/restore drill, qualification evidence, Windows verification, scoped owner-run live checks, no unresolved P0/P1". What this build has: the drills and reports as executable code, executed in the sandbox against the fake venue and an authentic 1.9.0 database; all fourteen review findings fixed with regression tests. What it does not have (owner execution required): Windows on real content, the capped live smoke test, the real seven-day soak, a production qualification, the rehearsal on the owner's real data. Those are listed plainly at the end; none is waived.
+
+**Baseline.** 1.14.0 as executed in the sandbox: 170 · 170 passed · 0 failed.
+
+**This release, executed.** Linux cloud sandbox, Node v22.22.2, sources compiled with `tsc` against the repository's `tsconfig.base.json` plus the same type stubs as before (`fastify` in-memory router, `zod` shim; the pinned `polymarket-us@0.1.1` loaded for the SDK test with `fetch` stubbed). Every order in every test goes to the fake venue; **no real credential was used and no production order was placed.**
+
+| Command (sandbox equivalent) | Result |
+|---|---|
+| `node --test "dist/server/src/**/*.test.js"` (= `npm test`) | **193 tests · 193 passed · 0 failed · 0 skipped · 0 cancelled** (1.14.0 had 170; 23 new, listed below). |
+| `node --test dist/server/src/services/review20.test.js` | 14 · 14 passed (≈ 1.5 s) — RV-01, RV-02 (a+b), RV-03, RV-04, RV-05, RV-06, RV-08 (pure + venue), RV-09, RV-10/14, RV-11, RV-12, RV-13, and the production-evaluation record route |
+| `node --test dist/server/src/db/upgrade.test.js` | 4 · 4 passed (≈ 0.6 s) — O05 fixture authenticity, interrupted-and-rerun upgrade, RV-07 scrubbed pre-migration backup, drill on the upgraded data |
+| `node --test dist/server/src/security/keyFileAcl.test.js` | 3 · 3 passed — icacls parser and judgement on captured output; POSIX branch on this platform |
+| `node --test dist/server/src/services/soak.test.js` | 2 · 2 passed (≈ 2.4 s) — compressed seven-day paper-autopilot harness with faults; qualification report says *pending* |
+| `node scripts/upgrade-rehearsal.mjs <1.9 db> --interrupt-after 14` (sandbox, dist symlinked) | RESULT: OK — 11 → 16, legacy rows and columns intact, live disarmed, pre-migration backup scrubbed, 24 tables 680 → 680 rows |
+| `tsc -p tsconfig.json --noEmit` server/shared and web (= `npm run typecheck`) | **0 errors** (stub filters as before). |
+| `npm run build` (Vite bundle) | **not executed** in the sandbox (no registry). Pending owner run. |
+
+**Owner machine (Windows 11, Node 26.7.0):** `npm install`, `npm run typecheck`, `npm run build`, `npm test`, `npm run doctor` (key-file ACL line), `npm run upgrade:rehearse -- <real 1.9 db>` — **pending owner execution**; record here.
+
+### Code review of the execution path (1.13 + 1.14) — findings and fixes
+
+A structured review (priorities: wrong venue/side, unauthorized send, duplicate orders, ambiguous timeout recovery, overspending, leakage, lost rationale, fill/settlement accounting, migration/restore) read the implementation and the test assertions. Verified correct without change: NO→YES price conversion exactly once (`wirePriceFor` → `toVenueCreateBody`, confirmed against the venue's Orders overview: "`price.value` always represents the long side's price"), side mapping by the venue's `long` flag, the single `createOrder` call site behind T1/T2, opportunity PK + in-transaction recheck, unknown-submission handling, caps/sizing, execution dedupe, official-only settlement, secret confinement, rationale immutability, additive 016 + startup disarm. Findings:
+
+| ID | Sev. | Finding | Fix | Regression test |
+|---|---|---|---|---|
+| RV-01 | P1 | Authorized (strategy, category) stored but never enforced; a production qualification for another category made forecasts "qualified" for the scheduler | `authorized_scope` gate in `decide()` (auto-live), fed by the decision service and by preview/submit re-decision | `review20` RV-01; `tradeDecision.test` gates |
+| RV-02 | P1 | Second process's `recoverAfterCrash` marked an in-flight submission unknown; T3 then flipped it to acknowledged leaving an unresolvable hold; T2 never checked its UPDATE moved a row | Recovery only while holding the lease (deferred otherwise); T2 aborts unless `changes === 1`; T3 guarded and resolves a meanwhile-opened hold; `finishUnsent` conditional | `review20` RV-02 (a: in-flight + second process; b: expired between T1 and T2 → no POST) |
+| RV-03 | P2 (blocks real use) | `now` captured before the book/sync fetch → negative ages → every real decision `BOOK_STALE` | Instant taken after inputs (evaluate, redecide, preview, submit; scheduler passes no pinned clock); 2 s skew tolerance | `review20` RV-03 (stepping clock; evaluate → preview → submit → fill); `tradeDecision.test` skew bounds |
+| RV-04 | P2 | `positionResolution.side` semantics undocumented (winning side vs account side) | Cross-check against the venue's realized amount; contradiction → `discrepancy` hold `settlement:<activity>` + alert (pause) | `review20` RV-04 (consistent → no hold; contradicted → hold, paused, alert) |
+| RV-05 | P2 | Activities newest-first → original/correction labels swapped | Sort ascending before applying | `review20` RV-05 |
+| RV-06 | P2 | Daily loss stop compared a UTC date with a budget-timezone bucket | Per-row bucket in the budget timezone | `review20` RV-06 |
+| RV-07 | P2 | Pre-migration backups were raw copies (credentials + armed grant) | `scrubTradingFromCopy` on the copy in `runMigrations` | `db/upgrade.test` (armed 15-schema copy → 016; backup has no `trading.%` secret, mode paper) |
+| RV-08 | P2 | External SELL orders signed as buys in position reconciliation | `signedFilledQuantity(intent, side, filled)` (action × side); fake venue supports sells | `review20` RV-08 (pure + venue: 19 held, 6 sold on the website → 13, no hold) |
+| RV-09 | P2 | Manual indicator followed the decision's mode, not the sender | `preview(id, { origin })`; owner → MANUAL, scheduler → AUTOMATIC | `review20` RV-09 |
+| RV-10 | P2 | `resolveUnknown` linked any order id | Same contract, same side, matching quantity required | `review20` RV-10/14 |
+| RV-11 | P2 | Qualification could never be revoked | Newest production record decides (`qualificationFor`, `productionQualification`, `qualifiedCategories`) | `review20` RV-11 |
+| RV-12 | P2 | 429 classified "not created" → opportunity freed → possible second entry | 429 is ambiguous (unknown submission, held) | `review20` RV-12; `polymarketUs.sdk.test` classification |
+| RV-13 | P2 | Emergency stop did not wait for the in-flight POST | Bounded wait (25 s) for in-flight dispatches before the sweep | `review20` RV-13 (resting order, 250 ms response delay, cancelled by the stop's own sweep) |
+| RV-14 | P2 | A linked order without a side settled its reservation as released | Refuse to link an order whose side is unknown (`order_side_unknown`) | `review20` RV-10/14 |
+| (harness) | — | FOR-06 threshold counted settled *decisions*, not distinct events | `evaluateForecasts` uses distinct groups; unscorable forecasts never scored | `forecast.test` F08 (100 decisions on 25 events → not qualified); `soak.test` |
+
+No P0 was found. No P1 or P2 finding remains open.
+
+### Requirement audit — every requirement in 02-Development-Requirements against executable tests and owner evidence
+
+Executed = passing automated test in the sandbox (fake venue). Owner = evidence only the owner can produce (real account, real content, Windows, real time). The 2.0 exit needs both columns green; the right column is what keeps this build an RC.
+
+| Req. | Executable evidence (test ids · file) | Owner evidence |
+|---|---|---|
+| ACC-01 | A01 `trading.test` (distinct records per venue; only US enters execution); `core.test` migrations | — |
+| ACC-02 | A02/A03 `trading.test`, `routes/trading.test` (test/save/status/errors, zero order calls) | **pending**: real-key read check `npm run trading:read-check` (SETUP §1, Polymarket US account) |
+| ACC-03 | A04/A05 `trading.test` (rotation continuity, no invented identity) | **pending**: rotation on the real portal |
+| ACC-04 | A06/A07 canary tests; O01 `keyFileAcl.test`; redaction in `trading.test`, `automation.test` D03 | **pending**: `npm run doctor` ACL line on Windows |
+| ACC-05 | A02, E01 mode gates, U01 arming gates; `review20` RV-01 | — |
+| ACC-06 | A08 `trading.test` (disconnect disarms, targeted cancel, history kept) | — |
+| SRC-01…06 | S01–S07 `provenance.test`, `independence.test`; subscriptions in `automation.test` U02 / `autopilot.e2e.test` | **pending**: real channel poll on the owner's machine |
+| MAT-01…06 | M01–M09 `contractVerification.test`, `provenance.test`; `autopilot.e2e.test` (match → verify); revalidation in `automation.test` | **pending**: exit demo on a real US event (1.11 exit demo, still open) |
+| FOR-01…05 | F01–F07 `forecast.test`, `decisions.test` (leakage, replay hash, invalid values) | — |
+| FOR-06 | F08 (`forecast.test`, incl. distinct-event count), `review20` RV-11, `soak.test` qualification pending | **unmet gate**: no production qualification exists |
+| FOR-07 | F09 `forecast.test`; `reports.qualification` (`soak.test`) | **pending**: the owner's qualification report on real data |
+| FOR-08 | F10/F11 `decisions.test`, `paperUs`; `soak.test` paper autopilot | **pending**: real seven-day soak |
+| RSK-01…07 | R01–R10 `tradeDecision.test`, `decisions.test`, live R07 `execution.test`; `review20` RV-03 (freshness on a real clock), RV-06 (loss bucket) | — |
+| EXE-01 | E01/E03 `execution.test`; `polymarketUs.sdk.test` (pinned SDK body, classification) | **pending**: capped smoke test (§4.14) |
+| EXE-02 | E01/E02 `execution.test`; `review20` RV-09 (indicator) | **pending**: §4.14 |
+| EXE-03 | E04 `execution.test`, U03 `automation.test`; `review20` RV-02 (b), RV-12 | — |
+| EXE-04 | E05/E06 `execution.test`; `review20` RV-02 (a), RV-12; `db/upgrade.test` drill (recovered by the next start) | — |
+| EXE-05 | E07 `execution.test`; `review20` RV-10/14 | — |
+| EXE-06 | E08/E09/E10 `execution.test`; `orderState.test`; `review20` RV-08 | — |
+| EXE-07 | E10/E11 `execution.test`; `review20` RV-05 | — |
+| EXE-08 | E12 `execution.test`; `review20` RV-04 (contested settlement) | **pending**: first real settlement (resolves the RV-04 gap) |
+| AUTO-01 | U01 `automation.test`; `routes/trading.test`; `review20` RV-01, RV-11 | **unmet gate**: qualification |
+| AUTO-02 | U02/U03 `automation.test`, `autopilot.e2e.test`; `soak.test` (bounded, per-source, one entry) | **pending**: real soak |
+| AUTO-03 | U04 `automation.test`; `review20` RV-13 | **pending**: §4.15 walk-through |
+| AUTO-04 | U05 `automation.test`; `db/upgrade.test` drill (restart disarms, no catch-up) | — |
+| AUTO-05 | U06 `automation.test`; `review20` RV-12; `soak.test` (faults, alerts) | — |
+| DASH-01…05 | D01–D04 `automation.test`, `execution.test`; D02 `current` block | **pending**: browser walk-through (§4.15) |
+| OPS-01 | A06/A07; O01 `keyFileAcl.test` (parser, POSIX branch); CSRF/SSRF tests in `core.test`, `research.test`, `routes/trading.test` | **pending**: Windows ACL verified by `npm run doctor` on the owner's machine |
+| OPS-02 | O02 `execution.test`, U05, `db/upgrade.test` (RV-07 scrubbed pre-migration backup; restore → needs rebind) | **pending**: restore drill on the owner's machine (§4.16) |
+| OPS-03 | O03 `execution.test`, `automation.test`; `review20` RV-02 | — |
+| OPS-04 | O04 `automation.test` (10,010 decisions: 73.6 ms / 3.1 ms / 5.3 ms, sandbox); `/api/trading/metrics` | **pending**: timing on the owner's machine |
+| OPS-05 | O05 `db/upgrade.test` (authentic 1.9.0 fixture, interrupted + rerun, byte-level inventory, isolation, disarmed); `npm run upgrade:rehearse` | **pending**: rehearsal on the owner's real 1.9 data |
+
+### O01–O07 status
+
+| Test | Status |
+|---|---|
+| O01 | ✓ executed (parser/judgement, POSIX branch, redaction canaries, loopback/CSRF/outbound tests of earlier releases) · **Windows ACL pending owner** (`npm run doctor`) |
+| O02 | ✓ executed (1.13 O02, U05, `db/upgrade.test`: pre-migration backup scrubbed, restore → needs rebind, unknown intent still unknown) |
+| O03 | ✓ executed (1.13/1.14 O03; RV-02 adds the recovery guard and marker check) |
+| O04 | ✓ executed on the sandbox machine · **owner machine timing pending** |
+| O05 | ✓ executed on an **authentic 1.9.0 database produced by the 1.9.0 code** (fixture) · **owner's real data pending** (`npm run upgrade:rehearse`) |
+| O06 | ✓ sandbox suite/typecheck (193/193) · **Windows suite/build and real transcript/video checks pending owner** |
+| O07 | harness ✓ executed (compressed seven days, faults, report checks, injected duplicate caught) · **the real seven-day soak pending owner** (SETUP §4.16) |
+
+### Remaining mandatory checks (why 2.0.0-rc.1 is not 2.0.0)
+
+1. Owner `npm install` / `typecheck` / `build` / `test` on Windows with the real packages; `npm run doctor` showing the key-file ACL as OK.
+2. `npm run upgrade:rehearse -- <the owner's real 1.9 prediction-ledger.db>` → RESULT: OK, pasted here.
+3. The 1.13 capped smoke test (§4.14) and the 1.14 acceptance walk-through (§4.15), fake venue first.
+4. The **real** seven-day paper soak in paper autopilot on real venue data (§4.16) and its report attached under `docs/reports/`.
+5. A **production qualification** for at least one (strategy version, category) pair from ≥ 100 distinct settled real events with a market baseline — the qualification report must say *qualified* and the owner must record it deliberately; until then `/api/trading/arm` answers `409 strategy_qualified` and automation is unavailable. Insufficient data is reported as an unmet gate, not waived.
+6. The first real settlement observed with `positionResolution.side` and the realized amount (RV-04's documented gap).
+
 ## Release 1.14.0 — Automatic execution behind arming, pause / emergency stop, alerts, the Trades ledger (2026-09-17)
 
 **Baseline.** 1.13.0 as executed in the sandbox: 161 · 161 passed · 0 failed (owner's Windows runs of 1.10–1.13 still pending, see below).

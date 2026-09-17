@@ -113,8 +113,12 @@ test("F09 — Brier over [.8,.3] with outcomes [1,0] = .065; baseline on the sam
 test("F08 — qualification gates apply exactly: 99 vs 100 events, Brier vs baseline, 20 observations per creator, two independent clusters", () => {
   const good = (n: number) => Array.from({ length: n }, (_, i) => rec(0.7, i % 10 === 0 ? 0 : 1, { marketPYes: 0.6 }));
   assert.equal(evaluateForecasts(good(99)).gate.qualified, false);
-  assert.match(evaluateForecasts(good(99)).gate.reasons.join(";"), /99 settled events < 100/);
+  assert.match(evaluateForecasts(good(99)).gate.reasons.join(";"), /99 distinct settled events < 100/);
   assert.equal(evaluateForecasts(good(100)).gate.qualified, true);
+  // 2.0: 100 settled DECISIONS on 25 events are 25 events — correlated decisions on one event count once.
+  const correlated = good(100).map((r, i) => ({ ...r, groupKey: `ev-${i % 25}` }));
+  assert.equal(evaluateForecasts(correlated).gate.qualified, false);
+  assert.match(evaluateForecasts(correlated).gate.reasons.join(";"), /25 distinct settled events \(100 settled decisions\) < 100/);
   const worse = good(100).map((r) => ({ ...r, pYes: 0.99, marketPYes: 0.9 }));
   assert.match(evaluateForecasts(worse).gate.reasons.join(";"), /worse than the market baseline/);
   const thin = good(100).map((r) => ({ ...r, creatorObservations: { A: 19 } }));

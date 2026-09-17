@@ -527,6 +527,37 @@ TradeLedgerService ─ one LEFT JOIN over decisions → predictions/videos/marke
 
 Trust rules unchanged from 1.13, plus: the browser can never arm without the reviewed hash; no LLM output reaches `arm`, `setAutomation`, `pause`, `resume` or the stop; prompts, browser storage, logs, exports and fixtures stay secret-free (canary-tested in U05 / D03).
 
+### 6.6 Release hardening: review fixes, upgrade rehearsal, key-file ACL, reports (2.0)
+
+```
+decision instant ── taken AFTER the book / account fetch (evaluate, preview, submit; the scheduler pins nothing) ──▶ decide(): ages ≥ −2 s (skew) and ≤ limits
+auto-live gate  ── forecast.{strategyVersion, category} must equal trading_policy.authorized_{strategy_version, category} → `authorized_scope` (RV-01)
+crash recovery  ── index.ts runs recoverAfterCrash() only while holding the dispatch lease (deferred until acquired); T2 sends only if its marker
+                   UPDATE moved the row; T3 acknowledges only from submitting|submission_unknown and resolves a hold another process opened (RV-02)
+POST outcome    ── 400/401/403/404 → not created · 429 / timeout / reset / 5xx / no id → submission_unknown (never resent) (RV-12)
+settlement      ── positionResolution.side read as before; if the venue's realized amount contradicts our P&L sign → discrepancy hold
+                   `settlement:<activity>` + alert (contested, paused) (RV-04); activities applied oldest-first (RV-05)
+positions       ── external orders signed by action × side (SELL_LONG −q, SELL_SHORT +q) (RV-08)
+loss stop       ── settlement day = observed instant in the BUDGET timezone (RV-06)
+backups         ── pre-migration copy scrubbed like a manual backup (no trading.* secret, not armed, needs rebind) (RV-07)
+
+services/upgrade.ts ── rehearseUpgrade({ sourcePath, workDir, interruptAfter? }): VACUUM INTO a copy → inventory (per-table sha256 over every
+                       row + ids) → runMigrations(copy, { upTo?, afterEach?, log }) → inventory → compareInventories + legacyColumnsUnchanged
+                       → liveDisarmed, usRecords, preMigrationBackupScrubbed. CLI: scripts/upgrade-rehearsal.mjs. Fixture: fixtures/upgrade/
+                       v1.9.0-authentic.sql.gz (schema 11, produced by the 1.9.0 code; no ciphertext).
+security/keyFileAcl.ts ── win32: icacls <key> /inheritance:r /grant:r "<user>:F" (argument array), then `icacls <key>` parsed → OPEN if
+                       BUILTIN\Users / Everyone / Authenticated Users can read; posix: mode 600 verified/tightened. Reported at startup,
+                       GET /api/health.keyFileProtection, Setup → Backups, npm run doctor.
+services/reports.ts ── soak(): automation_runs/candidates, trade_decisions, risk_reservations, trade_intents, holds, alerts, audit →
+                       O07 thresholds + verdict; qualification(): forecasts.evaluate + cohort chronology, exclusions, creators, paper return,
+                       drawdown → qualified | pending | failed with eventsNeeded. GET /api/trading/reports/{soak,qualification}[?format=md];
+                       npm run report:soak | report:qualification.
+```
+
+- **Nothing here loosens a gate.** Every change either adds a check (scope, marker, side/contract match, settlement cross-check) or takes an instant later; the only behavioural relaxation is the 2 s clock-skew tolerance, bounded and tested on both sides.
+- **The rehearsal never touches the original file** (read-only open + `VACUUM INTO`), and the "before" snapshot is kept so an interrupted upgrade re-run compares against the pristine copy.
+- **The soak harness is a compressed clock against fake data** (`services/soak.test.ts`): it proves the scheduler survives an outage, a 429, a sleep past a cutoff and a restart without a duplicate entry or a cap breach, and that the report's checks catch an injected duplicate. The real soak is seven calendar days of paper autopilot on real venue data, run by the owner (SETUP §4.16).
+
 ---
 
 ## 7. Security model

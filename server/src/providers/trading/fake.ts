@@ -89,6 +89,8 @@ export class FakeTradingAdapter implements TradingAdapter {
   /** Activities page size and a one-shot failure on the second page (E10). */
   activityPageSize = 100;
   failNextActivityPage = false;
+  /** 2.0 (RV-05): the real venue lists activities newest-first; tests flip this to exercise ordering. */
+  activitiesNewestFirst = false;
   private seq = 0;
   private balanceOverride?: { buyingPower: string; currentBalance: string };
   /** The fake venue's clock (tests pin it to their fixture instant so windows and ordering are deterministic). */
@@ -150,7 +152,9 @@ export class FakeTradingAdapter implements TradingAdapter {
     for (const o of this.orders.values()) {
       const filled = D(o.filledQuantity);
       if (!filled.isPos()) continue;
-      const signed = o.side === "no" ? filled.neg() : filled;
+      // 2.0 (RV-08): a SELL order reduces the position on its side; the app's own orders are always buys.
+      const sell = /SELL/.test(o.intentRaw ?? "");
+      const signed = (o.side === "no") === !sell ? filled.neg() : filled;
       net.set(o.marketSlug, (net.get(o.marketSlug) ?? Dec.ZERO).add(signed));
     }
     for (const [slug, adj] of this.externalPositionAdjustments) net.set(slug, (net.get(slug) ?? Dec.ZERO).add(adj));
@@ -210,7 +214,7 @@ export class FakeTradingAdapter implements TradingAdapter {
 
   classifySubmitFailure(err: unknown): SubmitFailureClass {
     const code = err instanceof TradingAdapterError ? err.code : "unknown";
-    return code === "bad_request" || code === "unauthorized" || code === "forbidden" || code === "not_found" || code === "rate_limited" || code === "clock_skew" ? "not_created" : "ambiguous";
+    return code === "bad_request" || code === "unauthorized" || code === "forbidden" || code === "not_found" || code === "clock_skew" ? "not_created" : "ambiguous";
   }
 
   private runBehaviour(order: FakeVenueOrder, b: OrderBehaviour): void {
@@ -276,9 +280,10 @@ export class FakeTradingAdapter implements TradingAdapter {
   }
 
   /** An order the app did not place (external / manual). */
-  externalOrder(marketSlug: string, side: "yes" | "no", quantity: string, yesPrice: string, opts: { fill?: boolean; createTime?: string } = {}): FakeVenueOrder {
+  externalOrder(marketSlug: string, side: "yes" | "no", quantity: string, yesPrice: string, opts: { fill?: boolean; createTime?: string; action?: "buy" | "sell" } = {}): FakeVenueOrder {
     const id = `ext-${++this.seq}`;
-    const order: FakeVenueOrder = { id, marketSlug, side, intentRaw: side === "yes" ? "ORDER_INTENT_BUY_LONG" : "ORDER_INTENT_BUY_SHORT", stateRaw: "ORDER_STATE_NEW", state: "open", quantity, filledQuantity: "0", leavesQuantity: quantity, yesPrice, feesCollected: "0", createTime: opts.createTime ?? this.now().toISOString(), executions: [], ours: false };
+    const verb = opts.action === "sell" ? "SELL" : "BUY";
+    const order: FakeVenueOrder = { id, marketSlug, side, intentRaw: side === "yes" ? `ORDER_INTENT_${verb}_LONG` : `ORDER_INTENT_${verb}_SHORT`, stateRaw: "ORDER_STATE_NEW", state: "open", quantity, filledQuantity: "0", leavesQuantity: quantity, yesPrice, feesCollected: "0", createTime: opts.createTime ?? this.now().toISOString(), executions: [], ours: false };
     this.orders.set(id, order);
     if (opts.fill) this.fill(order, quantity, yesPrice);
     return order;
@@ -292,13 +297,13 @@ export class FakeTradingAdapter implements TradingAdapter {
   }
 
   /** Official settlement of a market: resolution activity + settlement price; positions go to zero. */
-  settle(marketSlug: string, outcome: "yes" | "no" | "void", opts: { correction?: boolean } = {}): void {
+  settle(marketSlug: string, outcome: "yes" | "no" | "void", opts: { correction?: boolean; realizedPnl?: string } = {}): void {
     const price = outcome === "yes" ? "1" : outcome === "no" ? "0" : "0.5";
     this.settlements.set(marketSlug, price);
     const before = this.derivedPositions().find((p) => p.marketSlug === marketSlug)?.netQuantity ?? "0";
     for (const o of this.orders.values()) if (o.marketSlug === marketSlug) { o.filledQuantity = "0"; }
     this.externalPositionAdjustments.delete(marketSlug);
-    this.activitiesLedger.push({ id: `resolution:${marketSlug}:${++this.seq}`, kind: "position_resolution", rawType: opts.correction ? "ACTIVITY_TYPE_POSITION_RESOLUTION" : "ACTIVITY_TYPE_POSITION_RESOLUTION", marketSlug, at: this.now().toISOString(), resolutionSide: outcome === "yes" ? "POSITION_RESOLUTION_SIDE_LONG" : outcome === "no" ? "POSITION_RESOLUTION_SIDE_SHORT" : "POSITION_RESOLUTION_SIDE_NEUTRAL", positionBefore: before, positionAfter: "0", raw: { fake: true, correction: opts.correction === true, settlement: price } });
+    this.activitiesLedger.push({ id: `resolution:${marketSlug}:${++this.seq}`, kind: "position_resolution", rawType: opts.correction ? "ACTIVITY_TYPE_POSITION_RESOLUTION" : "ACTIVITY_TYPE_POSITION_RESOLUTION", marketSlug, at: this.now().toISOString(), resolutionSide: outcome === "yes" ? "POSITION_RESOLUTION_SIDE_LONG" : outcome === "no" ? "POSITION_RESOLUTION_SIDE_SHORT" : "POSITION_RESOLUTION_SIDE_NEUTRAL", positionBefore: before, positionAfter: "0", realizedPnl: opts.realizedPnl, raw: { fake: true, correction: opts.correction === true, settlement: price } });
   }
 
   async getOrder(creds: TradingCredentials, orderId: string): Promise<VenueOrder | undefined> {
@@ -309,7 +314,8 @@ export class FakeTradingAdapter implements TradingAdapter {
 
   async activities(creds: TradingCredentials, opts: { cursor?: string; limit?: number; marketSlug?: string } = {}): Promise<ActivitiesPage> {
     this.authorize(creds, "activities", { cursor: opts.cursor, marketSlug: opts.marketSlug });
-    const rows = opts.marketSlug ? this.activitiesLedger.filter((a) => a.marketSlug === opts.marketSlug) : this.activitiesLedger;
+    const ledger = this.activitiesNewestFirst ? [...this.activitiesLedger].reverse() : this.activitiesLedger;
+    const rows = opts.marketSlug ? ledger.filter((a) => a.marketSlug === opts.marketSlug) : ledger;
     const start = opts.cursor ? Number.parseInt(opts.cursor, 10) : 0;
     if (start > 0 && this.failNextActivityPage) { this.failNextActivityPage = false; throw new TradingAdapterError("network", "connection reset mid-snapshot", 0); }
     const page = rows.slice(start, start + this.activityPageSize);

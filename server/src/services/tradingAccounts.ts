@@ -213,7 +213,9 @@ export class TradingAccountService {
 
   /** A production (never fixture) qualification for this strategy version and category (FOR-06). */
   qualificationFor(strategyVersion: string, category: string): boolean {
-    return !!this.db.get<{ n: number }>("SELECT 1 AS n FROM strategy_qualifications WHERE source = 'production' AND qualified = 1 AND strategy_version = ? AND category = ? LIMIT 1", strategyVersion, category);
+    // RV-11 (2.0): the newest production evaluation of the pair decides; a later failed evaluation revokes qualification.
+    const r = this.db.get<{ qualified: number }>("SELECT qualified FROM strategy_qualifications WHERE source = 'production' AND strategy_version = ? AND category = ? ORDER BY created_at DESC, rowid DESC LIMIT 1", strategyVersion, category);
+    return r?.qualified === 1;
   }
 
   // ---- 1.14: circuit breaker (AUTO-05) -----------------------------------------------------------------

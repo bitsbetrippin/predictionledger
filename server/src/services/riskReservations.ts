@@ -56,6 +56,10 @@ export class RiskService {
     ).filter((r) => dayOf(r.at) === dailyBucket);
     const net = dsum(lossRows.map((r) => D(r.pnl ?? "0")));
     const dailyRealizedLoss = net.isNeg() ? net.neg() : Dec.ZERO;
+    // 2.0.0-rc.2 (RSK-06): holdings the app did not place count toward total / per-market / per-event risk, conservatively.
+    const externalHoldings = accountKey === "paper" ? [] : this.externalHoldings(accountKey);
+    for (const h of externalHoldings) { const a = D(h.amount); open = open.add(a); add(perMarket, h.venueMarketId, a); add(perEvent, eventOf.get(h.venueMarketId) ?? this.eventFor(h.venueMarketId), a); }
+    const externalRiskTotal = dsum(externalHoldings.map((h) => D(h.amount)));
     const marketsOpen = new Set<string>([...reserved.map((r) => r.venue_market_id), ...positions.map((p) => p.venue_market_id)]);
     const unreflected = dsum(reserved.filter((r) => r.acknowledged === 0).map((r) => D(r.amount)));
     return {
@@ -70,6 +74,7 @@ export class RiskService {
       perEvent: Object.fromEntries([...perEvent].map(([k, v]) => [k, v.toString()])),
       pendingUnknown: this.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM trade_intents WHERE account_key = ? AND state = 'submission_unknown'", accountKey)?.n ?? 0,
       unreflectedReservations: unreflected.toString(),
+      externalHoldings, externalRiskTotal: externalRiskTotal.toString(),
       marketsOpen,
     };
   }
@@ -82,6 +87,32 @@ export class RiskService {
    * Live (1.13): an acknowledged order of ours with fills whose reservation has been consumed and whose market has no
    * official settlement yet is an open position: filled × chosen cost (venue average price) + fees.
    */
+  /**
+   * Venue positions on markets where the app has no order of its own (2.0.0-rc.2): from the latest successful sync,
+   * valued at the venue's cost basis when it reports one, else at $1 per contract (the most a binary contract can lose).
+   */
+  externalHoldings(bindingId: string): RiskExposure["externalHoldings"] {
+    const sync = this.db.get<{ positions_json: string }>("SELECT positions_json FROM trading_account_syncs WHERE binding_id = ? AND ok = 1 ORDER BY at DESC LIMIT 1", bindingId);
+    if (!sync) return [];
+    const positions = JSON.parse(sync.positions_json) as { marketSlug: string; netQuantity: string; cost?: { value: string } }[];
+    const out: RiskExposure["externalHoldings"] = [];
+    for (const p of positions) {
+      const qty = D(p.netQuantity);
+      if (qty.isZero()) continue;
+      if (this.db.get("SELECT 1 FROM venue_orders WHERE binding_id = ? AND intent_id IS NOT NULL AND market_slug = ?", bindingId, p.marketSlug)) continue;
+      const key = this.db.get<{ venue_id: string }>("SELECT venue_id FROM markets WHERE provider = 'polymarket_us' AND (slug = ? OR venue_id = ?)", p.marketSlug, p.marketSlug)?.venue_id ?? p.marketSlug;
+      const cost = p.cost?.value ? D(p.cost.value) : undefined;
+      const basis: "cost" | "worst_case" = cost && cost.isPos() ? "cost" : "worst_case";
+      const amount = basis === "cost" ? cost! : (qty.isNeg() ? qty.neg() : qty);
+      out.push({ venueMarketId: key, marketSlug: p.marketSlug, netQuantity: qty.toString(), amount: amount.round(2).toString(), basis });
+    }
+    return out;
+  }
+
+  private eventFor(venueMarketId: string): string | undefined {
+    return this.db.get<{ event_id: string | null }>("SELECT event_id FROM markets WHERE provider = 'polymarket_us' AND venue_id = ?", venueMarketId)?.event_id ?? undefined;
+  }
+
   private livePositions(bindingId: string): { venue_market_id: string; cost_total: string; fees: string; market_id: string | null }[] {
     const rows = this.db.all<{ id: string; market_slug: string; venue_market_id: string | null; side: "yes" | "no" | null; filled_quantity: string; avg_price: string | null; yes_price: string | null; fees: string | null; intent_id: string }>(
       // Orders whose reservation is still 'reserved' are covered by the reservation itself (no double count).

@@ -181,10 +181,13 @@ export class TradeDecisionService {
     const sync = this.ctx.trading.latestSync(binding.id, true);
     if (!sync) return { complete: false, positions: [], openOrders: [] };
     const usd = sync.balances.find((b) => b.currency === "USD");
+    // The venue keys positions and orders by market SLUG; decisions compare against the stored market's venue id
+    // (2.0.0-rc.2: found while adding external holdings — the slug/id mismatch had made the on-contract gates inert).
+    const idFor = (slug: string) => this.ctx.db.get<{ venue_id: string }>("SELECT venue_id FROM markets WHERE provider = 'polymarket_us' AND (slug = ? OR venue_id = ?)", slug, slug)?.venue_id ?? slug;
     return {
       syncAt: sync.at, complete: sync.complete, buyingPower: usd?.buyingPower?.value,
-      positions: sync.positions.map((x) => ({ venueMarketId: x.marketSlug, netQuantity: x.netQuantity })),
-      openOrders: sync.openOrders.map((x) => ({ venueMarketId: x.marketSlug, intent: x.intent, state: x.state })),
+      positions: sync.positions.map((x) => ({ venueMarketId: idFor(x.marketSlug), netQuantity: x.netQuantity, external: !this.ctx.db.get("SELECT 1 FROM venue_orders WHERE binding_id = ? AND intent_id IS NOT NULL AND market_slug = ?", binding.id, x.marketSlug) })),
+      openOrders: sync.openOrders.map((x) => ({ venueMarketId: idFor(x.marketSlug), intent: x.intent, state: x.state })),
     };
   }
 

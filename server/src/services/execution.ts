@@ -62,6 +62,9 @@ export interface ReconcileReport {
   discrepancies: { marketSlug: string; venueNet: string; localNet: string }[];
   holdsOpen: number;
   paused: boolean;
+  /** 2.0.0-rc.2: positions the app did not place (listed, counted, never a hold) and holds reclassified this run. */
+  externalHoldings?: number;
+  reclassifiedHolds?: number;
 }
 
 const PREVIEW_TTL_MS = 60_000;
@@ -548,6 +551,17 @@ export class ExecutionService {
         if (!this.openHoldFor(binding.id, "discrepancy", pos.marketSlug)) this.openHold(binding.id, "discrepancy", pos.marketSlug, { venueNet: pos.venueNet, localNet: pos.localNet, intents: pos.intentIds }, now);
       }
     }
+    // 5b. (2.0.0-rc.2) Discrepancy holds on markets where the app has no order of its own were opened by the 1.13 rule
+    //     "any mismatch pauses"; they describe hand-placed holdings, not bookkeeping errors. Reclassify them once.
+    let reclassified = 0;
+    for (const h of this.holds(binding.id, true)) {
+      if (h.kind !== "discrepancy" || !h.subject || h.subject.startsWith("settlement:")) continue;
+      if (this.ctx.db.get("SELECT 1 FROM venue_orders WHERE binding_id = ? AND intent_id IS NOT NULL AND market_slug = ?", binding.id, h.subject)) continue;
+      this.ctx.db.run("UPDATE reconciliation_holds SET resolved_at = ?, resolution = ? WHERE id = ?", now, "reclassified as an external holding (2.0.0-rc.2): this app has no order on this market, so the venue position was placed by hand; it is listed under External holdings, counted toward exposure limits and blocks app entry on this contract, but it is not a bookkeeping discrepancy", h.id);
+      this.ctx.tradingAlerts.resolve(`discrepancy:${binding.id}:${h.subject}`);
+      this.ctx.trading.audit("hold.reclassified", binding.id, { holdId: h.id, marketSlug: h.subject, as: "external_holding" });
+      reclassified++;
+    }
     const holdsOpen = this.holds(binding.id, true).length;
     const paused = holdsOpen > 0 || unknownIntents.length > 0;
     this.ctx.trading.setDispatchPause(binding.id, paused ? `${holdsOpen} hold(s) open` : null);
@@ -555,8 +569,8 @@ export class ExecutionService {
     // AUTO-04: a discrepancy or an unresolved unknown submission during automatic trading returns to disarmed.
     if ((discrepancies.length || unknownIntents.length) && this.ctx.trading.policy().mode === "auto_live") this.ctx.trading.disarm(`account reconciliation found ${discrepancies.length} discrepancy(ies), ${unknownIntents.length} unknown submission(s)`);
     this.ctx.tradingAlerts.resolve(`stale_sync:${binding.id}`);
-    this.ctx.trading.audit("reconcile.completed", binding.id, { ordersChecked, executionsAdded, activities: activities.length, settlements, unknown: unknownIntents.length, discrepancies: discrepancies.length, holdsOpen });
-    return { bindingId: binding.id, syncedAt: sync.at, ordersChecked, executionsAdded, activitiesRead: activities.length, settlements, unknownIntents, discrepancies, holdsOpen, paused };
+    this.ctx.trading.audit("reconcile.completed", binding.id, { ordersChecked, executionsAdded, activities: activities.length, settlements, unknown: unknownIntents.length, discrepancies: discrepancies.length, holdsOpen, reclassified: reclassified || undefined });
+    return { bindingId: binding.id, syncedAt: sync.at, ordersChecked, executionsAdded, activitiesRead: activities.length, settlements, unknownIntents, discrepancies, holdsOpen, paused, externalHoldings: this.positions(binding.id, sync).filter((p) => p.external).length, reclassifiedHolds: reclassified };
   }
 
   private async readAllActivities(): Promise<ActivityRecord[]> {
@@ -639,7 +653,7 @@ export class ExecutionService {
   }
 
   /** Live positions: venue net (latest snapshot) vs our orders' signed fills, per market; a mismatch is a discrepancy. */
-  positions(bindingId: string, sync?: { positions: { marketSlug: string; netQuantity: string }[]; at: string }): LivePosition[] {
+  positions(bindingId: string, sync?: { positions: { marketSlug: string; netQuantity: string; cost?: { value: string } }[]; at: string }): LivePosition[] {
     const snap = sync ?? (() => { const s = this.ctx.trading.latestSync(bindingId, true); return s ? { positions: s.positions, at: s.at } : undefined; })();
     const markets = new Set<string>();
     const orders = this.ctx.db.all<OrderRow>("SELECT * FROM venue_orders WHERE binding_id = ?", bindingId);
@@ -657,10 +671,15 @@ export class ExecutionService {
       const venue = snap?.positions.find((p) => p.marketSlug === slug);
       const settled = this.ctx.db.get<{ kind: SettlementEventRecord["kind"]; observed_at: string; outcome: string | null }>("SELECT kind, observed_at, outcome FROM settlement_events WHERE venue_market_id = ? AND binding_id = ? ORDER BY observed_at DESC, rowid DESC LIMIT 1", key, bindingId);
       const expected = localNet.add(externalNet);
-      const discrepancy = venue && !settled && !D(venue.netQuantity).eq(expected) ? `venue ${venue.netQuantity} vs local ${expected} (ours ${localNet}${externalNet.isZero() ? "" : `, external ${externalNet}`})` : undefined;
+      // 2.0.0-rc.2: a market where the app has NO order of its own is an external holding — hand-placed on the website or
+      // older than the app. It is listed, counted toward exposure and blocks app entry on that contract, but it is not a
+      // bookkeeping discrepancy and never pauses the account. Discrepancies exist only where the app has its own orders.
+      const handPlaced = ours.length === 0;
+      const discrepancy = !handPlaced && venue && !settled && !D(venue.netQuantity).eq(expected) ? `venue ${venue.netQuantity} vs local ${expected} (ours ${localNet}${externalNet.isZero() ? "" : `, external ${externalNet}`})` : undefined;
       out.push({
-        bindingId, marketSlug: slug, venueMarketId: ours[0]?.venue_market_id ?? undefined, venueNet: venue?.netQuantity, venueAt: snap?.at, localNet: localNet.toString(), intentIds: ours.map((o) => o.intent_id!), discrepancy,
+        bindingId, marketSlug: slug, venueMarketId: ours[0]?.venue_market_id ?? this.venueMarketIdFor(slug) ?? undefined, venueNet: venue?.netQuantity, venueAt: snap?.at, localNet: localNet.toString(), intentIds: ours.map((o) => o.intent_id!), discrepancy,
         settled: settled ? { outcome: settledOutcomeFor(settled.kind, settled.outcome, ours.map((o) => o.side)), at: settled.observed_at } : undefined,
+        external: handPlaced || undefined, venueCost: venue?.cost?.value,
       });
     }
     return out;
@@ -848,7 +867,8 @@ export class ExecutionService {
       verification: verification ? { id: verification.id, version: verification.version, status: verification.status, staleAt: verification.staleAt, cutoffAt: verification.cutoffAt, cutoffUnknown: verification.cutoffUnknown, rulesHash: verification.rulesHash, sideId: verification.sideId } : undefined,
       contract: { venue: market.provider, venueMarketId: market.venueId, eventId: market.event?.id ?? c?.eventId, status: c?.status, active: market.active, closed: market.closed, tickSize: c?.tickSize, minQuantity: c?.minQuantity, rulesHash: verification?.rulesHash ? rulesHash(market.description) : undefined, sides: (c?.sides ?? []).map((x) => ({ id: x.id, label: x.label, long: x.long, tradable: x.tradable })) },
       book: freshBook, fee: this.ctx.decisions.feeFor(market),
-      account: sync ? { syncAt: sync.at, complete: sync.complete, buyingPower: usd?.buyingPower?.value, positions: sync.positions.map((x) => ({ venueMarketId: x.marketSlug, netQuantity: x.netQuantity })), openOrders: sync.openOrders.filter((x) => !this.ctx.db.get<{ id: string }>("SELECT id FROM trade_intents WHERE venue_order_id = ?", x.id)).map((x) => ({ venueMarketId: x.marketSlug, intent: x.intent, state: x.state })) } : { complete: false, positions: [], openOrders: [] },
+      // Positions/orders arrive keyed by slug; the contract is compared by venue id (2.0.0-rc.2: mapped, not assumed equal).
+      account: sync ? { syncAt: sync.at, complete: sync.complete, buyingPower: usd?.buyingPower?.value, positions: sync.positions.map((x) => ({ venueMarketId: this.venueMarketIdFor(x.marketSlug) ?? x.marketSlug, netQuantity: x.netQuantity, external: !this.ctx.db.get("SELECT 1 FROM venue_orders WHERE binding_id = ? AND intent_id IS NOT NULL AND market_slug = ?", binding.id, x.marketSlug) })), openOrders: sync.openOrders.filter((x) => !this.ctx.db.get<{ id: string }>("SELECT id FROM trade_intents WHERE venue_order_id = ?", x.id)).map((x) => ({ venueMarketId: this.venueMarketIdFor(x.marketSlug) ?? x.marketSlug, intent: x.intent, state: x.state })) } : { complete: false, positions: [], openOrders: [] },
       exposure: { openRiskTotal: exposure.openRiskTotal, dailyCommitted: exposure.dailyCommitted, dailyRealizedLoss: exposure.dailyRealizedLoss, openMarkets: exposure.openMarkets, perMarket: exposure.perMarket[market.venueId] ?? "0", perEvent: (market.event?.id ?? c?.eventId) ? exposure.perEvent[market.event?.id ?? c!.eventId!] ?? "0" : "0", unreflectedReservations: exposure.unreflectedReservations, marketAlreadyOpen: exposure.marketsOpen.has(market.venueId) },
       opportunityConsumed: !!this.ctx.risk.opportunityConsumed(binding.id, market.provider, market.venueId), candidateQuantity: decision.sizing?.quantity,
     };

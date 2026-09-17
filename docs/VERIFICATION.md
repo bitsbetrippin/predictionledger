@@ -7,6 +7,22 @@ Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assist
 ## Legend
 **Executed** = the command/test ran and passed on that platform. **Static** = code and docs reviewed for that platform's behaviour, not run. **—** = not yet attempted.
 
+## Release 2.0.0-rc.2 — External holdings, operations reference, on-contract gate fix (2026-09-17)
+
+**Trigger.** The owner's first look at Trades on a real account (paper mode, key connected): six `discrepancy` holds opened 2026-09-16 20:43 and two alerts (×2) for positions placed by hand on the venue, `"intents":[]` on every hold. The 1.13 rule treated any unexplained venue position as a bookkeeping discrepancy and paused the account. Owner decision: external holdings, no account pause; reference doc + in-app help.
+
+| Command (sandbox) | Result |
+|---|---|
+| `node --test "dist/server/src/**/*.test.js"` | **194 tests · 194 passed · 0 failed · 0 skipped** (rc.1 had 193; EH-01 added) |
+| server/shared and web typechecks | 0 errors |
+
+| ID | Sev. | Finding | Fix | Regression |
+|---|---|---|---|---|
+| EH-01 (design) | P2 | Hand-placed positions opened `discrepancy` holds that paused the account and could only be cleared by hand, one by one, forever (holds on settled markets never closed) | Positions on markets without app orders are external holdings: listed, counted toward limits at venue cost (else $1/contract), block app entry on that contract, never a hold; legacy holds reclassified and their alerts closed on the next reconcile | `review20` EH-01 |
+| RV-15 | P2 | `no_opposing_exposure` / `no_open_order` compared venue slugs with stored venue ids → inert whenever they differ (production) | Snapshot positions/open orders mapped slug → venue id in the decision service and the preview/submit re-decision | `review20` EH-01 (the `EXTERNAL_POSITION_ON_CONTRACT` gate fires on the stored market's venue id) |
+
+Owner evidence for 2.0.0 is unchanged (SETUP §4.16); after applying rc.2 the owner should press *Reconcile with venue* once and confirm: six holds resolved with the reclassification note, both alerts closed, six rows under *External holdings*, Committed risk (live) still $0.00, and `TOTAL_RISK_CAP_REACHED` on any app decision while the hand-placed cost basis exceeds the $100 pilot total (raise it in Setup → Trading limits if that is intended).
+
 ## Release 2.0.0-rc.1 — Review fixes, upgrade rehearsal, key-file ACL, soak/qualification reports, requirement audit (2026-09-17)
 
 **Status: RELEASE CANDIDATE, not 2.0.0.** The pack's exit evidence for 2.0 is "upgrade/restore drill, qualification evidence, Windows verification, scoped owner-run live checks, no unresolved P0/P1". What this build has: the drills and reports as executable code, executed in the sandbox against the fake venue and an authentic 1.9.0 database; all fourteen review findings fixed with regression tests. What it does not have (owner execution required): Windows on real content, the capped live smoke test, the real seven-day soak, a production qualification, the rehearsal on the owner's real data. Those are listed plainly at the end; none is waived.

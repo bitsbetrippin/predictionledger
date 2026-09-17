@@ -463,3 +463,51 @@ test("FOR-06/07 (2.0) — recording a production evaluation is a deliberate owne
   assert.notEqual(ctx.trading.policy().mode, "auto_live");
 });
 
+test("EH-01 (2.0.0-rc.2) — positions the app did not place are external holdings: listed separately, counted toward exposure at venue cost, blocking app entry on that contract only; they open no hold, and holds the 1.13 rule opened for them are reclassified on the next reconcile", async () => {
+  await armManual();
+  // Two hand-placed positions: one on a market the app never stored (like the screenshot), one on a stored market without app orders.
+  const stored = market("eh01", "2026-10-01T18:00:00Z");
+  const storedSlug = stored.constraints!.slug!;
+  fake.externalOrder("tec-nfl-champ-2027-02-14-w-kanchi", "yes", "203", "0.40", { fill: true });
+  fake.externalOrder(storedSlug, "no", "44.25", "0.60", { fill: true });
+  // What 1.13 did with them: a discrepancy hold (and 1.14: an alert) for each mismatch.
+  ctx.execution.openHold(bindingId, "discrepancy", storedSlug, { venueNet: "-44.25", localNet: "0", intents: [] }, clock);
+  ctx.tradingAlerts.raise("discrepancy", `discrepancy:${bindingId}:${storedSlug}`, "Position discrepancy (legacy)", { subject: storedSlug });
+  assert.ok(ctx.trading.dispatchBlockers().some((b) => /hold/.test(b)), "the legacy hold pauses the account before the fix runs");
+  const report = await ctx.execution.reconcile();
+  assert.deepEqual(report.discrepancies, [], "hand-placed positions are not discrepancies");
+  assert.equal(report.externalHoldings, 2, JSON.stringify(report));
+  assert.equal(report.reclassifiedHolds, 1);
+  const positions = ctx.execution.positions(bindingId);
+  const kanchi = positions.find((p) => p.marketSlug === "tec-nfl-champ-2027-02-14-w-kanchi")!;
+  const short = positions.find((p) => p.marketSlug === storedSlug)!;
+  assert.equal(kanchi.external, true); assert.equal(kanchi.venueNet, "203"); assert.equal(kanchi.venueCost, "81.2"); assert.equal(kanchi.discrepancy, undefined); assert.deepEqual(kanchi.intentIds, []);
+  assert.equal(short.external, true); assert.equal(short.venueNet, "-44.25"); assert.equal(short.venueCost, "17.7"); assert.equal(short.discrepancy, undefined);
+  assert.equal(openHolds().filter((h) => h.kind === "discrepancy" && h.subject === storedSlug).length, 0, "the legacy hold is resolved");
+  assert.match(ctx.execution.holds(bindingId).find((h) => h.subject === storedSlug)!.resolution ?? "", /reclassified as an external holding/);
+  assert.ok(!ctx.tradingAlerts.list({ openOnly: true }).some((a) => a.incidentKey === `discrepancy:${bindingId}:${storedSlug}`), "its alert is resolved too");
+  assert.ok(!ctx.trading.dispatchBlockers().some((b) => /hold/.test(b)), JSON.stringify(ctx.trading.dispatchBlockers()));
+  assert.ok(ctx.db.get("SELECT 1 FROM trading_audit_events WHERE kind = 'hold.reclassified'"));
+  // Exposure counts them conservatively at the venue's cost basis (the fake reports one), on top of the app's own risk.
+  const exposure = ctx.risk.exposure(bindingId, clock.slice(0, 10));
+  assert.deepEqual(exposure.externalHoldings.map((h) => [h.marketSlug, h.netQuantity, h.amount, h.basis]).sort(), [["aec-nfl-det-buf-eh01", "-44.25", "17.7", "cost"], ["tec-nfl-champ-2027-02-14-w-kanchi", "203", "81.2", "cost"]]);
+  assert.equal(exposure.externalRiskTotal, "98.9");
+  assert.ok(D(exposure.openRiskTotal).gte("98.9"));
+  assert.equal(exposure.perMarket[stored.venueId], "17.7");
+  // App entry on a contract with a hand-placed position is refused with its own reason; other contracts are unaffected.
+  const c = claim(A, stored.id, "Detroit Lions", "2026-09-30T10:00:00Z");
+  const onHeld = await ctx.decisions.evaluate({ predictionId: c.prediction.id, linkId: c.link.id, now: clock, reuseForecast: false });
+  assert.equal(onHeld.outcome, "skipped");
+  assert.ok(onHeld.reasonCodes.includes("EXTERNAL_POSITION_ON_CONTRACT"), onHeld.reasonCodes.join(","));
+  const other = await liveDecision("eh01b", { expect: "needs_review" });
+  assert.ok(!other.decision.reasonCodes.includes("EXTERNAL_POSITION_ON_CONTRACT"));
+  // …until the caps say otherwise: with the pilot total-risk cap, $98.90 of hand-placed holdings leave no room for a $9.88 order.
+  ctx.trading.setLimits({ totalOpenRisk: "100" });
+  await armManual();
+  const capped = await liveDecision("eh01c");
+  assert.equal(capped.decision.outcome, "skipped");
+  assert.ok(capped.decision.reasonCodes.some((r) => /TOTAL_RISK|RISK_CAP/.test(r)), capped.decision.reasonCodes.join(","));
+  ctx.trading.setLimits({ totalOpenRisk: "1000" });
+  await armManual();
+});
+

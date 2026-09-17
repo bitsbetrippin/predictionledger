@@ -7,6 +7,7 @@
  * Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
  * Licensed under the Apache License 2.0 — see LICENSE and NOTICE in the repository root.
  */
+import { ALERT_HELP, INTENT_HELP, REFERENCE_URL, holdHelp } from "../help";
 import { useEffect, useState } from "react";
 import type { AutomationRun, DecisionOutcome, ExternalLedgerRow, LivePosition, OrderPreviewRecord, PaperUsBook, ReconciliationHold, TradeDecision, TradeIntent, TradeLedgerFilter, TradeLedgerRow, TradingAlert, TradingMode, TradingStatus, TradingSummary, VenueOrderRecord } from "@prediction-ledger/shared";
 import { ApiError, INTENT_LABEL, LEDGER_STATUSES, OUTCOME_LABEL, automationApi, decisionsApi, executionApi, fmtUsd, paperUsApi, tradingApi, type DecisionEvidence, type ReconcileReport } from "../api";
@@ -98,12 +99,12 @@ export function TradesPage() {
       {alerts.length > 0 && (
         <div className="banner warn" role="alert">
           <strong>{alerts.length} open alert(s)</strong>
-          <ul className="plain small">{alerts.map((a) => <li key={a.id}><span className={`chip alert-${a.severity}`}>{a.kind.replace(/_/g, " ")}</span> {a.message} <span className="muted">· first {a.firstAt.slice(0, 19).replace("T", " ")}{a.count > 1 ? ` · ×${a.count}` : ""}</span> <button type="button" className="link" disabled={!!busy} onClick={() => void run("Acknowledging…", () => automationApi.ackAlert(a.id))}>acknowledge</button></li>)}</ul>
+          <ul className="plain small">{alerts.map((a) => <li key={a.id}><span className={`chip alert-${a.severity}`}>{a.kind.replace(/_/g, " ")}</span> {a.message} <span className="muted">· first {a.firstAt.slice(0, 19).replace("T", " ")}{a.count > 1 ? ` · ×${a.count} (the same incident seen again, not a new one)` : ""}</span> <button type="button" className="link" disabled={!!busy} onClick={() => void run("Acknowledging…", () => automationApi.ackAlert(a.id))}>acknowledge</button>{ALERT_HELP[a.kind] && <div className="muted">{ALERT_HELP[a.kind].what} <em>What you do:</em> {ALERT_HELP[a.kind].you} <a href={`${REFERENCE_URL}#${ALERT_HELP[a.kind].anchor}`} target="_blank" rel="noreferrer noopener">reference</a></div>}</li>)}</ul>
         </div>
       )}
       {holds.length > 0 && (
         <div className="banner warn" role="alert">
-          <strong>{holds.length} reconciliation hold(s) — new orders are paused until each is resolved.</strong>
+          <strong>{holds.length} reconciliation hold(s) — new orders are paused until each is resolved.</strong> <span className="small muted">A hold is the app saying "I saw something I cannot explain on my own"; it never trades through one. Positions you placed by hand are not holds since 2.0.0-rc.2 — they are listed under <em>External holdings</em>. <a href={`${REFERENCE_URL}#holds`} target="_blank" rel="noreferrer noopener">reference</a></span>
           {holds.map((h) => <HoldRow key={h.id} hold={h} intents={intents} orders={orders} busy={!!busy} onResolve={(fn) => run("Resolving…", fn)} />)}
         </div>
       )}
@@ -124,8 +125,8 @@ export function TradesPage() {
         <a className="small" href={executionApi.exportUrl} target="_blank" rel="noreferrer noopener">Export live lineage (JSON, secret-free)</a>
         {book && book.positions.length > 0 && <button type="button" disabled={!!busy} onClick={() => { if (window.confirm("Delete every US paper position and fill? Decisions and reservations stay as history. Live records are never touched.")) void run("Resetting…", () => paperUsApi.reset()); }}>Reset US paper book</button>}
       </div>
-      {report && <p className="small muted">Reconciled at {report.syncedAt}: {report.ordersChecked} order(s) read back, {report.executionsAdded} execution(s) added from {report.activitiesRead} activities, {report.settlements} settlement event(s), {report.unknownIntents.length} unknown submission(s), {report.discrepancies.length} discrepancy(ies), {report.holdsOpen} hold(s) open{report.paused ? " — dispatch paused" : ""}. <button type="button" className="link" onClick={() => setReport(null)}>dismiss</button></p>}
-      {(intents.length > 0 || orders.length > 0) && <LiveSection intents={intents} orders={orders} positions={positions} busy={!!busy} onCancel={(id) => run("Cancelling…", () => executionApi.cancel(id))} />}
+      {report && <p className="small muted">Reconciled at {report.syncedAt}: {report.ordersChecked} order(s) read back, {report.executionsAdded} execution(s) added from {report.activitiesRead} activities, {report.settlements} settlement event(s), {report.unknownIntents.length} unknown submission(s), {report.discrepancies.length} discrepancy(ies), {report.holdsOpen} hold(s) open{report.paused ? " — dispatch paused" : ""}{report.externalHoldings ? `, ${report.externalHoldings} external holding(s) (not placed by this app)` : ""}{report.reclassifiedHolds ? `, ${report.reclassifiedHolds} legacy hold(s) reclassified as external holdings` : ""}. <button type="button" className="link" onClick={() => setReport(null)}>dismiss</button></p>}
+      {(intents.length > 0 || orders.length > 0 || positions.length > 0) && <LiveSection intents={intents} orders={orders} positions={positions} busy={!!busy} onCancel={(id) => run("Cancelling…", () => executionApi.cancel(id))} />}
       {view === "ledger" && <LedgerView rows={ledger} filter={filter} setFilter={setFilter} onOpen={(id) => void open(id)} selectedId={selected?.decision.id} runs={runs} />}
       {view === "ledger" && selected && <aside className="detail"><DecisionDetail ev={selected} onClose={() => setSelected(null)} /></aside>}
       {view === "decisions" && (decisions === null ? <p className="muted">Loading…</p> : decisions.length === 0 ? (
@@ -339,6 +340,7 @@ function HoldRow({ hold, intents, orders, busy, onResolve }: { hold: Reconciliat
   return (
     <div className="small">
       <strong>{hold.kind.replace("_", " ")}</strong> · opened {hold.openedAt.slice(0, 19).replace("T", " ")} · {hold.subject ?? ""}
+      {holdHelp(hold.kind, hold.subject) && <div className="muted">{holdHelp(hold.kind, hold.subject)!.what} <em>What you do:</em> {holdHelp(hold.kind, hold.subject)!.you} <a href={`${REFERENCE_URL}#${holdHelp(hold.kind, hold.subject)!.anchor}`} target="_blank" rel="noreferrer noopener">reference</a></div>}
       {hold.kind === "submission_unknown" && intent && (
         <div>
           Intent {intent.id.slice(0, 8)}: BUY {intent.side.toUpperCase()} {intent.quantity} at YES {intent.wirePrice} on {intent.venueMarketId}; reason: {intent.unknownReason ?? "—"}. {String(hold.detail.note ?? "")}
@@ -378,7 +380,7 @@ function LiveSection({ intents, orders, positions, busy, onCancel }: { intents: 
                 <td className="small">{i.createdAt.slice(0, 19).replace("T", " ")}</td>
                 <td className="small">{i.venueMarketId}</td>
                 <td className="small">BUY {i.side.toUpperCase()} {i.quantity} @ YES {i.wirePrice} <span className="muted">(cost {i.limitCost})</span></td>
-                <td><span className={`chip intent-${i.state}`}>{INTENT_LABEL[i.state] ?? i.state}</span>{i.lastError && <div className="muted small">{i.lastError}</div>}{i.unknownReason && <div className="muted small">{i.unknownReason}</div>}</td>
+                <td><span className={`chip intent-${i.state}`} title={INTENT_HELP[i.state]}>{INTENT_LABEL[i.state] ?? i.state}</span>{i.lastError && <div className="muted small">{i.lastError}</div>}{i.unknownReason && <div className="muted small">{i.unknownReason}</div>}</td>
                 <td className="small">{i.order ? <>{i.order.id} · {i.order.state}{i.order.rejectReason ? ` · ${i.order.rejectReason}` : ""}</> : <span className="muted">none</span>}</td>
                 <td>{i.filledQuantity}/{i.quantity}</td>
                 <td className="small">{i.order?.avgPrice ?? "—"} / {fmtUsd(i.order?.fees)}</td>
@@ -396,11 +398,18 @@ function LiveSection({ intents, orders, positions, busy, onCancel }: { intents: 
             <tbody>{external.map((o) => <tr key={o.id}><td>{o.id}</td><td>{o.marketSlug}</td><td>{o.side ?? "?"}</td><td>{o.quantity ?? "?"}</td><td>{o.yesPrice ?? "?"}</td><td>{o.state}</td><td>{o.filledQuantity}</td><td>{o.venueCreatedAt ?? "—"}</td></tr>)}</tbody></table>
         </details>
       )}
-      {positions.length > 0 && (
+      {positions.filter((p) => !p.external).length > 0 && (
         <table className="small">
           <thead><tr><th>Contract</th><th>Venue net</th><th>Ours (YES-denominated)</th><th>As of</th><th>Settled</th><th>Discrepancy</th></tr></thead>
-          <tbody>{positions.map((p) => <tr key={p.marketSlug} className={p.discrepancy ? "fs-incompatible" : ""}><td>{p.marketSlug}</td><td>{p.venueNet ?? "—"}</td><td>{p.localNet}</td><td>{p.venueAt?.slice(0, 19).replace("T", " ") ?? "—"}</td><td>{p.settled ? `${p.settled.outcome} · ${p.settled.at.slice(0, 10)}` : "open"}</td><td className="muted">{p.discrepancy ?? ""}</td></tr>)}</tbody>
+          <tbody>{positions.filter((p) => !p.external).map((p) => <tr key={p.marketSlug} className={p.discrepancy ? "fs-incompatible" : ""}><td>{p.marketSlug}</td><td>{p.venueNet ?? "—"}</td><td>{p.localNet}</td><td>{p.venueAt?.slice(0, 19).replace("T", " ") ?? "—"}</td><td>{p.settled ? `${p.settled.outcome} · ${p.settled.at.slice(0, 10)}` : "open"}</td><td className="muted">{p.discrepancy ?? ""}</td></tr>)}</tbody>
         </table>
+      )}
+      {positions.some((p) => p.external) && (
+        <details className="small" open>
+          <summary>{positions.filter((p) => p.external).length} external holding(s) — positions on this account that this app did not place (hand-placed on the website, or older than the app). They count toward your exposure limits at the venue's cost basis and block app entry on the same contract; they are not discrepancies and never pause the account. <a href={`${REFERENCE_URL}#external-holdings`} target="_blank" rel="noreferrer noopener">reference</a></summary>
+          <table><thead><tr><th>Contract</th><th>Venue net (+ long YES / − short)</th><th>Venue cost basis</th><th>As of</th></tr></thead>
+            <tbody>{positions.filter((p) => p.external).map((p) => <tr key={p.marketSlug}><td>{p.marketSlug}</td><td>{p.venueNet ?? "—"}</td><td>{p.venueCost ? fmtUsd(p.venueCost) : "unknown (counted at $1 per contract)"}</td><td>{p.venueAt?.slice(0, 19).replace("T", " ") ?? "—"}</td></tr>)}</tbody></table>
+        </details>
       )}
     </div>
   );

@@ -4,6 +4,23 @@ All notable changes to Prediction Ledger. Format follows [Keep a Changelog](http
 
 Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
 
+## 2.0.0-rc.2 — 2026-09-17 · External holdings, plain-English operations reference, the on-contract gate fix
+
+Follow-up to rc.1 from the owner's first look at the Trades page on a real account: six `discrepancy` holds and two alerts for positions placed by hand on the venue, on markets where the app has no order at all. Still a release candidate (the owner evidence in SETUP §4.16 is unchanged); **no production order was placed.**
+
+### Changed
+- **Hand-placed positions are external holdings, not discrepancies (RSK-06).** A venue position on a market where the app has no order of its own is listed under *External holdings* on Trades (net quantity, venue cost basis), counted toward the total / per-market / per-event limits at the venue's cost basis (else $1 per contract), and blocks app entry on that same contract (`no_external_position` gate, `EXTERNAL_POSITION_ON_CONTRACT`). It opens no hold and never pauses the account. Discrepancy holds remain for markets where the app has its own orders. Legacy holds opened by the 1.13 rule for such positions (`"intents":[]`) are resolved on the next reconcile ("reclassified as an external holding"), their alerts closed, an audit event written (`hold.reclassified`); `POST /api/trading/reconcile` reports `externalHoldings` and `reclassifiedHolds`.
+- **RV-15 — the on-contract gates compared venue slugs with stored venue ids.** `no_opposing_exposure` and `no_open_order` (RSK-06) filtered the account snapshot by `venueMarketId === contract.venueMarketId`, but the venue keys positions and orders by market *slug* while the contract is compared by venue *id*; when the two differ (they do in production) the gates could never match. The decision service and the preview/submit re-decision now map slugs to venue ids. Found while adding the external gate; covered by `review20` EH-01.
+- **Plain-English help on the Trades page.** Every hold and alert shows one sentence of meaning, one sentence of what you do, and a link to the matching section of the new reference; intent chips carry a tooltip; the holds banner explains what a hold is.
+
+### Added
+- **`docs/OPERATIONS_REFERENCE.md`** — every summary tile, external holdings, each hold kind (cause, what the app did, what you do), each alert kind, intent / order / position states, pause / disarm / stop / breaker, the decision reason codes, and the 2026-09-17 scenario worked through.
+- Test EH-01 (`review20.test.ts`, 194 total): two hand-placed positions (one on a market the app never stored) → external holdings, no discrepancy, a legacy hold + alert reclassified/closed, exposure counts cost basis, app entry on the held contract skipped with `EXTERNAL_POSITION_ON_CONTRACT`, other contracts unaffected until the total-risk cap applies.
+- Fake venue positions now carry a cost basis (as the real venue does).
+
+### Migration / rollback
+- No migration. `npm install` (version bump) + `npm run build`. Rollback: 2.0.0-rc.1 or 1.14.0 tree; the database is unchanged (resolved holds stay resolved with their note).
+
 ## 2.0.0-rc.1 — 2026-09-17 · Release candidate: review fixes, upgrade rehearsal, key-file ACL, soak and qualification reports, full requirement audit
 
 Release candidate for 2.0.0 (requirements OPS-01…05, O01–O07, the FOR-06/07 qualification evidence, and a code review of the 1.13/1.14 execution path). **It stays a release candidate**: the mandatory owner checks (Windows run on real content, the capped live smoke test, the real seven-day paper soak, a production qualification, the upgrade rehearsal on the owner's real 1.9 data) have not been executed, and a production qualification does not exist, so automation cannot be armed anywhere. Every automated test runs against the fake venue; **no production order was placed during development.**

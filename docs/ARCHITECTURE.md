@@ -556,6 +556,7 @@ services/reports.ts ── soak(): automation_runs/candidates, trade_decisions, 
 
 - **Nothing here loosens a gate.** Every change either adds a check (scope, marker, side/contract match, settlement cross-check) or takes an instant later; the only behavioural relaxation is the 2 s clock-skew tolerance, bounded and tested on both sides.
 - **The rehearsal never touches the original file** (read-only open + `VACUUM INTO`), and the "before" snapshot is kept so an interrupted upgrade re-run compares against the pristine copy.
+- **External holdings (rc.2, ADR-037).** `positions()` marks a market with no app orders `external: true` (venue net + cost basis, no discrepancy); `RiskService.externalHoldings()` reads them from the latest successful sync and adds their cost basis (else $1/contract) to total / per-market / per-event exposure; `decide()` refuses entry on such a contract (`no_external_position`); `reconcile()` reclassifies legacy discrepancy holds whose market has no app orders and closes their alerts. The decision service and `redecide` map the venue's slug-keyed snapshot to venue ids before any on-contract gate (RV-15).
 - **The soak harness is a compressed clock against fake data** (`services/soak.test.ts`): it proves the scheduler survives an outage, a 429, a sleep past a cutoff and a restart without a duplicate entry or a cap breach, and that the report's checks catch an injected duplicate. The real soak is seven calendar days of paper autopilot on real venue data, run by the owner (SETUP §4.16).
 
 ---

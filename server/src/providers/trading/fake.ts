@@ -149,6 +149,7 @@ export class FakeTradingAdapter implements TradingAdapter {
   /** Positions the fake venue holds from filled orders (ours and external), net YES-denominated. */
   derivedPositions(): TradingPositionSummary[] {
     const net = new Map<string, Dec>();
+    const cost = new Map<string, Dec>();
     for (const o of this.orders.values()) {
       const filled = D(o.filledQuantity);
       if (!filled.isPos()) continue;
@@ -156,9 +157,11 @@ export class FakeTradingAdapter implements TradingAdapter {
       const sell = /SELL/.test(o.intentRaw ?? "");
       const signed = (o.side === "no") === !sell ? filled.neg() : filled;
       net.set(o.marketSlug, (net.get(o.marketSlug) ?? Dec.ZERO).add(signed));
+      // Cost basis the way the venue reports it: what was paid for the contracts held (buys only).
+      if (!sell && o.avgPrice) { const chosen = o.side === "no" ? Dec.ONE.sub(o.avgPrice) : D(o.avgPrice); cost.set(o.marketSlug, (cost.get(o.marketSlug) ?? Dec.ZERO).add(chosen.mul(filled))); }
     }
     for (const [slug, adj] of this.externalPositionAdjustments) net.set(slug, (net.get(slug) ?? Dec.ZERO).add(adj));
-    return [...net].filter(([, q]) => !q.isZero()).map(([marketSlug, q]) => ({ marketSlug, netQuantity: q.toString(), expired: false }));
+    return [...net].filter(([, q]) => !q.isZero()).map(([marketSlug, q]) => ({ marketSlug, netQuantity: q.toString(), expired: false, cost: cost.has(marketSlug) ? { value: cost.get(marketSlug)!.round(2).toString(), currency: "USD" } : undefined }));
   }
   readonly externalPositionAdjustments = new Map<string, Dec>();
 

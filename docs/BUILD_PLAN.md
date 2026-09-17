@@ -481,6 +481,7 @@ The 1.0 backlog split in two: 0.6 is everything that could be built and verified
 | Soak harness rehearsal (compressed seven days, outage / 429 / sleep / restart) + attached synthetic reports under docs/reports | O07 | AG-14 | ✓ (harness) |
 | Requirement audit: every ID in 02 → tests + owner evidence (VERIFICATION); ADR-036; README/CHANGELOG/SETUP §4.16/API/ARCHITECTURE §6.6/PREDICTION_MARKETS | — | AG-02, AG-16 | ✓ |
 | Tests: 23 new (193/193 in the sandbox); typechecks clean | 03 §2.0 | AG-14 | ✓ |
+| rc.2: external holdings (ADR-037) replacing discrepancy holds for hand-placed positions; legacy holds reclassified; RV-15 slug/id mapping for the on-contract gates; plain-English help on Trades + `docs/OPERATIONS_REFERENCE.md`; EH-01 (194/194) | RSK-06, DASH-04 | AG-05, AG-10, AG-16 | ✓ |
 | Windows install / typecheck / build / test on real content; `npm run doctor` ACL OK; upgrade rehearsal on the owner's real 1.9 data; restore drill | O01, O05, O06 | owner | **pending** |
 | Capped smoke test (§4.14), automation acceptance (§4.15), real seven-day soak + report (§4.16), first real settlement | EXE, AUTO, O07 | owner | **pending — mandatory before 2.0.0** |
 | **Production qualification** (≥ 100 distinct settled real events with a market baseline) | FOR-06 / AUTO-01 | owner / data | **unmet — not waived; automation unavailable** |

@@ -62,7 +62,8 @@ export interface DecisionAccount {
   syncAt?: string;
   complete: boolean;
   buyingPower?: string;
-  positions: { venueMarketId: string; netQuantity: string }[];
+  /** `external`: the app has no order of its own on that market (2.0.0-rc.2) — an entry there would pyramid onto a hand-placed position. */
+  positions: { venueMarketId: string; netQuantity: string; external?: boolean }[];
   openOrders: { venueMarketId: string; intent?: string; state?: string }[];
 }
 
@@ -274,6 +275,9 @@ export function decide(input: DecisionInput): DecisionResult {
     gate("no_opposing_exposure", "No opposing position on this contract", !opposing, opposing ? `existing ${side === "yes" ? "short" : "long"} exposure ${pos.map((p) => p.netQuantity).join(",")} on ${input.contract.venueMarketId}` : "none", "OPPOSING_EXPOSURE");
     const orders = acct.openOrders.filter((o) => o.venueMarketId === input.contract.venueMarketId);
     gate("no_open_order", "No open order on this contract", orders.length === 0, orders.length ? `${orders.length} open order(s) on the contract (external or unreconciled)` : "none", "OPEN_ORDER_ON_CONTRACT");
+    // 2.0.0-rc.2: a position the app did not place blocks app entry on that contract (no pyramiding onto hand-placed holdings).
+    const external = pos.filter((p) => p.external);
+    gate("no_external_position", "No hand-placed position on this contract", external.length === 0, external.length ? `the account already holds ${external.map((p) => p.netQuantity).join(",")} on ${input.contract.venueMarketId} that this app did not place` : "none", "EXTERNAL_POSITION_ON_CONTRACT");
   }
 
   // ---- sizing ----

@@ -399,7 +399,7 @@ export const OUTCOME_LABEL: Record<DecisionOutcome, string> = { eligible: "Eligi
 
 import type { DispatchLease, ExecutionRecord, IntentState, LivePosition, OrderPreviewRecord, ReconciliationHold, SettlementEventRecord, TradeIntent, VenueOrderRecord } from "@prediction-ledger/shared";
 
-export interface ReconcileReport { bindingId: string; syncedAt: string; ordersChecked: number; executionsAdded: number; activitiesRead: number; settlements: number; unknownIntents: { intentId: string; candidates: string[] }[]; discrepancies: { marketSlug: string; venueNet: string; localNet: string }[]; holdsOpen: number; paused: boolean }
+export interface ReconcileReport { bindingId: string; syncedAt: string; ordersChecked: number; executionsAdded: number; activitiesRead: number; settlements: number; unknownIntents: { intentId: string; candidates: string[] }[]; discrepancies: { marketSlug: string; venueNet: string; localNet: string }[]; holdsOpen: number; paused: boolean; externalHoldings?: number; reclassifiedHolds?: number }
 export const executionApi = {
   preview: (decisionId: string) => request<OrderPreviewRecord>("POST", `/api/trading/decisions/${decisionId}/preview`, {}),
   submit: (decisionId: string, previewId: string, decisionHash: string) => request<TradeIntent>("POST", `/api/trading/decisions/${decisionId}/submit`, { previewId, decisionHash }),

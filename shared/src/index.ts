@@ -1810,6 +1810,9 @@ export interface RiskExposure {
   perMarket: Record<string, string>;
   perEvent: Record<string, string>;
   pendingUnknown: number;
+  /** 2.0.0-rc.2 (RSK-06): holdings the app did not place, counted conservatively (venue cost basis, else $1 per contract). */
+  externalHoldings: { venueMarketId: string; marketSlug: string; netQuantity: string; amount: string; basis: "cost" | "worst_case" }[];
+  externalRiskTotal: string;
 }
 
 export interface PaperUsFill {
@@ -1963,6 +1966,13 @@ export interface LivePosition {
   intentIds: string[];
   discrepancy?: string;
   settled?: { outcome: "win" | "loss" | "void" | "correction" | "external_exit"; at: string; pnl?: string };
+  /**
+   * 2.0.0-rc.2: a position on a market where this app has NO order of its own (placed by hand on the website, or
+   * before the app existed). Listed separately, counted toward exposure, never a discrepancy, never pauses the account.
+   */
+  external?: boolean;
+  /** Venue-reported cost basis of the position when the venue supplies it. */
+  venueCost?: string;
 }
 
 export interface DispatchLease {

@@ -136,6 +136,7 @@ Behaviour changes on existing routes (from the 2.0 review; see docs/VERIFICATION
 - `POST /api/trading/intents/:id/resolve-unknown { venueOrderId }` refuses `409 order_mismatch` (other contract / side / quantity) and `409 order_side_unknown` (read the order back first).
 - `POST /api/trading/emergency-stop` waits up to 25 s for a POST already in flight before its cancel sweep.
 - Reconciliation may open a `discrepancy` hold with subject `settlement:<activityId>` when the venue's realized amount contradicts the app's reading of a resolution (contested settlement).
+- (rc.2) `GET /api/trading/positions` rows gain `external: true` + `venueCost` for positions on markets where the app has no order (hand-placed); such markets never carry `discrepancy`. `POST /api/trading/reconcile` answers with `externalHoldings` (count) and `reclassifiedHolds` (legacy discrepancy holds resolved this run). Decisions gain the gate `no_external_position` (`EXTERNAL_POSITION_ON_CONTRACT`); `RiskExposure` gains `externalHoldings[]` and `externalRiskTotal`.
 - Decision / preview / submit take their instant after fetching the book and account state; a book stamped up to 2 s after that instant is fresh.
 
 CLI (read-only): `npm run report:soak [-- --from … --to … --json --out file]`, `npm run report:qualification [-- --category … --strategy … --as-of … --json --out file]`, `npm run upgrade:rehearse -- <db> [--interrupt-after n] [--keep]`.

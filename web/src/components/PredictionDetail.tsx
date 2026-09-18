@@ -1,14 +1,18 @@
 /**
- * Prediction Ledger — prediction detail panel: quotation, normalized claim, components, plan, history, controls.
+ * Prediction Ledger — prediction detail panel: quotation, normalized claim, components, plan, history, controls
+ * (2.1: "?" help beside Deadline, Components, the two-field verdict, syndicated sources and provenance; filled/outlined chips).
  *
  * Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
  * Licensed under the Apache License 2.0 — see LICENSE and NOTICE in the repository root.
  */
 import { useEffect, useState } from "react";
-import { EVIDENCE_ASSESSMENT_LABEL, TIME_STATUS_LABEL, type Assessment, type ComponentKind, type EvidenceItem, type Game, type JobSummary, type PredictionEdit, type ValidationPlan } from "@prediction-ledger/shared";
+import { EVIDENCE_ASSESSMENT_LABEL, type Assessment, type ComponentKind, type EvidenceItem, type Game, type JobSummary, type PredictionEdit, type ValidationPlan } from "@prediction-ledger/shared";
 import { content, fmtClock, type PredictionFull, type RunDetail } from "../api";
 import { MarketLinks } from "./MarketLinks";
 import { DossierView } from "./DossierView";
+import { HelpButton } from "./HelpButton";
+import { Icon } from "./Icons";
+import { AssessmentChip, KindChip, TimeChip } from "./ui";
 
 const KIND_LABEL: Record<ComponentKind, string> = { future_claim: "future claim", premise: "premise", causal_link: "causal link" };
 
@@ -47,8 +51,8 @@ export function PredictionDetail(props: {
   return (
     <div className="detail-inner">
       <div className="row space-between">
-        <strong>Prediction detail</strong>
-        <button type="button" className="link" onClick={props.onClose}>close</button>
+        <strong style={{ fontWeight: 500 }}>Prediction detail <span className="meta mono">{p.id.slice(0, 8)}</span></strong>
+        <button type="button" className="icon-btn" aria-label="Close" onClick={props.onClose}><Icon name="x" /></button>
       </div>
 
       <div className="quote">
@@ -57,7 +61,7 @@ export function PredictionDetail(props: {
         <mark>“{p.quoteExact}”</mark>
         {p.contextAfter && <span className="muted"> {p.contextAfter}…</span>}
         {p.occurrences.length > 1 && <div className="muted small">Said {p.occurrences.length} times: {p.occurrences.map((o) => fmtClock(o.startS)).join(", ")}</div>}
-        {(p.quoteHash || p.analysisVersion) && <div className="muted small">quote hash {p.quoteHash?.slice(0, 12) ?? "—"}… · transcript hash {p.transcriptHash?.slice(0, 12) ?? "—"}… · analysis v{p.analysisVersion ?? 1}</div>}
+        {(p.quoteHash || p.analysisVersion) && <div className="meta">quote hash {p.quoteHash?.slice(0, 12) ?? "—"}… · transcript hash {p.transcriptHash?.slice(0, 12) ?? "—"}… · analysis v{p.analysisVersion ?? 1} <HelpButton topic="concept.provenance" /></div>}
       </div>
 
       {editing ? (
@@ -98,7 +102,7 @@ export function PredictionDetail(props: {
             <dt>Normalized</dt><dd>{p.normalizedStatement}</dd>
             <dt>Made on</dt><dd>{p.madeOnDate ?? "unknown"} <span className="muted small">({p.madeOnBasis})</span></dd>
             <dt>Time expression</dt><dd>{p.timeExpression ?? <span className="muted">none</span>}</dd>
-            <dt>Deadline</dt><dd>{p.deadlineDate ?? "unknown"} {p.deadlineBasis && <span className="muted small">({p.deadlineBasis})</span>}</dd>
+            <dt>Deadline <HelpButton topic="concept.deadline-basis" /></dt><dd>{p.deadlineDate ?? "unknown"} {p.deadlineBasis && <span className="muted small">({p.deadlineBasis})</span>}</dd>
             <dt>Modality</dt><dd>{p.modality ?? "—"}</dd>
             <dt>Topic</dt><dd>{p.topic ?? "—"}</dd>
             <dt>Geography</dt><dd>{p.geography ?? <span className="muted">unstated</span>}</dd>
@@ -109,11 +113,11 @@ export function PredictionDetail(props: {
             <dt>Confidence</dt><dd>{p.extractionConfidence !== undefined ? `${Math.round(p.extractionConfidence * 100)}%` : "—"} <span className="muted small">{p.extractionProvider}/{p.extractionModel} · {p.extractionTemplate}</span></dd>
           </dl>
 
-          <h3>Components</h3>
+          <h3>Components <HelpButton topic="concept.components" /></h3>
           <ul className="components">
             {p.components.map((c) => (
               <li key={c.id}>
-                <span className={`chip kind-${c.kind}`}>{KIND_LABEL[c.kind]}</span> {c.statement}
+                <KindChip kind={c.kind} /> {c.statement}
                 {c.deadlineDate && <span className="muted small"> · deadline {c.deadlineDate}</span>}
                 {p.components.length > 1 && (
                   <button type="button" className="link small" disabled={!!busy} onClick={() => act("split", () => content.split(p.id, c.id))}>split out</button>
@@ -157,10 +161,11 @@ export function PredictionDetail(props: {
 
       {latest && (
         <div className={`verdict-card v-${latest.evidenceAssessment}`}>
-          <div className="row space-between">
-            <strong>{EVIDENCE_ASSESSMENT_LABEL[latest.evidenceAssessment]}</strong>
-            <span className="small">{TIME_STATUS_LABEL[latest.timeStatus]} · confidence {latest.confidence} · v{latest.version} · researched {latest.researchedAt}</span>
+          <div className="row">
+            <AssessmentChip value={latest.evidenceAssessment} sports={p.kind === "sports_pick"} /><HelpButton topic="concept.evidence-assessment" />
+            <TimeChip value={latest.timeStatus} /><HelpButton topic="concept.time-status" />
           </div>
+          <div className="meta">confidence {latest.confidence} · v{latest.version} · researched {latest.researchedAt}</div>
           <p>{latest.explanation}</p>
           {latest.uncertainty && <p className="small"><strong>Remaining uncertainty:</strong> {latest.uncertainty}</p>}
           {latest.laterDevelopments && <p className="small"><strong>Later developments (after the deadline):</strong> {latest.laterDevelopments}</p>}
@@ -231,7 +236,7 @@ function PlanView({ plans, predictionId, onChanged }: { plans: ValidationPlan[];
       <p><strong>Proposition.</strong> {b.proposition}</p>
       <p className="muted small">Made {b.dates.predictionMade ?? "unknown"} · deadline {b.dates.deadline ?? "unknown"} · research cutoff {b.dates.researchCutoff}{b.dates.notes ? ` · ${b.dates.notes}` : ""}</p>
       <h4>Components</h4>
-      <ul className="plain">{b.components.map((c, i) => <li key={i}><span className={`chip kind-${c.kind}`}>{KIND_LABEL[c.kind]}</span> {c.statement}{c.conditions.length ? <span className="muted"> — if {c.conditions.join("; ")}</span> : null}</li>)}</ul>
+      <ul className="plain">{b.components.map((c, i) => <li key={i}><KindChip kind={c.kind} /> {c.statement}{c.conditions.length ? <span className="muted"> — if {c.conditions.join("; ")}</span> : null}</li>)}</ul>
       {b.definitions.length > 0 && <><h4>Working definitions</h4><ul className="plain">{b.definitions.map((d, i) => <li key={i}><strong>{d.term}:</strong> {d.workingDefinition}</li>)}</ul></>}
       <h4>Ambiguities</h4>
       {editing ? <textarea rows={3} value={ambig} onChange={(e) => setAmbig(e.target.value)} /> : <ul className="plain">{b.ambiguities.map((a, i) => <li key={i}>{a}</li>)}</ul>}
@@ -318,7 +323,7 @@ function EvidenceView({ prediction: p, assessment: a }: { prediction: Prediction
       {groups.map((g) => (
         <div key={g.key} className="evidence-group">
           <h4>{g.label}</h4>
-          {g.ca && <p className="small"><span className={`verdict v-${g.ca.assessment}`}>{EVIDENCE_ASSESSMENT_LABEL[g.ca.assessment]}</span> {g.ca.explanation}</p>}
+          {g.ca && <p className="small"><AssessmentChip value={g.ca.assessment} /> {g.ca.explanation}</p>}
           {g.items.length === 0 ? <p className="muted small">No evidence items.</p> : g.items.map((e) => <EvidenceCard key={e.id} e={e} cited={cited.has(e.id)} />)}
         </div>
       ))}
@@ -338,7 +343,7 @@ function EvidenceCard({ e, cited }: { e: EvidenceItem; cited: boolean }) {
   return (
     <div className={`evidence-card stance-${e.stance}${cited ? " cited" : ""}`}>
       <div className="row space-between small">
-        <span><span className={`chip stance-${e.stance}`}>{e.stance}</span> {e.actionStage && e.actionStage !== "other" ? <span className="chip">{e.actionStage}</span> : null} {e.inWindow === false && <span className="chip late">after deadline</span>} {!e.independent && <span className="chip" title="Same text as another source">syndicated</span>}</span>
+        <span><span className={`chip stance-${e.stance}`}>{e.stance}</span> {e.actionStage && e.actionStage !== "other" ? <span className="chip">{e.actionStage}</span> : null} {e.inWindow === false && <span className="chip late">after deadline</span>} {!e.independent && <span className="chip" title="Same text as another source">syndicated<HelpButton topic="concept.independence" /></span>}</span>
         <span className="muted">{e.eventDate ?? "undated"}</span>
       </div>
       <blockquote>“{e.excerpt}”</blockquote>

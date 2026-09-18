@@ -53,8 +53,7 @@ export function SubscriptionsCard({ tools, onImported }: { tools: ToolsStatus | 
   };
 
   return (
-    <div className="card">
-      <strong>Follow a channel or playlist</strong>
+    <div>
       <p className="muted">A bounded subscription: every poll lists the newest videos, skips anything already in the ledger (including tracking-parameter variants of the same link), and queues at most the per-run budget through the normal YouTube import. Disable or delete it at any time.</p>
       <div className="grid-3">
         <label className="field"><span>Channel or playlist link</span><input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://www.youtube.com/@channel or …/playlist?list=…" disabled={offline} /></label>

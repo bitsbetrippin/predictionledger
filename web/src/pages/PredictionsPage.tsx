@@ -1,21 +1,19 @@
 /**
- * Prediction Ledger — Predictions table (grouped by video) + detail panel.
+ * Prediction Ledger — Predictions table (grouped by video) + detail panel (2.1 redesign: filled result chip and
+ * outlined time-status chip on every row, "?" help beside the two-field verdict, card list below 880 px, detail as
+ * a full-screen overlay on narrow screens).
  *
  * Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
  * Licensed under the Apache License 2.0 — see LICENSE and NOTICE in the repository root.
  *
  * Columns: Prediction | Deadline | Result | Time status | Brief explanation | Sources | Last checked.
- * Result/explanation/sources/last-checked are populated by Release 0.3; here they show "not researched".
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { EVIDENCE_ASSESSMENT_LABEL, type JobSummary, type VideoSummary } from "@prediction-ledger/shared";
 import { api, content, fmtClock, pollJob, type PredictionFull, type PredictionRow } from "../api";
 import { PredictionDetail } from "../components/PredictionDetail";
-
-const TIME_LABEL: Record<PredictionRow["timeStatus"], string> = { pending: "Deadline pending", reached: "Deadline reached", unknown: "Deadline unknown" };
-
-/** Sports picks read as bets settle: hit / miss / push. Same underlying two-field verdict. */
-const SPORTS_RESULT_LABEL: Partial<Record<string, string>> = { supported: "Hit ✓", contradicted: "Miss ✗", partially_supported: "Push", insufficient: "No final score yet", not_assessable: "Not settleable" };
+import { HelpButton } from "../components/HelpButton";
+import { AssessmentChip, EmptyState, ErrorState, Skeleton, TimeChip } from "../components/ui";
 
 function pickLabel(sp: NonNullable<import("@prediction-ledger/shared").Prediction["sportsPick"]>): string {
   const line = (l?: number) => (l === undefined ? "" : l > 0 ? ` +${l}` : ` ${l}`);
@@ -39,6 +37,7 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
   const [selected, setSelected] = useState<PredictionFull | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [planJobs, setPlanJobs] = useState<Record<string, JobSummary>>({});
 
   const reload = useCallback(async () => {
@@ -48,12 +47,13 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
         content.listVideos(),
         content.topics(),
       ]);
-      setRows(r); setVideos(v); setTopics(t);
+      setRows(r); setVideos(v); setTopics(t); setLoadError(null);
     } catch (e) {
-      setError((e as Error).message);
+      setLoadError((e as Error).message);
     }
   }, [videoId, kind, topic, status, result]);
   useEffect(() => void reload(), [reload]);
+  useEffect(() => { setSelectedId(initialPredictionId); }, [initialPredictionId]);
 
   const loadSelected = useCallback(async (id: string | undefined) => {
     if (!id) return setSelected(null);
@@ -67,6 +67,7 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
     for (const r of visible) m.set(r.videoId, [...(m.get(r.videoId) ?? []), r]);
     return [...m.entries()];
   }, [visible]);
+  const assessed = visible.filter((r) => r.result).length;
 
   const generatePlan = async (id: string) => {
     try {
@@ -85,7 +86,6 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
     try {
       const { jobId } = mode === "validate" ? await content.validateScore(id, !!rows?.find((r) => r.id === id)?.result) : await content.research(id, undefined, mode === "forecast" ? "forecast" : "verdict");
       let done = await pollJob(jobId, (j) => setResearchJobs((m) => ({ ...m, [id]: j })));
-      // Chained jobs (research after plan, assessment after research) show up in the job list for this subject.
       for (let hops = 0; hops < 4 && done.status === "completed"; hops++) {
         await new Promise((r) => setTimeout(r, 1200));
         const next = (await api.listJobs()).find((j) => j.subjectId === id && j.id !== done.id && (j.status === "queued" || j.status === "running"));
@@ -121,6 +121,13 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
     }
   };
 
+  /** Research every checked prediction that has no verdict yet, one after another. */
+  const researchChecked = async () => {
+    const ids = [...checked].filter((id) => { const r = rows?.find((x) => x.id === id); return r && !r.result && r.kind !== "sports_pick"; });
+    for (const id of ids) await research(id);
+    setChecked(new Set());
+  };
+
   const mergeChecked = async () => {
     const ids = [...checked];
     if (ids.length < 2) return;
@@ -132,9 +139,10 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
     await loadSelected(target);
   };
 
+  const toggle = (id: string, on: boolean) => setChecked((s) => { const n = new Set(s); if (on) n.add(id); else n.delete(id); return n; });
+
   return (
     <section className="page wide">
-      <h1>Predictions</h1>
       {error && <div className="banner error" role="alert">{error} <button type="button" className="link" onClick={() => setError(null)}>dismiss</button></div>}
 
       <div className="filters">
@@ -145,44 +153,52 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
         <label>Deadline <select value={deadline} onChange={(e) => setDeadline(e.target.value as typeof deadline)}><option value="">Any</option><option value="pending">Pending</option><option value="reached">Reached</option><option value="unknown">Unknown</option></select></label>
         <label>Result <select value={result} onChange={(e) => setResult(e.target.value)}><option value="">Any</option><option value="not_researched">Not researched</option>{(Object.keys(EVIDENCE_ASSESSMENT_LABEL) as (keyof typeof EVIDENCE_ASSESSMENT_LABEL)[]).map((k) => <option key={k} value={k}>{EVIDENCE_ASSESSMENT_LABEL[k]}</option>)}</select></label>
         {checked.size >= 2 && <button type="button" onClick={mergeChecked}>Merge {checked.size} selected</button>}
+        {checked.size >= 1 && <button type="button" onClick={() => void researchChecked()}>Research selected</button>}
         {videoId && (visible.some((r) => r.kind === "sports_pick") || kind === "sports_pick") && (
           <button type="button" className="primary" disabled={!!validatingAll} onClick={validateAll} title="Looks up each game once (winner, score, date) and settles every pick on it">
             {validatingAll ?? "Validate all scores"}
           </button>
         )}
       </div>
+      {rows !== null && (
+        <p className="small muted" style={{ margin: "0 0 10px" }}>
+          {visible.length} prediction{visible.length === 1 ? "" : "s"} · {assessed} assessed · {visible.length - assessed} not researched
+          {" · "}<span className="status filled tone-neutral" style={{ padding: "0 6px" }}>■</span> Evidence assessment = what the record shows{" "}
+          <span className="status outlined" style={{ padding: "0 6px" }}>□</span> Time status = where the clock is <HelpButton topic="concept.evidence-assessment">Why two fields</HelpButton>
+        </p>
+      )}
 
-      {rows === null ? <p className="muted">Loading…</p> : visible.length === 0 ? (
-        <div className="empty-state"><p>No predictions match.</p><p className="muted">Import a transcript in the Library and run “Extract predictions”.</p></div>
+      {loadError && rows === null ? <ErrorState title="Predictions could not be loaded" message={loadError} onRetry={() => void reload()} /> : rows === null ? <Skeleton rows={6} /> : visible.length === 0 ? (
+        <EmptyState title="No predictions match." action={<a href="#/library">Go to the Library</a>}>Import a transcript in the Library and run “Extract predictions”, or widen the filters.</EmptyState>
       ) : (
-        <div className="split">
+        <div className={`split${selected ? " detail-open" : ""}`}>
           <div className="table-wrap">
             <table className="table predictions">
               <thead>
-                <tr><th></th><th>Prediction</th><th>Deadline</th><th>Result</th><th>Time status</th><th>Brief explanation</th><th>Sources</th><th>Last checked</th></tr>
+                <tr><th></th><th>Prediction</th><th>Deadline</th><th>Result</th><th>Time status</th><th>Brief explanation</th><th className="num">Sources</th><th>Last checked</th></tr>
               </thead>
               {grouped.map(([vid, list]) => (
                 <tbody key={vid}>
-                  <tr className="group"><td colSpan={8}>▸ {list[0].videoTitle ?? vid} <span className="muted">({list.length})</span> <a href={`#/videos/${vid}`} className="small">open video</a></td></tr>
+                  <tr className="group"><td colSpan={8}>{list[0].videoTitle ?? vid} <span className="muted">({list.length})</span> <a href={`#/videos/${vid}`} className="small">open video</a></td></tr>
                   {list.map((p) => {
                     const pj = planJobs[p.id] ?? researchJobs[p.id];
                     const r = p.result;
                     return (
                       <tr key={p.id} className={selectedId === p.id ? "selected" : ""} onClick={() => setSelectedId(p.id)}>
-                        <td onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label="select for merge" checked={checked.has(p.id)} onChange={(e) => setChecked((s) => { const n = new Set(s); e.target.checked ? n.add(p.id) : n.delete(p.id); return n; })} /></td>
+                        <td onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label="select" checked={checked.has(p.id)} onChange={(e) => toggle(p.id, e.target.checked)} /></td>
                         <td>
-                          <div>{p.kind === "sports_pick" && p.sportsPick && <span className="chip sports" title="Sports pick — settled from the final score, no deep research">{pickLabel(p.sportsPick)}</span>} {p.normalizedStatement}</div>
-                          <div className="muted small">{fmtClock(p.startS)} · {p.userStatus}{p.components.length > 1 ? ` · ${p.components.length} components` : ""}{p.latestPlanVersion ? ` · plan v${p.latestPlanVersion}` : ""}{pj && (pj.status === "running" || pj.status === "queued") ? ` · ${pj.stage ?? "planning…"}` : ""}</div>
+                          <div>{p.kind === "sports_pick" && p.sportsPick && <span className="chip sports" title="Sports pick — settled from the final score, no deep research">{pickLabel(p.sportsPick)}</span>}{p.normalizedStatement}</div>
+                          <div className="meta">{fmtClock(p.startS)} · {p.userStatus}{p.components.length > 1 ? ` · ${p.components.length} components` : ""}{p.latestPlanVersion ? ` · plan v${p.latestPlanVersion}` : ""}{pj && (pj.status === "running" || pj.status === "queued") ? ` · ${pj.stage ?? "planning…"}` : ""}</div>
                         </td>
-                        <td>{p.deadlineDate ?? <span className="muted">unknown</span>}</td>
-                        <td>
-                          {r ? <span className={`verdict v-${r.evidenceAssessment}`}>{p.kind === "sports_pick" ? (SPORTS_RESULT_LABEL[r.evidenceAssessment] ?? EVIDENCE_ASSESSMENT_LABEL[r.evidenceAssessment]) : EVIDENCE_ASSESSMENT_LABEL[r.evidenceAssessment]}</span> : p.processingStatus === "running" ? <span className="muted">{p.kind === "sports_pick" ? "validating…" : "researching…"}</span> : p.processingStatus === "failed" ? <span className="result error">{p.kind === "sports_pick" ? "validation failed" : "research failed"}</span> : <span className="muted">{p.kind === "sports_pick" ? "— not validated" : "— not researched"}</span>}
-                          {r && <div className="muted small">confidence {r.confidence} · v{r.version}</div>}
+                        <td className="num" data-label="Deadline">{p.deadlineDate ?? <span className="muted">unknown</span>}</td>
+                        <td data-label="Result">
+                          {r ? <AssessmentChip value={r.evidenceAssessment} sports={p.kind === "sports_pick"} /> : p.processingStatus === "running" ? <span className="muted">{p.kind === "sports_pick" ? "validating…" : "researching…"}</span> : p.processingStatus === "failed" ? <span className="result error">{p.kind === "sports_pick" ? "validation failed" : "research failed"}</span> : <span className="muted">— {p.kind === "sports_pick" ? "not validated" : "not researched"}</span>}
+                          {r && <div className="meta">confidence {r.confidence} · v{r.version}</div>}
                         </td>
-                        <td>{TIME_LABEL[p.timeStatus]}</td>
-                        <td className="explain">{r ? r.explanation : <span className="muted">—</span>}</td>
-                        <td>{r ? r.sourceCount : <span className="muted">—</span>}</td>
-                        <td>{r ? <>{r.researchedAt}{r.recheckAfter ? <div className="muted small">recheck {r.recheckAfter}</div> : null}</> : <span className="muted">—</span>}</td>
+                        <td data-label="Time status"><TimeChip value={p.timeStatus} /></td>
+                        <td className="explain" data-label="Brief explanation">{r ? r.explanation : <span className="muted">—</span>}</td>
+                        <td className="num" data-label="Sources">{r ? r.sourceCount : <span className="muted">—</span>}</td>
+                        <td className="num small" data-label="Last checked">{r ? <>{r.researchedAt}{r.recheckAfter ? <div className="meta">recheck {r.recheckAfter}</div> : null}</> : <span className="muted">—</span>}</td>
                       </tr>
                     );
                   })}
@@ -190,8 +206,8 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
               ))}
             </table>
           </div>
-          <aside className="detail">
-            {selected ? (
+          {selected && (
+            <aside className="detail">
               <PredictionDetail
                 prediction={selected}
                 planJob={planJobs[selected.id]}
@@ -203,10 +219,8 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
                 onChanged={async () => { await reload(); await loadSelected(selected.id); }}
                 onClose={() => setSelectedId(undefined)}
               />
-            ) : (
-              <div className="empty-state"><p className="muted">Select a prediction to see the quotation, components, validation plan, and history.</p></div>
-            )}
-          </aside>
+            </aside>
+          )}
         </div>
       )}
     </section>

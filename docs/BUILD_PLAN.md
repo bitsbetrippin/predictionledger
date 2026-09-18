@@ -486,6 +486,20 @@ The 1.0 backlog split in two: 0.6 is everything that could be built and verified
 | Capped smoke test (§4.14), automation acceptance (§4.15), real seven-day soak + report (§4.16), first real settlement | EXE, AUTO, O07 | owner | **pending — mandatory before 2.0.0** |
 | **Production qualification** (≥ 100 distinct settled real events with a market baseline) | FOR-06 / AUTO-01 | owner / data | **unmet — not waived; automation unavailable** |
 
+## 10g. Release 2.1.0 — UI refresh & integrated help (delivered; owner visual acceptance pending)
+
+| Item | Req. | Agent | Done |
+|---|---|---|---|
+| Design tokens, shell (grouped sidebar, header, footer, drawer), badge split, routes `#/learn`, `#/signals?view=`, `#/setup?section=` | handoff §1–2 | AG-10, AG-05 | ✓ |
+| HelpButton + popover (keyboard, Esc, focus return), LearnPanel, Learn & Reference page with the synthetic worked-example stepper | §3, §6 | AG-10 | ✓ |
+| `help/topics.ts` (38 topics, corrected against the code), `workedExample.ts`, `context.ts`; `scripts/check-help-anchors.mjs` in `npm test`; two WORKED_EXAMPLE anchors added | §4 | AG-16, AG-14 | ✓ |
+| Guided start: pure derivation + hook + Setup section, sidebar pill, Library empty state; `GET /api/market-links` (read-only) | §5 | AG-05, AG-13 | ✓ |
+| Trades (banner, Arm blockers by gate, tiles, alerts split, hold cards, External holdings informational, tabs), Predictions + detail, Library (tabbed import, chips, states), Video, Setup (section nav), Jobs / Markets / Signals / Paper | §6 | AG-10 | ✓ |
+| Six documented discrepancies fixed (README claims, local reference, route comment, badge, version display, Signals routes) | §7 | AG-16 | ✓ |
+| Tests: 10 dashboard (help integrity, guided derivation), 1 route; server suite 195/195; typechecks (real React types) | 03 | AG-14 | ✓ (sandbox) |
+| Visual verification: compiled TSX + mock API + Playwright, 1440 / 390 px, 39 interaction checks, populated / empty / error / loading / paper / live-holds | 03 | AG-14 | ✓ (sandbox harness; screenshots attached to the release) |
+| `npm run build` (Vite) and the run on real content, Windows | O01 | owner | **pending** |
+
 ## 11. Working agreements
 
 - **Small end-to-end increments.** Each release is usable on its own; nothing is merged that leaves the dashboard in a half-state.

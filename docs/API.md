@@ -120,6 +120,14 @@ Provider calls made by every job now go through a resilience wrapper: 120 s per-
 
 Settings gain `sports: { enabled, trackSpreads }`.
 
+## Release 2.1 — one read-only addition (UI refresh & integrated help)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/market-links?status=proposed|accepted|rejected&limit=` | Every prediction↔market link (the same `PredictionMarketLink` rows as `/api/predictions/:id/market-links`), optionally filtered by status; `400` on an unknown status. Read-only; feeds the Guided start's "linked" step. No other route, body, gate or response changed in 2.1. |
+
+The dashboard routes `#/learn[?topic=<id>]` and `#/signals?view=sides|consensus|alerts|creators` are client-side only.
+
 ## Release 2.0 — reports, health, review fixes
 
 | Method | Path | Notes |

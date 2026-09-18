@@ -1,6 +1,6 @@
 {
   "name": "@prediction-ledger/server",
-  "version": "2.0.0-rc.2",
+  "version": "2.1.0",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@fastify/static": "^8.0.0",
-    "@prediction-ledger/shared": "2.0.0-rc.2",
+    "@prediction-ledger/shared": "2.1.0",
     "fastify": "^5.0.0",
     "polymarket-us": "0.1.1",
     "zod": "^3.23.0"

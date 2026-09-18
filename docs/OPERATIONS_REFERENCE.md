@@ -1,5 +1,7 @@
 # Operations reference — what the Trades page is telling you, in plain English
 
+> **In the app (2.1):** every hold, alert, tile and state on the Trades page has a `?` with this text, and *Learn & Reference* (sidebar) holds the full set. This file is the repository copy those topics cite; `scripts/check-help-anchors.mjs` keeps the anchors below in step with `web/src/help/topics.ts`.
+
 Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance. Apache-2.0.
 
 This page explains every state, hold and alert you can see on **Trades** and **Setup → Polymarket US account / Automatic execution**: what it means, what the app already did about it on its own, and what only you can do. The Trades page links to the matching section next to each hold and alert. Technical detail lives in [ARCHITECTURE.md §6](ARCHITECTURE.md) and the ADRs in [DECISIONS.md](DECISIONS.md); this page deliberately avoids code names where a sentence will do.

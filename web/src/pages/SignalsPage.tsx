@@ -1,5 +1,7 @@
 /**
- * Prediction Ledger — Signals page (1.7): creator record vs market, per market side.
+ * Prediction Ledger — Signals page (1.7): creator record vs market, per market side. 2.1: the sub-views (market sides,
+ * consensus, watch alerts, creator records) are routes — #/signals?view=sides|consensus|alerts|creators — with "?" help
+ * beside Realized edge and Label.
  *
  * Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
  * Licensed under the Apache License 2.0 — see LICENSE and NOTICE in the repository root.
@@ -10,12 +12,20 @@
 import { useEffect, useState } from "react";
 import type { Alert, MarketSignal, Proposition } from "@prediction-ledger/shared";
 import { alertsApi, consensusApi, fmtEdge, fmtMoney, fmtPct, paperApi, pollJob, signalsApi, type SignalsResponse } from "../api";
+import { navigate } from "../App";
+import { HelpButton } from "../components/HelpButton";
+import { EmptyState, Skeleton, Tabs } from "../components/ui";
+
+type SignalsView = "sides" | "consensus" | "alerts" | "creators";
+const VIEWS: SignalsView[] = ["sides", "consensus", "alerts", "creators"];
 
 const ALERT_LABEL: Record<Alert["kind"], string> = { market_move: "Market moved", divergence: "Divergence", resolving_soon: "Resolving soon" };
 
 const CONF_LABEL: Record<MarketSignal["confidence"], string> = { strong: "Strong", moderate: "Moderate", lean: "Lean", none: "No signal" };
 
-export function SignalsPage() {
+export function SignalsPage({ view }: { view?: string }) {
+  const current: SignalsView = VIEWS.includes(view as SignalsView) ? (view as SignalsView) : "sides";
+  const setView = (v: SignalsView) => navigate(v === "sides" ? "/signals" : `/signals?view=${v}`);
   const [data, setData] = useState<SignalsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [includeSettled, setIncludeSettled] = useState(false);
@@ -38,23 +48,24 @@ export function SignalsPage() {
 
   return (
     <section className="page wide">
-      <h1>Signals</h1>
       <p className="muted">
-        Where the people in your ledger disagree with the market. For each market side with an accepted link from an open prediction: the market's current price, the contributors' <em>realized edge</em> (what following them would have earned per $1 at the market's price on their settled, linked calls, shrunk toward zero when the record is thin), the resulting estimate, and a label that only appears when the record, the liquidity and the deadlines all clear the gates in Setup → Prediction markets. Nothing here is advice and nothing trades.
+        Where the people in your ledger disagree with the market. For each market side with an accepted link from an open prediction: the market's current price, the contributors' <em>realized edge</em> (what following them would have earned per $1 at the market's price on their settled, linked calls, shrunk toward zero when the record is thin), the resulting estimate, and a label that only appears when the record, the liquidity and the deadlines all clear the gates in Setup → Prediction markets. Nothing here is advice and nothing trades. <HelpButton topic="signals.gated-label">How labels are gated</HelpButton>
       </p>
       {error && <div className="banner error" role="alert">{error}</div>}
+      <Tabs value={current} onChange={setView} ariaLabel="Signals views" items={[{ id: "sides", label: "Market sides" }, { id: "consensus", label: "Consensus across channels" }, { id: "alerts", label: <>Watch alerts{alerts && alerts.length > 0 ? <span className="badge" style={{ marginLeft: 6 }}>{alerts.length}</span> : null}</> }, { id: "creators", label: "Creator records" }]} />
       <div className="row controls">
         <label className="row"><input type="checkbox" checked={includeSettled} onChange={(e) => setIncludeSettled(e.target.checked)} /> <span>include settled predictions</span></label>
         {data && <span className="muted small">gates: lean ≥ {data.gates.minSettledLean} settled · moderate ≥ {data.gates.minSettledModerate} · strong ≥ {data.gates.minSettledStrong} · liquidity ≥ {fmtMoney(data.gates.minLiquidity)} · prior weight {data.gates.priorWeight}</span>}
       </div>
 
-      <h2>Alerts {alerts && alerts.length > 0 && <span className="chip">{alerts.length}</span>}</h2>
+      {current === "alerts" && <>
+      <h2>Watch alerts {alerts && alerts.length > 0 && <span className="chip">{alerts.length}</span>}</h2>
       <div className="row controls">
         <button type="button" disabled={!!busy} onClick={runWatch}>{busy ?? "Check rules now"}</button>
         {alerts && alerts.length > 0 && <button type="button" onClick={() => alertsApi.dismissAll().then(loadAlerts)}>Dismiss all</button>}
         <span className="muted small">Rules: price move, creators-vs-market divergence, market resolving soon — thresholds in Setup → Prediction markets → Watch rules. Local only; nothing is sent anywhere.</span>
       </div>
-      {alerts === null ? <p className="muted">Loading…</p> : alerts.length === 0 ? <p className="muted">No open alerts.</p> : (
+      {alerts === null ? <Skeleton rows={3} /> : alerts.length === 0 ? <EmptyState title="No open watch alerts.">Watch rules raise a local alert when a market moves, diverges from the creators, or resolves soon.</EmptyState> : (
         <ul className="plain alerts">
           {alerts.map((a) => (
             <li key={a.id} className={`alert ${a.kind}${a.seenAt ? "" : " unseen"}`}>
@@ -65,16 +76,18 @@ export function SignalsPage() {
           ))}
         </ul>
       )}
+      </>}
 
-      {data === null ? <p className="muted">Loading…</p> : (
+      {data === null ? <Skeleton rows={5} /> : (
         <>
+          {current === "sides" && <>
           <h2>Market sides</h2>
           {data.signals.length === 0 ? (
-            <div className="empty-state"><p>No signals yet.</p><p className="muted">Accept a market link on a prediction (Predictions → detail → Markets) and settle a few predictions from the same channel so it has a record.</p></div>
+            <EmptyState title="No signals yet.">Accept a market link on a prediction (Predictions → detail → Markets) and settle a few predictions from the same channel so it has a record.</EmptyState>
           ) : (
             <div className="table-wrap">
               <table className="table">
-                <thead><tr><th>Market · side</th><th>Market</th><th>Estimate</th><th>Edge</th><th>Label</th><th>Contributors</th><th>Liquidity</th><th>Deadlines</th></tr></thead>
+                <thead><tr><th>Market · side</th><th>Market</th><th>Estimate</th><th>Edge <HelpButton topic="signals.realized-edge" /></th><th>Label <HelpButton topic="signals.gated-label" /></th><th>Contributors</th><th>Liquidity</th><th>Deadlines</th></tr></thead>
                 <tbody>
                   {data.signals.map((s) => {
                     const key = `${s.marketId}|${s.side}`;
@@ -114,10 +127,12 @@ export function SignalsPage() {
               </table>
             </div>
           )}
+          </>}
 
+          {current === "consensus" && <>
           <h2>Consensus across channels</h2>
           <p className="muted small">The same claim across videos, grouped by the market it is linked to or — when unlinked — by how closely the statements overlap. Weight = creator's settled market-linked record (min 1) × recency (half-life 90 days). A split room is shown as a split, not averaged away.</p>
-          {props === null ? <p className="muted">Loading…</p> : props.length === 0 ? <p className="muted">No proposition has more than one voice yet. Import more videos (Library → Import a playlist or channel) and link or extract their claims.</p> : (
+          {props === null ? <Skeleton rows={3} /> : props.length === 0 ? <EmptyState title="No proposition has more than one voice yet.">Import more videos (Library → Playlist or channel) and link or extract their claims.</EmptyState> : (
             <ul className="plain">
               {props.map((pr) => (
                 <li key={pr.key} className={`proposition${pr.disagreement ? " split" : ""}`}>
@@ -142,12 +157,14 @@ export function SignalsPage() {
               ))}
             </ul>
           )}
+          </>}
 
+          {current === "creators" && <>
           <h2>Creator records</h2>
-          {data.creators.length === 0 ? <p className="muted">No predictions yet.</p> : (
+          {data.creators.length === 0 ? <EmptyState title="No predictions yet.">Creator records appear once a channel's predictions settle.</EmptyState> : (
             <div className="table-wrap">
               <table className="table">
-                <thead><tr><th>Creator</th><th>Predictions</th><th>Settled</th><th>Hit rate</th><th>Linked settled</th><th>Realized edge</th><th>Shrunk</th><th>Market Brier</th><th>Open</th></tr></thead>
+                <thead><tr><th>Creator</th><th className="num">Predictions</th><th className="num">Settled</th><th className="num">Hit rate</th><th className="num">Linked settled</th><th className="num">Realized edge <HelpButton topic="signals.realized-edge" /></th><th className="num">Shrunk</th><th className="num">Market Brier <HelpButton topic="signals.paper-book" /></th><th className="num">Open</th></tr></thead>
                 <tbody>
                   {data.creators.map((c) => (
                     <tr key={c.key}>
@@ -164,9 +181,10 @@ export function SignalsPage() {
                   ))}
                 </tbody>
               </table>
-              <p className="muted small">Hit rate counts every settled prediction. Realized edge and Brier use only settled predictions with an accepted market link and a price from when the claim was made — a creator who only calls heavy favourites has a high hit rate and no edge. Creator = the video's channel when known, otherwise the video.</p>
+              <p className="muted small" style={{ padding: "6px 10px" }}>Hit rate counts every settled prediction. Realized edge and Brier use only settled predictions with an accepted market link and a price from when the claim was made — a creator who only calls heavy favourites has a high hit rate and no edge. Creator = the video's channel when known, otherwise the video.</p>
             </div>
           )}
+          </>}
         </>
       )}
     </section>

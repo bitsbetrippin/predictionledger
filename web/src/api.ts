@@ -270,6 +270,8 @@ export const marketsApi = {
   unlink: (linkId: string) => request<{ ok: true }>("DELETE", `/api/market-links/${linkId}`),
   backfill: (linkId: string) => request<{ jobId: string }>("POST", `/api/market-links/${linkId}/backfill`),
   backfillAll: () => request<{ jobId: string }>("POST", "/api/markets/backfill"),
+  /** 2.1 (read-only): every link, optionally by status — the Guided start's "linked" step reads this. */
+  listLinks: (status?: "proposed" | "accepted" | "rejected", limit = 1000) => request<PredictionMarketLink[]>("GET", `/api/market-links${qs({ status, limit: String(limit) })}`),
 };
 
 // 1.7 — signals (computed on read)
@@ -304,7 +306,7 @@ export const paperApi = {
 };
 export const fmtPnl = (n?: number) => (n === undefined ? "—" : `${n >= 0 ? "+" : "−"}$${Math.abs(n).toFixed(2)}`);
 
-// 1.10 — Polymarket US account connection (reads only; no order submission exists in this build)
+// 1.10 — Polymarket US account connection (1.13 added manual-live submission behind preview → confirm; 1.14 armed automation)
 export const tradingApi = {
   status: () => request<TradingStatus>("GET", "/api/trading/status"),
   audit: (limit = 50) => request<TradingAuditEvent[]>("GET", `/api/trading/audit?limit=${limit}`),
@@ -361,7 +363,7 @@ export const VERIFICATION_LABEL: Record<ContractVerification["status"], string> 
 };
 
 // ---------------------------------------------------------------------------
-// 1.12 — forecasts, paper decisions, risk limits, US paper book (no order path exists)
+// 1.12 — forecasts, paper decisions, risk limits, US paper book
 // ---------------------------------------------------------------------------
 
 import type { ContractVerification as _CV, DecisionOutcome, EvidenceDossier as _ED, ForecastEvaluation, ForecastSnapshot, PaperUsBook, RiskExposure, RiskLimits, RiskReservation, TradeDecision } from "@prediction-ledger/shared";
@@ -390,7 +392,7 @@ export const paperUsApi = {
   setBankroll: (bankrollStart: string) => request<PaperUsBook>("PUT", "/api/paper/us/bankroll", { bankrollStart }),
   reset: () => request<{ deleted: number }>("POST", "/api/paper/us/reset"),
 };
-export const fmtUsd = (s?: string) => (s === undefined || s === "" ? "—" : `${s.startsWith("-") ? "−" : ""}$${Number(s.replace("-", "")).toFixed(2)}`);
+export const fmtUsd = (s?: string) => (s === undefined || s === "" ? "—" : `${s.startsWith("-") ? "−" : ""}$${Number(s.replace("-", "")).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 export const OUTCOME_LABEL: Record<DecisionOutcome, string> = { eligible: "Eligible", skipped: "Skipped", needs_review: "Needs review" };
 
 // ---------------------------------------------------------------------------
@@ -448,5 +450,19 @@ export const automationApi = {
   metrics: () => request<TradingMetrics>("GET", "/api/trading/metrics"),
   alerts: (open = true) => request<TradingAlert[]>("GET", `/api/trading/alerts${qs({ open: open ? "true" : undefined })}`),
   ackAlert: (id: string) => request<TradingAlert>("POST", `/api/trading/alerts/${id}/ack`, {}),
+  /** 2.0 reports (read-only, derived). The Trades page reads the qualification status to explain why Arm is unavailable. */
+  qualificationReport: (category?: string, strategyVersion?: string) => request<QualificationReportView>("GET", `/api/trading/reports/qualification${qs({ category, strategyVersion })}`),
+  qualificationReportUrl: (category?: string) => `/api/trading/reports/qualification${qs({ category, format: "md" })}`,
+  soakReportUrl: () => "/api/trading/reports/soak?format=md",
 };
+/** The parts of the 2.0 qualification report the dashboard shows (the full report is the markdown link). */
+export interface QualificationReportView {
+  generatedAt: string; strategyVersion: string; category: string; asOf: string;
+  cohort: { decisions: number; settledEvents: number; pendingOrVoid: number };
+  paper: { positions: number; settled: number; feeAdjustedReturn: string; fees: string };
+  status: "qualified" | "pending" | "failed";
+  eventsNeeded: number;
+  productionRecord?: { id: string; createdAt: string; qualified: boolean };
+  statement: string;
+}
 export const LEDGER_STATUSES = ["", "pending", "partial", "filled", "unknown", "rejected", "canceled", "open", "settled", "skipped", "needs_review", "eligible", "external"] as const;

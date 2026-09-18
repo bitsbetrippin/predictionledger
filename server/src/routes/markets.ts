@@ -238,6 +238,13 @@ export function registerMarketRoutes(app: FastifyInstance, ctx: AppContext): voi
   });
   app.post<{ Params: { id: string } }>("/api/market-links/:id/reject", async (req, reply) => ctx.markets.setLinkStatus(req.params.id, "rejected") ?? reply.code(404).send({ error: "not_found" }));
   app.delete<{ Params: { id: string } }>("/api/market-links/:id", async (req, reply) => (ctx.markets.deleteLink(req.params.id) ? { ok: true } : reply.code(404).send({ error: "not_found" })));
+  /** 2.1 (read-only): every prediction↔market link, optionally by status — the Guided start derives its "linked" step from this. */
+  app.get<{ Querystring: { status?: string; limit?: string } }>("/api/market-links", async (req, reply) => {
+    const status = req.query.status;
+    if (status !== undefined && !["proposed", "accepted", "rejected"].includes(status)) return reply.code(400).send({ error: "bad_request", message: "status must be proposed, accepted or rejected" });
+    const limit = Math.min(1000, Math.max(1, Number(req.query.limit ?? 1000) || 1000));
+    return ctx.markets.allLinks().filter((l) => !status || l.status === status).slice(0, limit);
+  });
 
   // ---- 1.11: contract verification (MAT-01…06). Discovery scores are research inputs; only a verified checklist can ever execute. ----
   const contractError = (reply: { code: (n: number) => { send: (b: unknown) => unknown } }, err: unknown) => {

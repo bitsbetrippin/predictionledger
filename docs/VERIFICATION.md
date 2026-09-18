@@ -7,6 +7,33 @@ Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assist
 ## Legend
 **Executed** = the command/test ran and passed on that platform. **Static** = code and docs reviewed for that platform's behaviour, not run. **—** = not yet attempted.
 
+## Release 2.1.0 — UI refresh & integrated help (2026-09-18)
+
+**Scope.** The design handoff "Prediction Ledger — UI refresh & integrated help" (baseline 2.0.0-rc.2) implemented in `web/src`; one read-only route added (`GET /api/market-links`); no API contract, business rule, privacy control or confirmation flow changed; nothing submits an order, arms automation or changes a limit. The 2.0 owner evidence (§4.16) is untouched and still pending.
+
+| Command (sandbox, Linux, Node 22) | Result |
+|---|---|
+| `node --test "dist/server/src/**/*.test.js"` (server suite compiled against the stubs) | **195 tests · 195 passed · 0 failed · 0 skipped** (rc.2 had 194; `routes/marketLinks.test.ts` added) |
+| `node --import tsx --test "web/src/**/*.test.ts"` | **10 tests · 10 passed · 0 failed** (`help/help.test.ts` ×6, `hooks/guidedSteps.test.ts` ×4) |
+| `node scripts/check-help-anchors.mjs` | 38 topics, 24 sources, every anchor resolves |
+| `tsc --noEmit` — server + shared (stubs), web against **real** `@types/react` 18.3.12 / `@types/react-dom` 18.3.1 (fetched for the check) | 0 errors |
+| Visual harness: `web/src` compiled with `tsc` (Vite unavailable in the sandbox) + a mock `/api` (sample data) + Playwright Chromium, 1440×900 and 390×844 | populated / empty / error / loading × Library, Predictions (+detail), Trades (paper-fresh, live-holds), Learn (worked example), Setup (Guided start), Jobs, Signals, Markets, Paper — 0 console errors, 0 page errors |
+| Interaction checks (Playwright, `interact.cjs`, 39 checks) | **39/39**: `?` opens on click and Enter, Esc closes, focus returns, *Read more* opens the Learn panel on the topic; `/` focuses the reference search and finds hold/alert topics; action-required alerts listed first; hold resolution disabled without a note, candidate radios, *This order is mine* needs a candidate; External holdings tagged informational; REAL MONEY tag while armed and no blockers shown; PAPER tag + three blockers by gate on a fresh install with the qualification-report link; badges on Trades (4) and Signals (1); Guided start *Skip* writes only `pl.guidedStart.dismissedAt`, *Restart* clears it; six steps, all derived; Setup nav hints; `#/signals?view=` round-trips; the worked-example stepper reaches step 6 with zero API calls under the synthetic banner; phone drawer opens/closes, detail is a fixed overlay, predictions render as labelled cards |
+
+**Requirement → evidence (handoff sections).**
+
+| Handoff | Evidence |
+|---|---|
+| §1 tokens, chips (filled assessment / outlined time status) | `styles.css` tokens; `ui.tsx` `AssessmentChip` / `TimeChip`; screenshots `predictions`, `learn` (ledger row) |
+| §2 shell, routes, badge split | `Shell.tsx`, `App.tsx`; interaction checks 19–20 (badges), 29–30 (`#/signals?view=`), 34–36 (drawer) |
+| §3 HelpButton / LearnPanel keyboard behaviour | checks 1–10 |
+| §4 topics / worked example / context / anchor checker | `help.test.ts` (every hold kind, alert kind, intent state has help; ids unique; contexts resolve; synthetic example has no real URL); `check-help-anchors.mjs` in `npm test` |
+| §5 Guided start from records only, localStorage only | `guidedSteps.test.ts`; checks 24–28; `marketLinks.test.ts` (read-only route) |
+| §6 Trades (blockers by gate, alerts split, hold cards, external informational), Predictions, Library, Setup, Learn | checks 11–23 (Trades), 31–33 (worked example, zero API calls), 37–38 (overlay, cards); screenshots `trades` (paper, live-holds), `library`, `predictions`, `setup`, `learn`, phone montage |
+| §7 six discrepancies | README (three obsolete "no trading code" claims rewritten), `App.tsx` route comment, badge split, SETUP §2.6 (version display), `#/signals?view=`, local reference with GitHub secondary |
+
+**Not executed here (owner, Windows).** `npm install` (adds `tsx` to web devDependencies), `npm run build` (Vite bundle — the sandbox compiled the same sources with `tsc` instead), `npm test` end to end with the workspace `tsx`, the dashboard on the real database (real hold/alert text, real gates), a screen-reader pass, and the printed `v2.1.0` after restart (§2.6).
+
 ## Release 2.0.0-rc.2 — External holdings, operations reference, on-contract gate fix (2026-09-17)
 
 **Trigger.** The owner's first look at Trades on a real account (paper mode, key connected): six `discrepancy` holds opened 2026-09-16 20:43 and two alerts (×2) for positions placed by hand on the venue, `"intents":[]` on every hold. The 1.13 rule treated any unexplained venue position as a bookkeeping discrepancy and paused the account. Owner decision: external holdings, no account pause; reference doc + in-app help.

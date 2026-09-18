@@ -8,6 +8,9 @@
 import { useEffect, useState } from "react";
 import type { MarketProviderId, MarketRecord } from "@prediction-ledger/shared";
 import { fmtMoney, fmtPct, marketsApi, pollJob, type MarketStoredDetail, type MarketSummaryView } from "../api";
+import { HelpButton } from "../components/HelpButton";
+import { Icon } from "../components/Icons";
+import { EmptyState, Skeleton } from "../components/ui";
 
 export function MarketsPage() {
   const [rows, setRows] = useState<MarketRecord[] | null>(null);
@@ -34,8 +37,7 @@ export function MarketsPage() {
 
   return (
     <section className="page wide">
-      <h1>Markets</h1>
-      <p className="muted">Prediction-market questions kept in the ledger — watched by you or linked from a prediction — with the latest price, liquidity and volume snapshot. Data comes from the venue's public API; the app never places trades.</p>
+      <p className="muted">Prediction-market questions kept in the ledger — watched by you or linked from a prediction — with the latest price, liquidity and volume snapshot. Data comes from the venue's public API; nothing on this page places a trade. <HelpButton topic="guide.markets">How linking works</HelpButton></p>
       {error && <div className="banner error" role="alert">{error} <button type="button" className="link" onClick={() => setError(null)}>dismiss</button></div>}
 
       <div className="row controls">
@@ -62,8 +64,8 @@ export function MarketsPage() {
         </div>
       )}
 
-      {rows === null ? <p className="muted">Loading…</p> : rows.length === 0 ? (
-        <div className="empty-state"><p>No markets in the ledger yet.</p><p className="muted">Search above and click <em>watch</em>, or open a prediction → Markets → Find markets.</p></div>
+      {rows === null ? <Skeleton rows={4} /> : rows.length === 0 ? (
+        <EmptyState title="No markets in the ledger yet.">Search above and click <em>watch</em>, or open a prediction → Markets → Find markets.</EmptyState>
       ) : (
         <div className="split">
           <div className="table-wrap">
@@ -87,7 +89,7 @@ export function MarketsPage() {
           {selected && (
             <aside className="detail">
               <div className="detail-inner">
-                <div className="row space-between"><strong>{selected.question}</strong><button type="button" className="link" onClick={() => setSelected(null)}>close</button></div>
+                <div className="row space-between"><strong style={{ fontWeight: 500 }}>{selected.question}</strong><button type="button" className="icon-btn" aria-label="Close" onClick={() => setSelected(null)}><Icon name="x" /></button></div>
                 {selected.description && <details><summary className="small">Resolution rules</summary><p className="small">{selected.description}</p></details>}
                 <h3>Latest</h3>
                 {selected.latest ? <p className="small">{selected.latest.prices.map((o) => `${o.label} ${fmtPct(o.price)}${o.bestBid !== undefined ? ` (bid ${fmtPct(o.bestBid)} / ask ${fmtPct(o.bestAsk)})` : ""}`).join(" · ")}<br />liquidity {fmtMoney(selected.latest.liquidity)} · volume {fmtMoney(selected.latest.volume)} · 24h {fmtMoney(selected.latest.volume24h)}</p> : <p className="muted small">No snapshot yet.</p>}

@@ -559,6 +559,27 @@ services/reports.ts ── soak(): automation_runs/candidates, trade_decisions, 
 - **External holdings (rc.2, ADR-037).** `positions()` marks a market with no app orders `external: true` (venue net + cost basis, no discrepancy); `RiskService.externalHoldings()` reads them from the latest successful sync and adds their cost basis (else $1/contract) to total / per-market / per-event exposure; `decide()` refuses entry on such a contract (`no_external_position`); `reconcile()` reclassifies legacy discrepancy holds whose market has no app orders and closes their alerts. The decision service and `redecide` map the venue's slug-keyed snapshot to venue ids before any on-contract gate (RV-15).
 - **The soak harness is a compressed clock against fake data** (`services/soak.test.ts`): it proves the scheduler survives an outage, a 429, a sleep past a cutoff and a restart without a duplicate entry or a cap breach, and that the report's checks catch an injected duplicate. The real soak is seven calendar days of paper autopilot on real venue data, run by the owner (SETUP §4.16).
 
+### 6.7 Dashboard shell, integrated help and the Guided start (2.1)
+
+```
+web/src/App.tsx ── hash router: library · videos/:id · predictions · markets · signals[?view=] · paper · trades · jobs · setup[?section=] · learn[?topic=]
+components/Shell.tsx ── sidebar (Research · Markets · Operate · System) · header (title, subtitle, Search reference "/", page "?") · footer · drawer < 880 px
+                       badges: trading alerts → Trades (automationApi.alerts) · watch alerts → Signals (alertsApi) · transcribing → Library · running → Jobs
+components/LearnPanel.tsx ── LearnProvider (UI state only) · panel: search · group chips · "On this screen" (help/context.ts) · article
+components/HelpButton.tsx ── "?" → positioned popover (what / doing / next / Read more) · Enter/Space/Esc · focus return · never hover-only
+help/topics.ts ── 38 HelpTopic rows (id · group · title · what · doing · next · body · source · related) + holdTopic / alertTopic / INTENT_HELP lookups
+help/workedExample.ts ── docs/WORKED_EXAMPLE.md as six steps, synthetic: true, rendered only by pages/LearnPage.tsx
+hooks/guidedSteps.ts ── deriveGuidedSteps(settings, videos, predictions, acceptedLinks) → six steps (pure, tested)
+hooks/useGuidedStart.ts ── one shared fetch (20 s TTL) · localStorage['pl.guidedStart'] = { dismissedAt?, restartedAt? }
+pages/TradesPage.tsx ── ModeBanner (tag) · ArmBlockers ← status.gates (unmet) + dispatchBlockers + automation.live.reasons + qualification report
+                       · tiles with "?" · alerts action-required / informational · HoldCard (what / app did / you do + note + candidates) · External holdings (informational)
+scripts/check-help-anchors.mjs ── every topic source file + anchor exists in docs/; related and context ids resolve (npm test)
+```
+
+- **No new server state and one read-only route** (`GET /api/market-links`). Everything else the 2.1 UI shows is a rendering of responses that already existed.
+- **The CSP is unchanged**: `style-src 'unsafe-inline'` already allowed React's inline styles; no font, script or image is loaded from outside `'self'` (icons are inline SVG; Inter is used only when installed).
+- **Reference content is data, not instructions**: it is compiled into the bundle, never sent to a model or the server, and its anchors are checked, not trusted.
+
 ---
 
 ## 7. Security model

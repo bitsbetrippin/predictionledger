@@ -80,6 +80,18 @@ Stop with **Ctrl+C** in the same terminal. Running jobs are paused and resume on
 
 **Upgrading:** pull the latest commit (GitHub Desktop → *Fetch origin* / *Pull*), then `npm run setup` again. Database migrations run automatically on the next `npm start`; your data directory is never touched by git.
 
+### 2.6 Which version is running (2.1)
+
+The sidebar shows `v<version>` from `GET /api/health`, which the server reads from `server/package.json` **when it starts**. After applying a patch or pulling, run `npm run build` (the dashboard is compiled into `web/dist`; the server into `server/dist`) and **restart** `npm start` — a dashboard that still shows the previous version means the old process is still running or the build was skipped. `npm run doctor` prints the same version.
+
+### 2.7 Finding your way around (2.1)
+
+- Every term on every page has a `?`: *What this means · What the app is doing · What you can do next · Read more*. Enter/Space opens it, Esc closes it.
+- Press `/` anywhere (or click *Search reference*) to search the built-in reference; **Learn & Reference** in the sidebar has the full text and an interactive, labelled-synthetic worked example that never touches your records.
+- **Guided start** (Setup → first section, the sidebar pill, the Library empty state) is six steps derived from your own records — settings, videos, predictions, accepted market links. *Skip for now* and *Restart* only write `localStorage['pl.guidedStart']`.
+- The reference text ships inside the app; the GitHub copy (`docs/OPERATIONS_REFERENCE.md`, `docs/WORKED_EXAMPLE.md`, README) is the secondary link on each topic. `npm test` runs `scripts/check-help-anchors.mjs`, so the two cannot drift silently.
+- Fonts and icons are local: Inter is used when it is installed on your computer (system font otherwise); the icons are inlined SVG. The dashboard fetches nothing from the internet on its own.
+
 ---
 
 ## 3. First-run checklist (Setup tab)
@@ -221,7 +233,8 @@ Other environment variables: `PL_PORT` (default 7317), `PL_NO_OPEN=1` (don't ope
 | `Prediction Ledger is not built yet` | Run `npm run build` (or `npm run setup`). |
 | `port 7317 was busy; using 7318` | Normal. Another app holds 7317. Set `PL_PORT` if you want a fixed port. |
 | `Ports 7317-7326 are all in use` | Set `PL_PORT=<free port>`. |
-| Browser opens but shows "Cannot reach the local server" | The server exited — check the terminal for the error. |
+| Browser opens but shows "Cannot reach the local server" | The server exited — check the terminal for the error. The banner links to *Learn & Reference → Cannot reach the local server*. |
+| Sidebar shows an older version than CHANGELOG.md | The server process was not restarted after the patch, or `npm run build` was skipped (§2.6). |
 | Windows Firewall prompt on first start | Should not appear (loopback only). If it does, deny it; the app does not need network permissions. |
 | macOS: "yt-dlp cannot be opened because the developer cannot be verified" | System Settings → Privacy & Security → *Allow anyway*, or `xattr -d com.apple.quarantine "<data directory>/tools/yt-dlp"`, then Retry the import. |
 | YouTube import fails with `Sign in to confirm you're not a bot` or `HTTP Error 429` | YouTube is challenging this network. Wait, then Retry; **Update yt-dlp** (Setup → YouTube) fixes most cases. Import a transcript if it persists. |

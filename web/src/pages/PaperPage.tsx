@@ -10,6 +10,8 @@
 import { useEffect, useState } from "react";
 import type { PaperPosition } from "@prediction-ledger/shared";
 import { fmtEdge, fmtMoney, fmtPct, fmtPnl, paperApi, type PaperResponse } from "../api";
+import { HelpButton } from "../components/HelpButton";
+import { EmptyState, Skeleton } from "../components/ui";
 
 function Curve({ points, start }: { points: { at: string; equity: number }[]; start: number }) {
   if (points.length < 2) return <p className="muted small">The equity curve appears once positions have been marked more than once.</p>;
@@ -56,17 +58,16 @@ export function PaperPage() {
 
   return (
     <section className="page wide">
-      <h1>Paper trading</h1>
-      <p className="muted">Hypothetical positions only — the app never places an order. A position is “I would have bought this side at this price for this stake”; it is marked at every snapshot and closes at 1 or 0 when the venue resolves the market. Open one from a Signals row, or let watch rules open them on labelled signals (Setup → Prediction markets → Paper trading).</p>
+      <p className="muted">Hypothetical positions only — the app never places an order. A position is “I would have bought this side at this price for this stake”; it is marked at every snapshot and closes at 1 or 0 when the venue resolves the market. Open one from a Signals row, or let watch rules open them on labelled signals (Setup → Prediction markets → Paper trading). <HelpButton topic="signals.paper-book">How the book is scored</HelpButton></p>
       {error && <div className="banner error" role="alert">{error} <button type="button" className="link" onClick={() => setError(null)}>dismiss</button></div>}
-      {data === null ? <p className="muted">Loading…</p> : (
+      {data === null ? <Skeleton rows={4} /> : (
         <>
           {!data.book.enabled && <div className="banner warn">Paper trading is turned off in Setup → Prediction markets.</div>}
           <div className="stats">
             <div className="stat"><span className="label">Equity</span><strong>{fmtMoney(data.book.equity)}</strong><span className="muted small">start {fmtMoney(data.book.bankrollStart)}</span></div>
             <div className="stat"><span className="label">Realized</span><strong className={data.book.realizedPnl >= 0 ? "pos" : "neg"}>{fmtPnl(data.book.realizedPnl)}</strong><span className="muted small">{data.book.wins}W / {data.book.losses}L{data.book.returnOnStake !== undefined ? ` · ${(data.book.returnOnStake * 100).toFixed(1)}% on stake` : ""}</span></div>
             <div className="stat"><span className="label">Unrealized</span><strong className={data.book.unrealizedPnl >= 0 ? "pos" : "neg"}>{fmtPnl(data.book.unrealizedPnl)}</strong><span className="muted small">{data.book.openCount} open</span></div>
-            <div className="stat"><span className="label">Estimate vs market (Brier, lower is better)</span><strong>{data.book.brierEstimate !== undefined ? `${data.book.brierEstimate.toFixed(3)} vs ${data.book.brierMarket?.toFixed(3)}` : "—"}</strong><span className="muted small">over resolved positions with a signal at open</span></div>
+            <div className="stat"><span className="label">Estimate vs market (Brier, lower is better) <HelpButton topic="signals.paper-book" /></span><strong>{data.book.brierEstimate !== undefined ? `${data.book.brierEstimate.toFixed(3)} vs ${data.book.brierMarket?.toFixed(3)}` : "—"}</strong><span className="muted small">over resolved positions with a signal at open</span></div>
           </div>
           <Curve points={data.book.curve} start={data.book.bankrollStart} />
           <div className="row controls">
@@ -75,7 +76,7 @@ export function PaperPage() {
             <span className="muted small">sizing: {data.sizing.sizing === "fixed" ? `fixed ${fmtMoney(data.sizing.fixedStake)}` : `Kelly × ${data.sizing.kellyFraction}`} · cap {(data.sizing.maxStakeFraction * 100).toFixed(0)}% of bankroll · auto-open: {data.sizing.autoOpen}</span>
           </div>
           {data.positions.length === 0 ? (
-            <div className="empty-state"><p>No paper positions yet.</p><p className="muted">Open one from a Signals row (“Paper buy”), or turn on auto-open in Setup.</p></div>
+            <EmptyState title="No paper positions yet.">Open one from a Signals row (“Paper buy”), or turn on auto-open in Setup.</EmptyState>
           ) : (
             <div className="table-wrap">
               <table className="table">

@@ -4,7 +4,11 @@ Original concept: Michael D. Carter (BitsBeTrippin) · Built with Claude AI assi
 
 These are the agreed screen shapes. The Setup tab (§5) is implemented in Release 0.1; the others land per `BUILD_PLAN.md`. Design rules: system fonts, light/dark aware, no technical configuration inside the review flow, every long operation shows a stage label, every empty state says what to do next.
 
-## 1. Shell
+## 0. The 2.1 shell and help layer (implemented)
+
+Since 2.1 the shell is a 232 px sidebar grouped **Research** (Video Library, Predictions) · **Markets** (Markets, Signals, Paper) · **Operate** (Trades, Jobs) · **System** (Setup, Learn & Reference), a 50 px header (page title · subtitle · *Search reference* `/` · page `?`) and a 30 px footer (loopback address · data directory · licence). Below 880 px the sidebar is a drawer behind a menu button. Every term carries a `?` that opens a 340 px popover (*What this means · What the app is doing · What you can do next · Read more*); *Read more* and `/` open the 380 px Learn panel (search, group chips, "On this screen", article). Evidence assessment is a filled chip and time status an outlined chip — always both. The design tokens are in `web/src/styles.css`; the reference content in `web/src/help/`. The text mockups below are the pre-2.1 screens and remain the description of what each page contains.
+
+## 1. Shell (pre-2.1 layout)
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────┐

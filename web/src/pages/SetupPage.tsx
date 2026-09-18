@@ -1,5 +1,6 @@
 /**
- * Prediction Ledger — Setup tab (providers, stage routing, transcription, search, limits, privacy).
+ * Prediction Ledger — Setup tab (providers, stage routing, transcription, search, limits, privacy). 2.1: a left section
+ * nav with state hints (#/setup?section=…), the Guided start as the first section, and a link to the worked example.
  *
  * Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
  * Licensed under the Apache License 2.0 — see LICENSE and NOTICE in the repository root.
@@ -9,8 +10,12 @@
  * sends an empty string, which deletes it.
  */
 import { useEffect, useState } from "react";
-import type { AnalysisStage, AppSettings, HealthResponse, JobSummary, LlmProviderId, MediaStatus, ModelInfo, ProviderTestResult, ToolsStatus } from "@prediction-ledger/shared";
-import { api, backups, content, media, pollJob, toPayload, youtube, type BackupInfo, type SecretUpdates } from "../api";
+import type { AnalysisStage, AppSettings, HealthResponse, JobSummary, LlmProviderId, MediaStatus, ModelInfo, ProviderTestResult, ToolsStatus, TradingStatus } from "@prediction-ledger/shared";
+import { api, backups, content, media, pollJob, toPayload, tradingApi, youtube, type BackupInfo, type SecretUpdates } from "../api";
+import { HelpButton } from "../components/HelpButton";
+import { Icon } from "../components/Icons";
+import { Skeleton } from "../components/ui";
+import { useGuidedStart } from "../hooks/useGuidedStart";
 import { PolymarketUsCard } from "../components/PolymarketUsCard";
 import { TradingLimitsCard } from "../components/TradingLimitsCard";
 import { AutomationCard } from "../components/AutomationCard";
@@ -35,8 +40,32 @@ const STAGE_LABELS: Record<AnalysisStage, string> = {
   assessment: "Evidence assessment",
 };
 
-export function SetupPage() {
+const SECTIONS: { id: string; label: string }[] = [
+  { id: "guided", label: "Guided start" }, { id: "privacy", label: "Privacy" }, { id: "providers", label: "Providers" }, { id: "stages", label: "Which model does what" },
+  { id: "transcription", label: "Transcription" }, { id: "sports", label: "Sports Mode" }, { id: "markets", label: "Prediction markets" }, { id: "youtube", label: "YouTube" },
+  { id: "backups", label: "Backups" }, { id: "account", label: "Polymarket US account" }, { id: "limits", label: "Trading limits" }, { id: "automation", label: "Automatic execution" },
+  { id: "search", label: "Web search" }, { id: "research", label: "Research" }, { id: "budgets", label: "Limits and budgets" }, { id: "templates", label: "Prompt templates" },
+];
+
+export function SetupPage({ section }: { section?: string }) {
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [trading, setTrading] = useState<TradingStatus | null>(null);
+  const [active, setActive] = useState<string>(section ?? "guided");
+  const guided = useGuidedStart();
+  useEffect(() => { tradingApi.status().then(setTrading).catch(() => setTrading(null)); }, []);
+  // Jump to the requested section once the settings have rendered; then follow the scroll position.
+  useEffect(() => {
+    if (!settings) return;
+    if (section) { setActive(section); document.getElementById(`setup-${section}`)?.scrollIntoView({ block: "start" }); }
+    const els = SECTIONS.map((x) => document.getElementById(`setup-${x.id}`)).filter((e): e is HTMLElement => !!e);
+    if (!("IntersectionObserver" in window) || els.length === 0) return;
+    const io = new IntersectionObserver((entries) => {
+      const top = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+      if (top) setActive(top.target.id.replace(/^setup-/, ""));
+    }, { root: document.querySelector(".content"), rootMargin: "0px 0px -70% 0px", threshold: 0 });
+    els.forEach((e) => io.observe(e));
+    return () => io.disconnect();
+  }, [settings, section]);
   const [secrets, setSecrets] = useState<SecretUpdates>({});
   const [tests, setTests] = useState<Partial<Record<LlmProviderId, ProviderTestResult | "testing">>>({});
   const [models, setModels] = useState<Partial<Record<LlmProviderId, ModelInfo[]>>>({});
@@ -98,7 +127,26 @@ export function SetupPage() {
     api.getSettings().then(setSettings).catch((e: Error) => setStatus({ kind: "error", text: e.message }));
   }, []);
 
-  if (!settings) return <section className="page">Loading settings…</section>;
+  if (!settings) return <section className="page"><Skeleton rows={6} /></section>;
+
+  const usable = (Object.entries(settings.providers) as [LlmProviderId, AppSettings["providers"]["anthropic"]][]).filter(([id, p]) => p.enabled && (id === "lmstudio" || p.hasSecret)).length;
+  const gatesUnmet = trading ? trading.gates.filter((g) => !g.satisfied && g.id !== "live_authorization").length : undefined;
+  const hints: Record<string, { text: string; tone?: "ok" | "warn" }> = {
+    guided: { text: `${guided.done}/${guided.total}` },
+    privacy: { text: `internet ${settings.privacy.allowInternet ? "on" : "off"}`, tone: settings.privacy.allowInternet ? "ok" : undefined },
+    providers: { text: usable ? `${usable} connected` : "none", tone: usable ? "ok" : "warn" },
+    stages: { text: "configured" },
+    transcription: { text: settings.transcription.engine.replace("local-whisper", "local Whisper").replace("openai-transcribe", "OpenAI").replace("youtube-captions", "captions") },
+    sports: { text: settings.sports.enabled ? "on" : "off" },
+    markets: { text: settings.markets.enabled ? "enabled" : "off" },
+    youtube: { text: tools ? (tools.ytdlp.ok ? "yt-dlp ready" : "needs yt-dlp") : "" , tone: tools?.ytdlp.ok ? "ok" : undefined },
+    backups: { text: backupList ? `${backupList.length}` : "" },
+    account: { text: trading ? (trading.binding ? "connected" : "not connected") : "", tone: trading?.binding ? "ok" : undefined },
+    limits: { text: trading ? trading.policy.policyVersion : "" },
+    automation: { text: trading ? (trading.policy.mode === "auto_live" ? "armed" : gatesUnmet ? "cannot arm" : "ready to arm") : "", tone: trading?.policy.mode === "auto_live" ? "warn" : undefined },
+    search: { text: settings.search.provider === "none" ? "none" : settings.search.provider.replace("-native", " built-in"), tone: settings.search.provider === "none" ? "warn" : "ok" },
+    research: { text: "" }, budgets: { text: "" }, templates: { text: "" },
+  };
 
   const update = (patch: (s: AppSettings) => AppSettings) => setSettings((s) => (s ? patch(structuredClone(s)) : s));
 
@@ -139,11 +187,15 @@ export function SetupPage() {
   };
 
   return (
-    <section className="page">
-      <h1>Setup</h1>
+    <section className="page wide">
+    <div className="setup-layout">
+      <nav className="setup-nav" aria-label="Setup sections">
+        {SECTIONS.map((x) => <a key={x.id} href={`#/setup?section=${x.id}`} className={active === x.id ? "active" : undefined} onClick={(e) => { e.preventDefault(); setActive(x.id); document.getElementById(`setup-${x.id}`)?.scrollIntoView({ block: "start", behavior: "smooth" }); window.history.replaceState(null, "", `#/setup?section=${x.id}`); }}><span>{x.label}</span>{hints[x.id]?.text && <span className={`hint${hints[x.id].tone ? ` ${hints[x.id].tone}` : ""}`}>{hints[x.id].text}</span>}</a>)}
+      </nav>
+      <div>
       <p className="muted">
         Everything is stored on this computer in <code>{settings.dataDir}</code>. Cloud providers and online research send selected
-        text (transcript excerpts, predictions, search queries) to those services — local options keep it on this machine.
+        text (transcript excerpts, predictions, search queries) to those services — local options keep it on this machine. <HelpButton topic="troubleshoot.privacy-pending">What leaves the machine</HelpButton>
       </p>
 
       {status && (
@@ -152,7 +204,10 @@ export function SetupPage() {
         </div>
       )}
 
-      <h2>Privacy</h2>
+      <h2 id="setup-guided" className="setup-section">Guided start</h2>
+      <GuidedStartSection />
+
+      <h2 id="setup-privacy" className="setup-section">Privacy</h2>
       <label className="row">
         <input
           type="checkbox"
@@ -165,7 +220,7 @@ export function SetupPage() {
         </span>
       </label>
 
-      <h2>Language-model providers</h2>
+      <h2 id="setup-providers" className="setup-section">Language-model providers</h2>
       {(Object.keys(PROVIDER_LABELS) as LlmProviderId[]).map((id) => {
         const p = settings.providers[id];
         const test = tests[id];
@@ -234,7 +289,7 @@ export function SetupPage() {
         );
       })}
 
-      <h2>Which model does what</h2>
+      <h2 id="setup-stages" className="setup-section">Which model does what</h2>
       <p className="muted">Each analysis stage can use a different provider and model — for example a local model for extraction and a stronger cloud model for assessment.</p>
       <div className="grid-3">
         {(Object.keys(STAGE_LABELS) as AnalysisStage[]).map((stage) => (
@@ -259,7 +314,7 @@ export function SetupPage() {
         ))}
       </div>
 
-      <h2>Transcription</h2>
+      <h2 id="setup-transcription" className="setup-section">Transcription</h2>
       <fieldset className="card">
         <label className="field">
           <span>Engine</span>
@@ -318,7 +373,7 @@ export function SetupPage() {
         <small className="muted">Checks the saved settings — click Save first if you changed the engine. "Download model now" fetches the Whisper model into the data directory ahead of your first import (needs internet once).</small>
       </fieldset>
 
-      <h2>Sports Mode</h2>
+      <h2 id="setup-sports" className="setup-section">Sports Mode</h2>
       <fieldset className="card">
         <label className="row">
           <input type="checkbox" checked={settings.sports.enabled} onChange={(e) => update((s) => ((s.sports.enabled = e.target.checked), s))} />
@@ -331,7 +386,7 @@ export function SetupPage() {
         <small className="muted">Game picks are detected even with Sports Mode off; the switch tells the extractor to look for them and ignore analysis chatter. Trusted score sources: league sites, ESPN, AP, CBS/Fox/NBC/Yahoo Sports, BBC/Sky, the Reference sites.</small>
       </fieldset>
 
-      <h2>Prediction markets</h2>
+      <h2 id="setup-markets" className="setup-section">Prediction markets</h2>
       <fieldset className="card">
         <label className="row">
           <input type="checkbox" checked={settings.markets.enabled} onChange={(e) => update((s) => ((s.markets.enabled = e.target.checked), s))} />
@@ -394,7 +449,7 @@ export function SetupPage() {
         </div>
       </fieldset>
 
-      <h2>YouTube</h2>
+      <h2 id="setup-youtube" className="setup-section">YouTube</h2>
       <fieldset className="card">
         <p className="muted">Pasting a link sends the video id to YouTube (via yt-dlp) to read its title, date, captions, and — when needed — the audio. Nothing else leaves this computer. yt-dlp scrapes YouTube, so it can break when YouTube changes; updating it usually fixes that.</p>
         <div className="grid-3">
@@ -435,7 +490,7 @@ export function SetupPage() {
         <small className="muted">The binary is downloaded from github.com/yt-dlp/yt-dlp (official release), verified against its SHA-256 list, and stored in your data directory's <code>tools/</code> folder. Set <code>PL_YTDLP_PATH</code> to use your own copy instead.</small>
       </fieldset>
 
-      <h2>Backups</h2>
+      <h2 id="setup-backups" className="setup-section">Backups</h2>
       <fieldset className="card">
         <p className="muted">Writes a consistent copy of the database (videos, transcripts, predictions, plans, evidence, verdicts, settings) and the secret key into the data directory's <code>backups/</code> folder while the app runs. Media files are not included — they can be re-imported. To restore: stop Prediction Ledger, copy the <code>.db</code> over <code>prediction-ledger.db</code> (and the <code>.secret.key</code> over <code>secret.key</code>), start again.</p>
         <div className="row">
@@ -462,12 +517,14 @@ export function SetupPage() {
         )}
       </fieldset>
 
-      <h2>Polymarket US account</h2>
+      <h2 id="setup-account" className="setup-section">Polymarket US account</h2>
       <PolymarketUsCard allowInternet={settings.privacy.allowInternet} />
+      <div id="setup-limits" className="setup-section" />
       <TradingLimitsCard />
+      <div id="setup-automation" className="setup-section" />
       <AutomationCard />
 
-      <h2>Web search (for outcome research)</h2>
+      <h2 id="setup-search" className="setup-section">Web search (for outcome research)</h2>
       <fieldset className="card">
         <label className="field">
           <span>Provider</span>
@@ -501,7 +558,7 @@ export function SetupPage() {
         )}
       </fieldset>
 
-      <h2>Research</h2>
+      <h2 id="setup-research" className="setup-section">Research</h2>
       <fieldset className="card">
         <label className="row">
           <input type="checkbox" checked={settings.research.reviewPlanBeforeResearch} onChange={(e) => update((s) => ((s.research.reviewPlanBeforeResearch = e.target.checked), s))} />
@@ -513,7 +570,7 @@ export function SetupPage() {
         </div>
       </fieldset>
 
-      <h2>Limits and budgets</h2>
+      <h2 id="setup-budgets" className="setup-section">Limits and budgets</h2>
       <fieldset className="card grid-4">
         <NumberField label="Concurrent jobs" value={settings.limits.concurrency} min={1} max={8} onChange={(v) => update((s) => ((s.limits.concurrency = v), s))} />
         <NumberField label="Searches per research run" value={settings.limits.maxSearchesPerRun} min={1} max={50} onChange={(v) => update((s) => ((s.limits.maxSearchesPerRun = v), s))} />
@@ -528,13 +585,50 @@ export function SetupPage() {
         </button>
       </div>
 
-      <h2>Prompt templates</h2>
+      <h2 id="setup-templates" className="setup-section">Prompt templates</h2>
       <p className="muted">
         The built-in instructions for extraction and validation-plan generation. You can override the system instructions; the part that carries the
         transcript, prediction, and fixed dates is not overridable so content boundaries stay intact. Overrides are saved immediately and recorded with each result.
       </p>
       <TemplateEditor />
+      </div>
+    </div>
     </section>
+  );
+}
+
+/** Six steps derived from records; Skip / Restart touch only localStorage. */
+function GuidedStartSection() {
+  const g = useGuidedStart();
+  const nextId = g.next?.id;
+  return (
+    <div className="card">
+      <div className="row space-between">
+        <p className="muted" style={{ margin: 0, maxWidth: 640 }}>Optional and resumable. Each step is ticked from your actual records, so nothing here can get out of step with the app. Skip it, come back to it, or restart it — experienced use is never interrupted.</p>
+        <span className="row tight">
+          <button type="button" onClick={() => g.restart()}>Restart</button>
+          {!g.dismissed && <button type="button" onClick={() => g.skip()}>Skip for now</button>}
+        </span>
+      </div>
+      <div className="row" style={{ margin: "10px 0 4px" }}>
+        <div className="progress-line" style={{ flex: 1, margin: 0 }}><i style={{ width: `${Math.round((g.done / g.total) * 100)}%` }} /></div>
+        <span className="meta num">{g.done} of {g.total}{g.dismissed ? " · hidden from the sidebar" : ""}</span>
+      </div>
+      <div className="steps">
+        {g.steps.map((s) => (
+          <div key={s.id} className={`step${s.done ? " done" : ""}${s.id === nextId ? " next" : ""}`}>
+            <Icon name={s.done ? "checkCircle" : "circle"} />
+            <div className="body">
+              <div><span className="n">Step {s.n}</span><strong>{s.title}</strong></div>
+              <p><strong style={{ fontWeight: 500 }}>Why it matters:</strong> {s.why}</p>
+              <p className="meta">Derived from state: {s.derived}</p>
+            </div>
+            <a className="btn" href={s.href} style={{ alignSelf: "center" }}>{s.done ? "Review" : s.action}</a>
+          </div>
+        ))}
+      </div>
+      <div className="row" style={{ marginTop: 6, flexWrap: "nowrap", alignItems: "flex-start" }}><Icon name="flask" size={14} className="muted" style={{ flex: "none", marginTop: 2 }} /><span className="muted small">Want to see the whole journey without importing anything? The <a href="#/learn?topic=example.worked">interactive worked example</a> uses labelled synthetic data and never touches your records.</span></div>
+    </div>
   );
 }
 

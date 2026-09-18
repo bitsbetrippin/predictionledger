@@ -1,5 +1,6 @@
 /**
- * Prediction Ledger — Video detail: metadata, timestamped transcript with corrections, predictions in this video.
+ * Prediction Ledger — Video detail: metadata, timestamped transcript with corrections, predictions in this video
+ * (2.1: header meta line, pinstriped quoted segments, verdict chips on the prediction list, "?" help).
  *
  * Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
  * Licensed under the Apache License 2.0 — see LICENSE and NOTICE in the repository root.
@@ -7,6 +8,8 @@
 import { useCallback, useEffect, useState } from "react";
 import type { JobSummary, TranscriptSegment, VideoDetail } from "@prediction-ledger/shared";
 import { content, fmtClock, media, pollJob, type PredictionRow } from "../api";
+import { HelpButton } from "../components/HelpButton";
+import { AssessmentChip, EmptyState, ErrorState, Skeleton, TimeChip } from "../components/ui";
 
 export function VideoPage({ id }: { id: string }) {
   const [video, setVideo] = useState<VideoDetail | null>(null);
@@ -68,8 +71,8 @@ export function VideoPage({ id }: { id: string }) {
     await reload();
   };
 
-  if (error && !video) return <section className="page"><div className="banner error">{error}</div></section>;
-  if (!video) return <section className="page">Loading…</section>;
+  if (error && !video) return <section className="page"><ErrorState title="This video could not be loaded" message={error} onRetry={() => void reload()} /></section>;
+  if (!video) return <section className="page"><Skeleton rows={6} /></section>;
   const running = job && (job.status === "queued" || job.status === "running");
 
   return (
@@ -83,10 +86,10 @@ export function VideoPage({ id }: { id: string }) {
         </div>
       ) : (
         <>
-          <h1>{video.title}</h1>
-          <p className="muted">
+          <h1 style={{ fontSize: 18 }}>{video.title}</h1>
+          <p className="muted small">
             {video.sourceKind === "youtube" && video.sourceRef ? <a href={video.sourceRef} target="_blank" rel="noreferrer noopener">YouTube ↗</a> : video.sourceKind}{video.channel ? ` · ${video.channel}` : video.sourceRef && video.sourceKind !== "youtube" ? ` · ${video.sourceRef}` : ""} · {fmtClock(video.durationS)} · published {video.publishedAt ?? "unknown"}{video.publishedPrecision && video.publishedPrecision !== "datetime" ? ` (${video.publishedPrecision === "date" ? "date only" : "precision unknown"})` : ""} · {video.language ?? "language unknown"} · imported {video.importedAt.slice(0, 10)}{video.firstSeenAt ? ` · first seen ${video.firstSeenAt.slice(0, 16).replace("T", " ")}` : ""}{video.transcriptHash ? ` · transcript hash ${video.transcriptHash.slice(0, 12)}…` : ""}{video.subscriptionId ? " · via subscription" : ""}
-            {" "}<button type="button" className="link" onClick={() => setEditingMeta(true)}>edit</button>
+            {" "}<HelpButton topic="concept.deadline-basis" /> <button type="button" className="link" onClick={() => setEditingMeta(true)}>edit</button>
           </p>
         </>
       )}
@@ -119,7 +122,7 @@ export function VideoPage({ id }: { id: string }) {
 
       <div className="two-col">
         <div>
-          <h2>Transcript <span className="muted">({video.segments.length} segments)</span></h2>
+          <h2>Transcript <span className="muted small">{video.segments.length} segments · quoted passages are marked</span></h2>
           <div className="transcript">
             {video.segments.map((s) => (
               <SegmentRow key={s.id} videoId={video.id} seg={s} highlighted={preds.some((p) => p.startS !== undefined && p.endS !== undefined && s.startS >= p.startS - 0.01 && s.endS <= p.endS + 0.01)} onChanged={reload} />
@@ -127,9 +130,9 @@ export function VideoPage({ id }: { id: string }) {
           </div>
         </div>
         <div>
-          <h2>Predictions <span className="muted">({preds.length})</span></h2>
+          <h2>Predictions <span className="muted small">{preds.length}</span> <HelpButton topic="guide.extract" /></h2>
           {preds.length === 0 ? (
-            <div className="empty-state"><p className="muted">{job?.status === "completed" ? "No predictions found in this transcript." : "Run extraction to find predictions."}</p></div>
+            <EmptyState title={job?.status === "completed" ? "No predictions found in this transcript." : "Run extraction to find predictions."}>{job?.status === "completed" ? "The model found no forward-looking claims. History, questions and wishes are not predictions." : "Extraction reads the transcript in windows and keeps only claims about the future, with their exact quote."}</EmptyState>
           ) : (
             <ul className="pred-list">
               {preds.map((p) => (
@@ -137,8 +140,10 @@ export function VideoPage({ id }: { id: string }) {
                   <a href={`#/predictions?videoId=${video.id}&id=${p.id}`}>
                     <span className="muted">{fmtClock(p.startS)}</span> {p.normalizedStatement}
                   </a>
-                  <div className="muted small">
-                    Deadline {p.deadlineDate ?? "unknown"} · {p.userStatus}{p.latestPlanVersion ? ` · plan v${p.latestPlanVersion}` : ""}
+                  <div className="row tight" style={{ marginTop: 4 }}>
+                    {p.result && <AssessmentChip value={p.result.evidenceAssessment} sports={p.kind === "sports_pick"} />}
+                    <TimeChip value={p.timeStatus} />
+                    <span className="meta">deadline {p.deadlineDate ?? "unknown"} · {p.userStatus}{p.latestPlanVersion ? ` · plan v${p.latestPlanVersion}` : ""}</span>
                   </div>
                 </li>
               ))}

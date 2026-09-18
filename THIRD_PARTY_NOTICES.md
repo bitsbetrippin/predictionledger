@@ -52,6 +52,14 @@ Release 2.0.0-rc.1 (review fixes, upgrade rehearsal, key-file ACL, reports) adds
 
 Anthropic API, OpenAI API, Brave Search API, Tavily, LM Studio, SearXNG, YouTube. Each is governed by its own terms of service. Brave requires visible attribution when its monthly API credit is used; the dashboard shows "Search results by Brave" on evidence retrieved through it.
 
+## Inlined assets (Release 2.1)
+
+| Component | License | Origin | Since | Use |
+|---|---|---|---|---|
+| Phosphor Icons (regular weight, 24 glyphs as SVG path data in `web/src/components/Icons.tsx`) | MIT | Phosphor Icons (Tobias Fried, Helena Zhang) | 2.1 | Dashboard navigation and status icons, inlined so nothing is fetched at runtime. License text: `licenses/phosphor-icons.txt`. |
+
+Inter (the typeface named by the 2.1 design) is **not** bundled or fetched: the stylesheet names it and falls back to the system font when it is not installed.
+
 ## Design references (no code reused)
 
 - **GPT Researcher** (Apache-2.0, Assaf Elovic) — reference for the search → read → cite loop in `docs/ARCHITECTURE.md`.

@@ -7,6 +7,23 @@ Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assist
 ## Legend
 **Executed** = the command/test ran and passed on that platform. **Static** = code and docs reviewed for that platform's behaviour, not run. **—** = not yet attempted.
 
+## Release 2.1.1 — UI refresh round 2 (2026-09-18)
+
+**Scope.** The handoff's round 2 (five usability fixes + breakpoints) on top of 2.1.0; one server bookkeeping change (alerts close with their holds) with two regressions; version 2.1.1.
+
+| Command (sandbox, Linux, Node 22) | Result |
+|---|---|
+| `node --test "dist/server/src/**/*.test.js"` | **195 tests · 195 passed · 0 failed** (E05 and RV-04 gained the alert-closure assertions) |
+| `node --import tsx --test "web/src/**/*.test.ts"` | **10 · 10 · 0** |
+| `node scripts/check-help-anchors.mjs` | 38 topics, 24 sources, every anchor resolves |
+| `tsc --noEmit` — server + shared (stubs), web against real `@types/react` 18.3.12 | 0 errors |
+| Round-2 interaction checks (`interact2.cjs`, Playwright, 45 checks) | **45/45**: ↑/↓ move focus and follow the selection, Enter opens, Esc closes and returns focus; claim details collapsed; Sources link → Evidence; "Read together:" sentence; verdict card before tabs before claim details; Evidence grouping line; explanation clamped to 2 lines; no confidence sub-line; Escape order popover → Learn panel → detail (three presses, one surface each); deep link `?pred=&tab=evidence`; Trades order banner → holds → tiles → alerts; numbered owner steps; hold-linked alert text; Resume disabled with reason; STALE chip; LIVE / PAPER tag in header and sidebar with the pause subtitle; import panel collapsed when non-empty, opened by toolbar button / caret / `?import=transcript`, open on an empty library; strip on Markets only (never Setup or other pages), ✕ writes `dismissedAt`, absent at 6/6; "Back to Trades" on Learn; 880–1199 px overlay ≤ 560 px with backdrop click closing it; reduced motion stops the pulse; `--text-3` = #7E8A97 |
+| Round-1 checks (`interact.cjs`) re-run | **39/39** |
+
+**Handoff "unresolved dependencies", answered from the code.** Resolving a hold did *not* close its alert on the owner's paths (only crash recovery and reclassification did) → fixed in 2.1.1 with regressions; `dispatchBlockers` is `string[]`; `health.version` comes from `server/package.json` at process start (SETUP §2.6); the assessment guard's rules are G1–G7 (`research/verdictGuard.ts`), as the worked example cites them.
+
+**Not executed here (owner, Windows).** Vite build, `npm test` with the workspace `tsx`, the dashboard on the real database, a screen-reader pass.
+
 ## Release 2.1.0 — UI refresh & integrated help (2026-09-18)
 
 **Scope.** The design handoff "Prediction Ledger — UI refresh & integrated help" (baseline 2.0.0-rc.2) implemented in `web/src`; one read-only route added (`GET /api/market-links`); no API contract, business rule, privacy control or confirmation flow changed; nothing submits an order, arms automation or changes a limit. The 2.0 owner evidence (§4.16) is untouched and still pending.

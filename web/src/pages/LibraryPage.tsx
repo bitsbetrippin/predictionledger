@@ -2,7 +2,9 @@
  * Prediction Ledger — Video Library: transcript import (0.2), local media upload + transcription (0.4),
  * YouTube URL import (0.5), playlist/channel bulk import and subscriptions (1.8/1.11), video list with live progress,
  * extraction trigger. 2.1: one tabbed import panel instead of stacked cards, status chips with the next action,
- * loading / empty / error states, and the Guided start on the empty state.
+ * loading / empty / error states, and the Guided start on the empty state. 2.1.1 (round 2): the import panel is
+ * collapsible — collapsed by default when the library has videos, opened on the matching tab by the toolbar buttons or
+ * by #/library?import=<tab> (the worked example's "Try it with the fixture transcript" lands on the Transcript tab).
  *
  * Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
  * Licensed under the Apache License 2.0 — see LICENSE and NOTICE in the repository root.
@@ -20,7 +22,7 @@ import { useGuidedStart } from "../hooks/useGuidedStart";
 type ImportTab = "youtube" | "list" | "file" | "transcript" | "follow";
 type ListFilter = "all" | "needs_extraction" | "in_progress";
 
-export function LibraryPage() {
+export function LibraryPage({ openImport }: { openImport?: string }) {
   const [videos, setVideos] = useState<VideoSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -28,8 +30,12 @@ export function LibraryPage() {
   const [mediaStatus, setMediaStatus] = useState<MediaStatus | null>(null);
   const [tools, setTools] = useState<ToolsStatus | null>(null);
   const [liveJobs, setLiveJobs] = useState<Record<string, JobSummary>>({});
-  const [tab, setTab] = useState<ImportTab>("youtube");
-  const [panelOpen, setPanelOpen] = useState(true);
+  const isTab = (x: string | undefined): x is ImportTab => x === "youtube" || x === "list" || x === "file" || x === "transcript" || x === "follow";
+  const [tab, setTab] = useState<ImportTab>(isTab(openImport) ? openImport : "youtube");
+  // Collapsed by default once the library has videos; a deep link or a toolbar button opens it on the right tab.
+  const [panelOpen, setPanelOpen] = useState<boolean | null>(isTab(openImport) ? true : null);
+  useEffect(() => { if (isTab(openImport)) { setTab(openImport); setPanelOpen(true); } }, [openImport]);
+  const showPanel = panelOpen ?? (videos !== null && videos.length === 0);
   const [filter, setFilter] = useState<ListFilter>("all");
   const guided = useGuidedStart();
 
@@ -84,9 +90,10 @@ export function LibraryPage() {
     <section className="page">
       <div className="row space-between" style={{ marginBottom: 10 }}>
         <div className="row tight">
-          <button type="button" className={tab === "youtube" && panelOpen ? "primary" : undefined} onClick={() => { setTab("youtube"); setPanelOpen(true); }}><Icon name="plus" size={12} /> Import a video</button>
-          <button type="button" onClick={() => { setTab("transcript"); setPanelOpen(true); }}>Import a transcript</button>
-          <button type="button" onClick={() => { setTab("follow"); setPanelOpen(true); }}>Follow a channel</button>
+          <button type="button" className={tab === "youtube" && showPanel ? "primary" : undefined} aria-expanded={showPanel && tab === "youtube"} onClick={() => { setTab("youtube"); setPanelOpen(true); }}><Icon name="plus" size={12} /> Import a video</button>
+          <button type="button" aria-expanded={showPanel && tab === "transcript"} onClick={() => { setTab("transcript"); setPanelOpen(true); }}>Import a transcript</button>
+          <button type="button" aria-expanded={showPanel && tab === "follow"} onClick={() => { setTab("follow"); setPanelOpen(true); }}>Follow a channel</button>
+          <button type="button" className="import-toggle" aria-expanded={showPanel} aria-label={showPanel ? "Collapse the import panel" : "Expand the import panel"} title={showPanel ? "Collapse" : "Expand"} onClick={() => setPanelOpen(!showPanel)}><Icon name="caretRight" size={12} /></button>
         </div>
         <span className="row small muted">Export <a href="/api/export/json" download>JSON</a> · <a href="/api/export/csv" download>CSV</a> <span className="meta">never includes API keys</span></span>
       </div>
@@ -99,14 +106,14 @@ export function LibraryPage() {
         </div>
       )}
 
-      {panelOpen && (
+      {showPanel && (
         <div className="card" style={{ paddingTop: 6 }}>
           <div className="tabs" role="tablist" aria-label="Import">
             {([["youtube", "YouTube link"], ["list", "Playlist or channel"], ["file", "Local video / audio"], ["transcript", "Transcript file"], ["follow", "Follow a channel"]] as [ImportTab, string][]).map(([id, label]) => (
               <button key={id} type="button" role="tab" aria-selected={tab === id} className={tab === id ? "tab active" : "tab"} onClick={() => setTab(id)}>{label}</button>
             ))}
             <span style={{ flex: 1 }} />
-            <button type="button" className="link" onClick={() => setPanelOpen(false)} aria-label="Hide the import panel">hide</button>
+            <button type="button" className="link" onClick={() => setPanelOpen(false)} aria-label="Collapse the import panel">collapse</button>
           </div>
           {tab === "youtube" && <ImportYouTubeCard onImported={imported} tools={tools} onToolsChanged={reloadTools} />}
           {tab === "list" && <ImportListCard onImported={imported} tools={tools} />}
@@ -252,6 +259,7 @@ function ImportTranscriptCard({ onImported }: { onImported: () => void }) {
       onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files?.[0]; if (f) setFile(f); }}
     >
       <p className="muted">SRT, WebVTT, plain text (optionally with [hh:mm:ss] stamps), or JSON. Drop a file here or choose one. Nothing is sent anywhere. <HelpButton topic="guide.import">What happens</HelpButton></p>
+      <p className="meta">Want to try it without your own video? The repository ships the worked example's transcript at <code>fixtures/transcripts/data-center-approvals.srt</code> (synthetic, labelled) — import it here, set the date to 2025-11-03, and follow <a href="#/learn?topic=example.worked">the six steps</a>.</p>
       <div className="row">
         <input ref={inputRef} type="file" accept=".srt,.vtt,.txt,.json,text/plain,application/json" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         {file && <span className="chip local">{file.name}</span>}

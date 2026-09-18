@@ -3,7 +3,10 @@
  * 2.1 plain-English redesign): mode banner with its REAL MONEY / PAPER tag, Arm blockers listed by their actual gate,
  * summary tiles with "?" help, alerts split into action-required / informational, one three-column card per hold
  * (what it means · what the app did · what only you can do) with the required note, External holdings marked
- * INFORMATIONAL, and the ledger / decisions tabs with "Why this decision?".
+ * INFORMATIONAL, and the ledger / decisions tabs with "Why this decision?". 2.1.1 (round 2): order is banner →
+ * Arm blockers (paper only) → holds → tiles → alerts → external holdings → ledger; hold cards are two columns with the
+ * owner's steps as a numbered list; alerts raised by a hold say so; Resume is disabled while holds are open; stale
+ * tiles carry a STALE chip.
  *
  * Nothing on this page sends an order without the preview dialog's explicit confirmation, and the server re-checks
  * every gate on both calls. Arm blockers come from /api/trading/status (gates, dispatchBlockers), /api/trading/automation
@@ -118,23 +121,23 @@ export function TradesPage() {
       />
       {!armed && <ArmBlockers status={status} info={info} qual={qual} />}
 
+      {holds.length > 0 && (
+        <>
+          <h2 style={{ marginTop: 6 }}>Reconciliation holds <span className="muted small">{holds.length} open — new app orders are paused until each is resolved</span> <HelpButton topic="trades.holds-alerts-breaker">What a hold is</HelpButton></h2>
+          {holds.map((h) => <HoldCard key={h.id} hold={h} intents={intents} orders={orders} busy={!!busy} onResolve={(fn) => run("Resolving…", fn)} />)}
+        </>
+      )}
+
       <SummaryTiles s={summary} book={book} />
 
       {report && <p className="small muted">Reconciled at {fmtStamp(report.syncedAt, true)}: {report.ordersChecked} order(s) read back, {report.executionsAdded} execution(s) added from {report.activitiesRead} activities, {report.settlements} settlement event(s), {report.unknownIntents.length} unknown submission(s), {report.discrepancies.length} discrepancy(ies), {report.holdsOpen} hold(s) open{report.paused ? " — dispatch paused" : ""}{report.externalHoldings ? `, ${report.externalHoldings} external holding(s) (not placed by this app)` : ""}{report.reclassifiedHolds ? `, ${report.reclassifiedHolds} legacy hold(s) reclassified as external holdings` : ""}. <button type="button" className="link" onClick={() => setReport(null)}>dismiss</button></p>}
 
       {alerts.length > 0 && (
         <>
-          <h2 style={{ marginTop: 6 }}>Alerts <span className="muted small">{alerts.length} open · {actionAlerts.length} need action</span> <HelpButton topic="trades.alerts">Which need action</HelpButton></h2>
+          <h2 style={{ marginTop: 6 }}>Alerts <span className="muted small">{alerts.length} open · {alerts.filter((a) => holdFor(a, holds)).length} tied to the holds above · {infoAlerts.length} informational</span> <HelpButton topic="trades.alerts">Which need action</HelpButton></h2>
           <div className="alert-list">
-            {[...actionAlerts, ...infoAlerts].map((a) => <AlertItem key={a.id} a={a} busy={!!busy} onAck={() => void run("Acknowledging…", () => automationApi.ackAlert(a.id))} />)}
+            {[...actionAlerts, ...infoAlerts].map((a) => <AlertItem key={a.id} a={a} hold={holdFor(a, holds)} busy={!!busy} onAck={() => void run("Acknowledging…", () => automationApi.ackAlert(a.id))} />)}
           </div>
-        </>
-      )}
-
-      {holds.length > 0 && (
-        <>
-          <h2 style={{ marginTop: 6 }}>Reconciliation holds <span className="muted small">{holds.length} open — new app orders are paused until each is resolved</span> <HelpButton topic="trades.holds-alerts-breaker">What a hold is</HelpButton></h2>
-          {holds.map((h) => <HoldCard key={h.id} hold={h} intents={intents} orders={orders} busy={!!busy} onResolve={(fn) => run("Resolving…", fn)} />)}
         </>
       )}
 
@@ -195,6 +198,7 @@ function ModeBanner({ status, summary, holds, busy, onStop, onResume, onPause, o
   const auto = status.policy.mode === "auto_live";
   const paused = !!summary.paused;
   const blockers = status.dispatchBlockers.filter((b) => !/^mode is |^live authorization absent|^no connected account/.test(b));
+  const resumeReason = `Resume is blocked — ${holds} hold${holds === 1 ? "" : "s"} open`;
   return (
     <div className={`mode-banner${armed ? " live" : ""}${armed && (paused || holds) ? " paused" : ""}`} role="status">
       <Icon name={armed ? "warningCircle" : "flask"} />
@@ -202,7 +206,7 @@ function ModeBanner({ status, summary, holds, busy, onStop, onResume, onPause, o
         {armed ? (
           <>
             <strong>{auto ? `Automatic trading is armed — the scheduler places bounded orders under policy ${status.policy.authorizedPolicyHash?.slice(0, 12)}…` : "Manual live is armed — orders go to Polymarket US after preview → confirm"} <Tag kind="money" /></strong>
-            {status.submissionAvailable ? <p>New orders can be placed. Nothing is cancelled, resent or settled on its own.</p> : <p>New orders are blocked: {blockers.length ? blockers.join("; ") : status.dispatchBlockers.join("; ")}. Nothing is cancelled, resent or settled on its own.</p>}
+            {status.submissionAvailable ? <p>New orders can be placed. Nothing is cancelled, resent or settled on its own.</p> : holds > 0 ? <p>New orders are paused: {holds} hold{holds === 1 ? "" : "s"} need{holds === 1 ? "s" : ""} a note from you before dispatch resumes. Nothing is cancelled, resent or settled on its own.</p> : <p>New orders are blocked: {blockers.length ? blockers.join("; ") : status.dispatchBlockers.join("; ")}. Nothing is cancelled, resent or settled on its own.</p>}
           </>
         ) : (
           <>
@@ -213,10 +217,11 @@ function ModeBanner({ status, summary, holds, busy, onStop, onResume, onPause, o
       </div>
       <div className="actions">
         {summary.account && armed && <button type="button" className="danger" disabled={busy} onClick={onStop}>Emergency stop</button>}
-        {summary.account && (paused ? <button type="button" disabled={busy} onClick={onResume}>Resume new orders</button> : armed ? <button type="button" disabled={busy} onClick={onPause}>Pause new orders</button> : null)}
+        {summary.account && (paused ? <button type="button" disabled={busy || holds > 0} title={holds > 0 ? resumeReason : undefined} onClick={onResume}>Resume new orders</button> : armed ? <button type="button" disabled={busy} onClick={onPause}>Pause new orders</button> : null)}
         {armed && <button type="button" disabled={busy} onClick={onDisarm}>Disarm</button>}
         {onReconcile && <button type="button" disabled={busy} onClick={onReconcile}>Reconcile with venue</button>}
         {!armed && <HelpButton topic="trades.arm-unavailable">Why unavailable</HelpButton>}
+        {summary.account && paused && holds > 0 && <span className="resume-reason">{resumeReason}</span>}
       </div>
     </div>
   );
@@ -277,17 +282,29 @@ function SummaryTiles({ s, book }: { s: TradingSummary; book: PaperUsBook | null
   return (
     <div className="tiles">
       <Tile label="Mode / account" help={<HelpButton topic="trades.mode" />} value={modeValue} tone={s.armed ? "bad" : "info"} meta={`${s.account ? `key ${s.account.keyIdHint ?? "—"} · ${s.account.state}` : "no account connected"} · lease ${s.lease.heldByThisProcess ? "held" : "not held"} · stream ${s.stream}`} />
-      <Tile label="Buying power (venue)" help={<HelpButton topic="trades.buying-power" />} value={s.buyingPower ? fmtUsd(s.buyingPower) : "—"} tone={s.stale && s.account ? "warn" : undefined} meta={<span className={s.stale ? "warn" : undefined}>{s.syncAt ? `synced ${s.syncAgeSeconds ?? "?"} s ago${s.stale ? " — STALE (orders refused past 30 s)" : ""}` : "never synced"}</span>} />
+      <Tile label={<>Buying power (venue){s.stale && s.account ? <span className="stale-chip">STALE</span> : null}</>} help={<HelpButton topic="trades.buying-power" />} value={s.buyingPower ? fmtUsd(s.buyingPower) : "—"} className={s.stale && s.account ? "stale" : undefined} meta={s.syncAt ? `synced ${s.syncAgeSeconds ?? "?"} s ago${s.stale ? " — orders are refused on a snapshot older than 30 s" : ""}` : "never synced"} />
       <Tile label="Committed risk (live)" help={<HelpButton topic="trades.committed-risk" />} value={fmtUsd(s.committed)} meta={`${s.openPositions} open position${s.openPositions === 1 ? "" : "s"} · ${s.openIntents} order${s.openIntents === 1 ? "" : "s"} in flight${s.unknownIntents ? ` · ${s.unknownIntents} UNKNOWN` : ""}`} tone={s.unknownIntents ? "warn" : undefined} />
       <Tile label="Realized P&L (official settlements)" help={<HelpButton topic="trades.realized-pnl" />} value={<span className={s.realizedPnl.startsWith("-") ? "neg" : "pos"}>{fmtUsd(s.realizedPnl)}</span>} meta={`fees ${fmtUsd(s.fees)}`} />
-      <Tile label="Unrealized (marked)" help={<HelpButton topic="trades.unrealized" />} value={s.unrealizedPnl ? <span className={s.unrealizedPnl.startsWith("-") ? "neg" : "pos"}>{fmtUsd(s.unrealizedPnl)}</span> : "—"} tone={s.markStale && s.openPositions ? "warn" : undefined} meta={<span className={s.markStale ? "warn" : undefined}>{s.markAt ? `mark ${fmtStamp(s.markAt)}${s.markStale ? " — STALE mark" : ""}` : s.openPositions ? "no mark available" : "no open live position"}</span>} />
+      <Tile label={<>Unrealized (marked){s.markStale && s.openPositions ? <span className="stale-chip">STALE</span> : null}</>} help={<HelpButton topic="trades.unrealized" />} value={s.unrealizedPnl ? <span className={s.markStale ? undefined : s.unrealizedPnl.startsWith("-") ? "neg" : "pos"}>{fmtUsd(s.unrealizedPnl)}</span> : "—"} className={s.markStale && s.openPositions ? "stale" : undefined} meta={s.markAt ? `marked ${fmtStamp(s.markAt)}${s.markStale ? " — shown, never used for a decision" : ""}` : s.openPositions ? "no mark available" : "no open live position"} />
       <Tile label="Holds / alerts / breaker" help={<HelpButton topic="trades.holds-alerts-breaker" />} value={`${s.holdsOpen} / ${s.alertsOpen} / ${s.breaker.state}`} tone={s.holdsOpen || s.breaker.state === "open" ? "warn" : undefined} meta={`last reconcile ${s.lastReconcileAt ? s.lastReconcileAt.slice(11, 19) : "—"} · last tick ${s.lastAutomationRunAt ? s.lastAutomationRunAt.slice(11, 19) : "—"}`} />
       {book && <Tile label="US paper book (separate)" help={<HelpButton topic="trades.paper-book" />} value={fmtUsd(book.bankroll)} tone="info" meta={`start ${fmtUsd(book.bankrollStart)} · realized ${fmtUsd(book.realizedPnl)} · ${book.open} open · ${book.wins + book.losses + book.voids} settled · never summed with live`} />}
     </div>
   );
 }
 
-function AlertItem({ a, busy, onAck }: { a: TradingAlert; busy: boolean; onAck: () => void }) {
+/** The hold an alert was raised by, if it is still open: unknown submission ↔ intent, discrepancy ↔ market (or contested settlement), failed cancel ↔ venue order, stale sync ↔ the account. */
+function holdFor(a: TradingAlert, holds: ReconciliationHold[]): ReconciliationHold | undefined {
+  switch (a.kind) {
+    case "unknown_submission": return holds.find((h) => h.kind === "submission_unknown" && h.subject === a.subject);
+    case "discrepancy": return holds.find((h) => h.kind === "discrepancy" && (h.subject === a.subject || (a.incidentKey.startsWith("settlement:") && h.subject === a.incidentKey)));
+    case "failed_cancel": return holds.find((h) => h.kind === "failed_cancel" && h.detail.venueOrderId === a.subject);
+    case "stale_sync": return holds.find((h) => h.kind === "stale_sync");
+    case "disconnection": return holds.find((h) => h.kind === "stream_gap");
+    default: return undefined;
+  }
+}
+
+function AlertItem({ a, hold, busy, onAck }: { a: TradingAlert; hold?: ReconciliationHold; busy: boolean; onAck: () => void }) {
   const learn = useLearn();
   const action = alertNeedsAction(a.kind);
   const topic = alertTopic(a.kind);
@@ -297,7 +314,7 @@ function AlertItem({ a, busy, onAck }: { a: TradingAlert; busy: boolean; onAck: 
         <span className="kind">{a.kind.replace(/_/g, " ")}</span>
         <span className="lvl">{action ? "Action required" : "Informational"}</span>
         <span>{a.message}</span>
-        <div className="meta">first {fmtStamp(a.firstAt, true)}{a.count > 1 ? ` · ×${a.count} (same incident seen again, not a new one)` : ""}{a.subject ? ` · ${a.subject}` : ""}</div>
+        <div className="meta">first {fmtStamp(a.firstAt, true)}{a.count > 1 ? ` · ×${a.count} (same incident seen again, not a new one)` : ""}{hold ? <span className="linked"> · raised by the “{holdTitle(hold)}” hold above — resolving it is the fix; Acknowledge only hides this row</span> : a.subject ? ` · ${a.subject}` : ""}</div>
       </div>
       <div className="actions">
         {topic && <button type="button" className="help-link" onClick={() => learn.open(topic.id)}><Icon name="question" size={13} />Explain</button>}
@@ -315,27 +332,32 @@ function HoldCard({ hold, intents, orders, busy, onResolve }: { hold: Reconcilia
   const topic = holdTopic(hold.kind, hold.subject);
   const intent = hold.kind === "submission_unknown" ? intents.find((i) => i.id === hold.subject) : undefined;
   const candidates = ((hold.detail.candidates as string[] | undefined) ?? []).map((id) => orders.find((o) => o.id === id) ?? ({ id } as VenueOrderRecord));
-  const title = hold.subject?.startsWith("settlement:") ? "Contested settlement" : { submission_unknown: "Submission unknown", discrepancy: "Discrepancy", failed_cancel: "Failed cancel", stale_sync: "Stale sync", stream_gap: "Stream gap" }[hold.kind] ?? hold.kind;
+  const title = holdTitle(hold);
   return (
     <div className="hold-card">
       <div className="head">
         <Tag kind="action" />
         <strong>{title}</strong>
-        <span className="meta">opened {fmtStamp(hold.openedAt, true)}{hold.subject ? ` · ${hold.kind === "submission_unknown" ? "intent" : "subject"} ${hold.subject.slice(0, 24)}` : ""}</span>
+        <span className="meta">opened {fmtStamp(hold.openedAt, true)}{hold.subject ? ` · ${hold.kind === "submission_unknown" ? "intent" : "subject"} ${hold.kind === "submission_unknown" ? hold.subject.slice(0, 8) : hold.subject}` : ""}</span>
         {topic && <button type="button" className="help-link" onClick={() => learn.open(topic.id)}><Icon name="bookOpenText" size={13} />Full reference</button>}
       </div>
       {topic && (
         <div className="hold-cols">
-          <div><h6>What this means</h6><p>{topic.what}</p></div>
-          <div><h6>What the app did</h6><p>{topic.doing}</p></div>
-          <div><h6>What only you can do</h6><p>{topic.next}</p></div>
+          <div>
+            <h6>What this means</h6><p>{topic.what}</p>
+            <div className="app-did"><h6>What the app did</h6><p>{topic.doing}</p></div>
+          </div>
+          <div className="hold-you">
+            <h6>What only you can do</h6>
+            <ol>{steps(topic.next).map((t, i) => <li key={i}>{t}</li>)}</ol>
+          </div>
         </div>
       )}
       <div className="hold-resolve">
         {hold.kind === "submission_unknown" && intent ? (
           <div>
-            <div className="small">Intent {intent.id.slice(0, 8)}: BUY {intent.side.toUpperCase()} {intent.quantity} at YES {intent.wirePrice} on {intent.venueMarketId} · reason: {intent.unknownReason ?? "—"}. {String(hold.detail.note ?? "")}</div>
-            <div className="small muted" style={{ marginTop: 6 }}>Candidate venue orders that look like this submission ({candidates.length}):</div>
+            <div className="hold-intent">Intent {intent.id.slice(0, 8)}: BUY {intent.side.toUpperCase()} {intent.quantity} at YES {intent.wirePrice} on {intent.venueMarketId} · reason: {intent.unknownReason ?? "—"} · reservation held · entry opportunity consumed. {String(hold.detail.note ?? "")}</div>
+            <div className="small muted" style={{ marginTop: 8 }}>Candidate venue orders that look like this submission — the app never links one by itself ({candidates.length}):</div>
             <ul className="candidates">
               {candidates.length === 0 && <li className="muted small">none listed — press Reconcile with venue, then check the venue's order history.</li>}
               {candidates.map((c) => <li key={c.id}><label className="row tight"><input type="radio" name={`cand-${hold.id}`} value={c.id} checked={pick === c.id} onChange={() => setPick(c.id)} /> <code className="small">{c.id}</code> <span className="small">{c.side ?? "?"} {c.quantity ?? "?"} at {c.yesPrice ?? "?"} · {c.state ?? "?"} · {c.venueCreatedAt ?? ""}</span></label></li>)}
@@ -358,6 +380,15 @@ function HoldCard({ hold, intents, orders, busy, onResolve }: { hold: Reconcilia
       </div>
     </div>
   );
+}
+
+function holdTitle(hold: ReconciliationHold): string {
+  return hold.subject?.startsWith("settlement:") ? "Contested settlement" : { submission_unknown: "Submission unknown", discrepancy: "Discrepancy", failed_cancel: "Failed cancel", stale_sync: "Stale sync", stream_gap: "Stream gap" }[hold.kind] ?? hold.kind;
+}
+
+/** "What only you can do" as numbered steps: the topic's `next` sentence by sentence. */
+export function steps(next: string): string[] {
+  return next.split(/(?<=[.!?])\s+(?=[A-Z"'“‘(])/).map((x) => x.trim()).filter(Boolean);
 }
 
 function ExternalHoldings({ positions }: { positions: LivePosition[] }) {

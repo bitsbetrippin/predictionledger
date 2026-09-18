@@ -100,10 +100,12 @@ Every hold shows its kind, when it opened, the contract or intent it concerns, a
 <a name="alerts"></a>
 ## Alerts
 
+An alert is one row per incident (a repeat counts up instead of opening a new one). **Resolving a hold closes the alert it raised** — unknown submission, discrepancy, contested settlement, failed cancel, stale sync, stream gap (2.1.1; before that only the recovery and reclassification paths closed them). *Acknowledge* only hides a row; it never resolves a hold.
+
 | Alert | Meaning | What you do |
 |---|---|---|
 | <a name="alert-discrepancy"></a>**discrepancy** | A reconcile saw a position mismatch on a contract with app orders. | Resolve the matching hold; the alert closes with it. |
-| <a name="alert-unknown_submission"></a>**unknown_submission** | An order's outcome is unknown; the account is paused. | Resolve through the hold. |
+| <a name="alert-unknown_submission"></a>**unknown_submission** | An order's outcome is unknown; the account is paused. | Resolve through the hold; the alert closes with it. |
 | <a name="alert-disconnection"></a>**disconnection** | The private order stream closed. The app reconnects with backoff and reconciles by REST meanwhile. | Nothing unless it repeats; then check the network and key. |
 | <a name="alert-failed_cancel"></a>**failed_cancel** | A cancel failed. | Cancel on the venue if still open; resolve the hold. |
 | <a name="alert-risk_limit"></a>**risk_limit** | A limit blocked an evaluation today (`ORDER_BUDGET_ZERO`, `DAILY_CAP_REACHED`, `TOTAL_RISK_CAP_REACHED`, `MARKET_CAP_REACHED`, `EVENT_CAP_REACHED`, `DAILY_LOSS_STOP`). | Nothing unless the limit is wrong for you: change it in Setup → Trading limits (disarms; re-arm after reviewing the new hash). |

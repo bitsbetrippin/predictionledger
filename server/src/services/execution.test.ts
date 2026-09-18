@@ -384,6 +384,8 @@ test("E05 — a dropped POST response and a timeout before acceptance both becom
   assert.equal(reservationOf(linked).filledAmount, D("19").mul("0.52").toString(), "19 × (.50 + .02 fee)");
   assert.equal(openHolds().length, 0);
   assert.equal(ctx.trading.status().submissionAvailable, true, "pause lifted once nothing is unresolved");
+  // 2.1.1: the alert the hold raised closes with the hold (resolving is the fix; Acknowledge only hides the row).
+  assert.ok(!ctx.tradingAlerts.list({ openOnly: true }).some((a) => a.incidentKey === `unknown_submission:${i1.id}`), "unknown_submission alert closed by the owner's resolution");
   // Variant 2: timeout before anything was created (still ambiguous from here: 408 does not prove the venue never saw it).
   const v2 = await liveDecision("e05b");
   fake.behave(v2.slug, { mode: "timeout" });
@@ -394,8 +396,10 @@ test("E05 — a dropped POST response and a timeout before acceptance both becom
   const r2 = await ctx.execution.reconcile();
   assert.deepEqual(r2.unknownIntents, [{ intentId: i2.id, candidates: [] }], "absence from one query is not permission to resend");
   assert.equal(ctx.execution.intent(i2.id)?.state, "submission_unknown", "not auto-rejected either");
+  assert.ok(ctx.tradingAlerts.list({ openOnly: true }).some((a) => a.incidentKey === `unknown_submission:${i2.id}`), "the second unknown submission has its own open alert");
   const cleared = ctx.execution.resolveUnknown(i2.id, { outcome: "not_submitted" }, "venue order history shows nothing for this market");
   assert.equal(cleared.state, "rejected_local");
+  assert.ok(!ctx.tradingAlerts.list({ openOnly: true }).some((a) => a.incidentKey === `unknown_submission:${i2.id}`), "closed with the hold either way");
   assert.equal(reservationOf(cleared).state, "released");
   assert.equal(ctx.risk.opportunityConsumed(bindingId, "polymarket_us", ctx.markets.get(v2.marketId)!.venueId), undefined, "opportunity given back only after the explicit resolution");
   assert.equal(ctx.trading.status().submissionAvailable, true);

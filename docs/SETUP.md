@@ -91,6 +91,8 @@ The sidebar shows `v<version>` from `GET /api/health`, which the server reads fr
 - **Guided start** (Setup → first section, the sidebar pill, the Library empty state) is six steps derived from your own records — settings, videos, predictions, accepted market links. *Skip for now* and *Restart* only write `localStorage['pl.guidedStart']`.
 - The reference text ships inside the app; the GitHub copy (`docs/OPERATIONS_REFERENCE.md`, `docs/WORKED_EXAMPLE.md`, README) is the secondary link on each topic. `npm test` runs `scripts/check-help-anchors.mjs`, so the two cannot drift silently.
 - Fonts and icons are local: Inter is used when it is installed on your computer (system font otherwise); the icons are inlined SVG. The dashboard fetches nothing from the internet on its own.
+- Keyboard (2.1.1): on Predictions, Tab into the table, then ↑/↓ move between predictions, Enter opens the detail, Esc closes it and returns you to the row. One Escape order everywhere: a `?` popover closes first, then the phone drawer, then the Learn panel, then the detail. Press `/` for the reference from any page.
+- The Guided-start strip appears at the top of the page where the next step happens (Library, Predictions or Markets — never Setup); ✕ hides it and *Restart* in Setup → Guided start brings it back.
 
 ---
 

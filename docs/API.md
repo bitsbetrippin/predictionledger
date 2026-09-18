@@ -126,7 +126,9 @@ Settings gain `sports: { enabled, trackSpreads }`.
 |---|---|---|
 | GET | `/api/market-links?status=proposed|accepted|rejected&limit=` | Every prediction↔market link (the same `PredictionMarketLink` rows as `/api/predictions/:id/market-links`), optionally filtered by status; `400` on an unknown status. Read-only; feeds the Guided start's "linked" step. No other route, body, gate or response changed in 2.1. |
 
-The dashboard routes `#/learn[?topic=<id>]` and `#/signals?view=sides|consensus|alerts|creators` are client-side only.
+The dashboard routes `#/learn[?topic=<id>]`, `#/signals?view=sides|consensus|alerts|creators`, `#/predictions?pred=<id>&tab=evidence` and `#/library?import=youtube|list|file|transcript|follow` are client-side only.
+
+Behaviour change on existing routes (2.1.1): `POST /api/trading/intents/:id/resolve-unknown` and `POST /api/trading/holds/:id/resolve` now also close the trading alert the hold raised (incident keys `unknown_submission:<intent>`, `discrepancy:<binding>:<market>`, `settlement:<activity>`, `failed_cancel:<order>`, `stale_sync:<binding>`, `disconnection:<binding>`). Responses are unchanged; `POST /api/trading/alerts/:id/ack` still only hides a row.
 
 ## Release 2.0 — reports, health, review fixes
 

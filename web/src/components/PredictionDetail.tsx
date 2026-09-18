@@ -1,6 +1,8 @@
 /**
  * Prediction Ledger — prediction detail panel: quotation, normalized claim, components, plan, history, controls
- * (2.1: "?" help beside Deadline, Components, the two-field verdict, syndicated sources and provenance; filled/outlined chips).
+ * (2.1: "?" help beside Deadline, Components, the two-field verdict, syndicated sources and provenance; filled/outlined chips;
+ * 2.1.1 round 2: quote → verdict card with a "Read together:" sentence → actions → tabs (Evidence first when a verdict
+ * exists) → collapsed "Claim details"; the Evidence tab states its grouping rule).
  *
  * Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
  * Licensed under the Apache License 2.0 — see LICENSE and NOTICE in the repository root.
@@ -15,6 +17,26 @@ import { Icon } from "./Icons";
 import { AssessmentChip, KindChip, TimeChip } from "./ui";
 
 const KIND_LABEL: Record<ComponentKind, string> = { future_claim: "future claim", premise: "premise", causal_link: "causal link" };
+export type DetailTab = "plan" | "evidence" | "dossier" | "history" | "markets";
+
+/** The two fields read as one sentence (round 2): what the record shows × where the clock is. Sports picks settle by rule. */
+export function readTogether(a: Pick<Assessment, "evidenceAssessment" | "timeStatus">, deadline: string | undefined, sports: boolean): string {
+  if (sports) {
+    const outcome = a.evidenceAssessment === "contradicted" ? "the pick did not win." : a.evidenceAssessment === "supported" ? "the pick won." : a.evidenceAssessment === "partially_supported" ? "the game pushed." : a.evidenceAssessment === "insufficient" ? "no final score is recorded yet." : "the pick cannot be settled as stated.";
+    return `Settled by rule from the game record — ${outcome} Sports picks skip the model verdict entirely.`;
+  }
+  const R: Record<Assessment["evidenceAssessment"], string> = {
+    supported: "the stored record supports the claim",
+    partially_supported: "the stored record partially supports the claim",
+    contradicted: "the stored record contradicts the claim",
+    insufficient: "nothing retrieved so far bears on the claim (that is not a failure)",
+    not_assessable: "the claim cannot be assessed as stated (no date or scope to test it against)",
+  };
+  const T = a.timeStatus === "pending" ? `the deadline (${deadline ?? "unknown"}) has not passed, so this is a progress reading, not a final outcome.`
+    : a.timeStatus === "reached" ? `the deadline (${deadline ?? "unknown"}) has been reached, so this reading stands unless a recheck finds new evidence.`
+    : "the deadline is unknown, so no time status can be computed — set one to get it.";
+  return `Read together: ${R[a.evidenceAssessment]}; ${T}`;
+}
 
 export function PredictionDetail(props: {
   prediction: PredictionFull;
@@ -27,9 +49,12 @@ export function PredictionDetail(props: {
   onValidateScore: () => void;
   onChanged: () => Promise<void> | void;
   onClose: () => void;
+  /** Deep link (#/predictions?pred=…&tab=evidence) or the Sources link. */
+  initialTab?: DetailTab;
 }) {
   const p = props.prediction;
-  const [tab, setTab] = useState<"plan" | "evidence" | "dossier" | "history" | "markets">(p.assessments?.length ? "evidence" : "plan");
+  const [tab, setTab] = useState<DetailTab>(props.initialTab ?? (p.assessments?.length ? "evidence" : "plan"));
+  useEffect(() => { if (props.initialTab) setTab(props.initialTab); }, [props.initialTab, p.id]);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const planRunning = props.planJob && (props.planJob.status === "queued" || props.planJob.status === "running");
@@ -64,6 +89,87 @@ export function PredictionDetail(props: {
         {(p.quoteHash || p.analysisVersion) && <div className="meta">quote hash {p.quoteHash?.slice(0, 12) ?? "—"}… · transcript hash {p.transcriptHash?.slice(0, 12) ?? "—"}… · analysis v{p.analysisVersion ?? 1} <HelpButton topic="concept.provenance" /></div>}
       </div>
 
+      {latest && (
+        <div className={`verdict-card v-${latest.evidenceAssessment}`}>
+          <div className="row">
+            <AssessmentChip value={latest.evidenceAssessment} sports={p.kind === "sports_pick"} /><HelpButton topic="concept.evidence-assessment" />
+            <TimeChip value={latest.timeStatus} /><HelpButton topic="concept.time-status" />
+          </div>
+          <div className="meta">confidence {latest.confidence} · v{latest.version} · researched {latest.researchedAt}</div>
+          <p className="reading">{readTogether(latest, p.deadlineDate, p.kind === "sports_pick")}</p>
+          <p>{latest.explanation}</p>
+          {latest.uncertainty && <p className="small"><strong>Remaining uncertainty:</strong> {latest.uncertainty}</p>}
+          {latest.laterDevelopments && <p className="small"><strong>Later developments (after the deadline):</strong> {latest.laterDevelopments}</p>}
+          {latest.guardNotes.length > 0 && <details className="small"><summary>Rules applied by the app ({latest.guardNotes.length})</summary><ul className="plain">{latest.guardNotes.map((n, i) => <li key={i}>{n}</li>)}</ul></details>}
+          {latest.recheckAfter && <p className="small muted">Suggested recheck: {latest.recheckAfter}</p>}
+        </div>
+      )}
+
+      {!latest && (
+        <div className="verdict-card v-insufficient">
+          <div className="row"><TimeChip value={p.timeStatus ?? "unknown"} /><HelpButton topic="concept.time-status" /><span className="muted small">no verdict yet</span></div>
+          <p className="small muted">{p.kind === "sports_pick" ? "Validate scores looks the game up once (winner, score, date) and settles every pick on this matchup by rule." : p.plans.length ? `Plan v${p.plans[0].version} exists. Research runs its queries, fetches pages and assesses from stored evidence only.` : "Research generates a validation plan first, then searches, reads sources and assesses."}</p>
+        </div>
+      )}
+      <div className="row controls">
+        {p.userStatus !== "accepted" && p.userStatus !== "merged" && <button type="button" disabled={!!busy} onClick={() => act("accept", () => content.accept(p.id))}>Accept</button>}
+        {p.userStatus !== "dismissed" && p.userStatus !== "merged" && <button type="button" disabled={!!busy} onClick={() => act("dismiss", () => content.dismiss(p.id))}>Dismiss</button>}
+        {(p.userStatus === "dismissed" || p.userStatus === "accepted") && <button type="button" disabled={!!busy} onClick={() => act("restore", () => content.restore(p.id))}>Back to pending</button>}
+        {!editing && <button type="button" onClick={() => setEditing(true)}>Edit</button>}
+        <button type="button" className="primary" onClick={props.onGeneratePlan} disabled={!!planRunning}>
+          {planRunning ? props.planJob?.stage ?? "Generating…" : p.plans.length ? "Regenerate plan" : "Generate validation plan"}
+        </button>
+        {p.kind === "sports_pick" ? (
+          <button type="button" className="primary" onClick={props.onValidateScore} disabled={!!researchRunning || !!planRunning} title="Looks the game up once (winner, score, date) and settles every pick on this matchup — no deep research">
+            {researchRunning ? props.researchJob?.stage ?? "Validating…" : latest ? "Re-validate scores" : "Validate scores"}
+          </button>
+        ) : (
+          <button type="button" className="primary" onClick={props.onResearch} disabled={!!researchRunning || !!planRunning} title={p.plans.length ? "Run web research against the latest plan version" : "Generates a plan first, then researches"}>
+            {researchRunning ? props.researchJob?.stage ?? "Researching…" : latest ? "Recheck" : "Research"}
+          </button>
+        )}
+        {props.onForecast && p.kind !== "sports_pick" && p.plans.length > 0 && (
+          <button type="button" onClick={props.onForecast} disabled={!!researchRunning || !!planRunning} title="Gather current evidence about the future event using the plan's queries. Stored as a forecast run; it never produces a verdict.">Forecast research</button>
+        )}
+      </div>
+      {props.planJob?.status === "failed" && <div className="banner error">{props.planJob.error}</div>}
+      {props.researchJob?.status === "failed" && <div className="banner error">{props.researchJob.error}</div>}
+
+
+      <div className="tabs">
+        <button type="button" className={tab === "plan" ? "tab active" : "tab"} onClick={() => setTab("plan")}>Validation plan {p.plans.length ? `(v${p.plans[0].version})` : ""}</button>
+        <button type="button" className={tab === "evidence" ? "tab active" : "tab"} onClick={() => setTab("evidence")}>Evidence {latest ? `(${latest.supportingIds.length + latest.contradictingIds.length} cited)` : ""}</button>
+        <button type="button" className={tab === "dossier" ? "tab active" : "tab"} onClick={() => setTab("dossier")}>Dossier</button>
+        <button type="button" className={tab === "history" ? "tab active" : "tab"} onClick={() => setTab("history")}>History ({p.revisions.length + p.plans.length + (p.assessments?.length ?? 0)})</button>
+        <button type="button" className={tab === "markets" ? "tab active" : "tab"} onClick={() => setTab("markets")}>Markets</button>
+      </div>
+
+      {tab === "plan" && (p.plans.length === 0 ? (
+        <div className="empty-state"><p className="muted">No validation plan yet. Generate one to write the evaluation criteria and search queries <em>before</em> any research runs.</p></div>
+      ) : (
+        <PlanView plans={p.plans} predictionId={p.id} onChanged={props.onChanged} />
+      ))}
+      {tab === "evidence" && (latest ? <><p className="small muted" style={{ margin: "0 0 6px" }}>Grouped by component — support must attach to the future claim, in the window <HelpButton topic="concept.components" /></p><EvidenceView prediction={p} assessment={latest} /></> : (
+        <div className="empty-state"><p className="muted">No research yet. Research runs the plan's queries through your configured search provider, fetches the pages, and stores every excerpt it cites.</p></div>
+      ))}
+      {tab === "dossier" && ((p.runs?.length ?? 0) === 0 ? (
+        <div className="empty-state"><p className="muted">No research runs yet. The dossier lists every excerpt with its source provenance, independence group and status once research has run.</p></div>
+      ) : (
+        <DossierView predictionId={p.id} onChanged={props.onChanged} />
+      ))}
+      {tab === "markets" && <MarketLinks predictionId={p.id} kind={p.kind} />}
+      {tab === "history" && (
+        <ul className="plain history">
+          {(p.assessments ?? []).map((a) => <li key={a.id}>{a.createdAt.slice(0, 16).replace("T", " ")} — assessment v{a.version}: <strong>{EVIDENCE_ASSESSMENT_LABEL[a.evidenceAssessment]}</strong> ({a.confidence}) · plan v{a.planVersion} · {a.provider}{a.model ? ` (${a.model})` : ""}</li>)}
+          {(p.runs ?? []).map((r) => <li key={r.id}>{r.startedAt.slice(0, 16).replace("T", " ")} — {r.purpose === "forecast" ? "forecast run" : "research run"} ({r.status}): {r.searchesUsed} searches, {r.sourcesFetched} sources, {r.evidenceCount} evidence items via {r.searchProvider}{r.error ? ` — ${r.error}` : ""}</li>)}
+          {p.plans.map((pl) => <li key={pl.id}>{pl.createdAt.slice(0, 16).replace("T", " ")} — plan v{pl.version} by {pl.provider}{pl.model ? ` (${pl.model})` : ""} · {pl.templateVersion}</li>)}
+          {p.revisions.map((r) => <li key={r.version}>{r.createdAt.slice(0, 16).replace("T", " ")} — revision {r.version}: {r.reason}</li>)}
+          <li className="muted">{p.createdAt.slice(0, 16).replace("T", " ")} — extracted by {p.extractionProvider} ({p.extractionModel})</li>
+        </ul>
+      )}
+
+      <details className="claim-details" open={editing || undefined}>
+        <summary>Claim details — dates, modality, geography, components{p.components.length > 1 ? ` (${p.components.length})` : ""}</summary>
       {editing ? (
         <EditForm prediction={p} onCancel={() => setEditing(false)} onSaved={async () => { setEditing(false); await props.onChanged(); }} />
       ) : (
@@ -135,76 +241,7 @@ export function PredictionDetail(props: {
         </>
       )}
 
-      <div className="row controls">
-        {p.userStatus !== "accepted" && p.userStatus !== "merged" && <button type="button" disabled={!!busy} onClick={() => act("accept", () => content.accept(p.id))}>Accept</button>}
-        {p.userStatus !== "dismissed" && p.userStatus !== "merged" && <button type="button" disabled={!!busy} onClick={() => act("dismiss", () => content.dismiss(p.id))}>Dismiss</button>}
-        {(p.userStatus === "dismissed" || p.userStatus === "accepted") && <button type="button" disabled={!!busy} onClick={() => act("restore", () => content.restore(p.id))}>Back to pending</button>}
-        {!editing && <button type="button" onClick={() => setEditing(true)}>Edit</button>}
-        <button type="button" className="primary" onClick={props.onGeneratePlan} disabled={!!planRunning}>
-          {planRunning ? props.planJob?.stage ?? "Generating…" : p.plans.length ? "Regenerate plan" : "Generate validation plan"}
-        </button>
-        {p.kind === "sports_pick" ? (
-          <button type="button" className="primary" onClick={props.onValidateScore} disabled={!!researchRunning || !!planRunning} title="Looks the game up once (winner, score, date) and settles every pick on this matchup — no deep research">
-            {researchRunning ? props.researchJob?.stage ?? "Validating…" : latest ? "Re-validate scores" : "Validate scores"}
-          </button>
-        ) : (
-          <button type="button" className="primary" onClick={props.onResearch} disabled={!!researchRunning || !!planRunning} title={p.plans.length ? "Run web research against the latest plan version" : "Generates a plan first, then researches"}>
-            {researchRunning ? props.researchJob?.stage ?? "Researching…" : latest ? "Recheck" : "Research"}
-          </button>
-        )}
-        {props.onForecast && p.kind !== "sports_pick" && p.plans.length > 0 && (
-          <button type="button" onClick={props.onForecast} disabled={!!researchRunning || !!planRunning} title="Gather current evidence about the future event using the plan's queries. Stored as a forecast run; it never produces a verdict.">Forecast research</button>
-        )}
-      </div>
-      {props.planJob?.status === "failed" && <div className="banner error">{props.planJob.error}</div>}
-      {props.researchJob?.status === "failed" && <div className="banner error">{props.researchJob.error}</div>}
-
-      {latest && (
-        <div className={`verdict-card v-${latest.evidenceAssessment}`}>
-          <div className="row">
-            <AssessmentChip value={latest.evidenceAssessment} sports={p.kind === "sports_pick"} /><HelpButton topic="concept.evidence-assessment" />
-            <TimeChip value={latest.timeStatus} /><HelpButton topic="concept.time-status" />
-          </div>
-          <div className="meta">confidence {latest.confidence} · v{latest.version} · researched {latest.researchedAt}</div>
-          <p>{latest.explanation}</p>
-          {latest.uncertainty && <p className="small"><strong>Remaining uncertainty:</strong> {latest.uncertainty}</p>}
-          {latest.laterDevelopments && <p className="small"><strong>Later developments (after the deadline):</strong> {latest.laterDevelopments}</p>}
-          {latest.guardNotes.length > 0 && <details className="small"><summary>Rules applied by the app ({latest.guardNotes.length})</summary><ul className="plain">{latest.guardNotes.map((n, i) => <li key={i}>{n}</li>)}</ul></details>}
-          {latest.recheckAfter && <p className="small muted">Suggested recheck: {latest.recheckAfter}</p>}
-        </div>
-      )}
-
-      <div className="tabs">
-        <button type="button" className={tab === "plan" ? "tab active" : "tab"} onClick={() => setTab("plan")}>Validation plan {p.plans.length ? `(v${p.plans[0].version})` : ""}</button>
-        <button type="button" className={tab === "evidence" ? "tab active" : "tab"} onClick={() => setTab("evidence")}>Evidence {latest ? `(${latest.supportingIds.length + latest.contradictingIds.length} cited)` : ""}</button>
-        <button type="button" className={tab === "dossier" ? "tab active" : "tab"} onClick={() => setTab("dossier")}>Dossier</button>
-        <button type="button" className={tab === "history" ? "tab active" : "tab"} onClick={() => setTab("history")}>History ({p.revisions.length + p.plans.length + (p.assessments?.length ?? 0)})</button>
-        <button type="button" className={tab === "markets" ? "tab active" : "tab"} onClick={() => setTab("markets")}>Markets</button>
-      </div>
-
-      {tab === "plan" && (p.plans.length === 0 ? (
-        <div className="empty-state"><p className="muted">No validation plan yet. Generate one to write the evaluation criteria and search queries <em>before</em> any research runs.</p></div>
-      ) : (
-        <PlanView plans={p.plans} predictionId={p.id} onChanged={props.onChanged} />
-      ))}
-      {tab === "evidence" && (latest ? <EvidenceView prediction={p} assessment={latest} /> : (
-        <div className="empty-state"><p className="muted">No research yet. Research runs the plan's queries through your configured search provider, fetches the pages, and stores every excerpt it cites.</p></div>
-      ))}
-      {tab === "dossier" && ((p.runs?.length ?? 0) === 0 ? (
-        <div className="empty-state"><p className="muted">No research runs yet. The dossier lists every excerpt with its source provenance, independence group and status once research has run.</p></div>
-      ) : (
-        <DossierView predictionId={p.id} onChanged={props.onChanged} />
-      ))}
-      {tab === "markets" && <MarketLinks predictionId={p.id} kind={p.kind} />}
-      {tab === "history" && (
-        <ul className="plain history">
-          {(p.assessments ?? []).map((a) => <li key={a.id}>{a.createdAt.slice(0, 16).replace("T", " ")} — assessment v{a.version}: <strong>{EVIDENCE_ASSESSMENT_LABEL[a.evidenceAssessment]}</strong> ({a.confidence}) · plan v{a.planVersion} · {a.provider}{a.model ? ` (${a.model})` : ""}</li>)}
-          {(p.runs ?? []).map((r) => <li key={r.id}>{r.startedAt.slice(0, 16).replace("T", " ")} — {r.purpose === "forecast" ? "forecast run" : "research run"} ({r.status}): {r.searchesUsed} searches, {r.sourcesFetched} sources, {r.evidenceCount} evidence items via {r.searchProvider}{r.error ? ` — ${r.error}` : ""}</li>)}
-          {p.plans.map((pl) => <li key={pl.id}>{pl.createdAt.slice(0, 16).replace("T", " ")} — plan v{pl.version} by {pl.provider}{pl.model ? ` (${pl.model})` : ""} · {pl.templateVersion}</li>)}
-          {p.revisions.map((r) => <li key={r.version}>{r.createdAt.slice(0, 16).replace("T", " ")} — revision {r.version}: {r.reason}</li>)}
-          <li className="muted">{p.createdAt.slice(0, 16).replace("T", " ")} — extracted by {p.extractionProvider} ({p.extractionModel})</li>
-        </ul>
-      )}
+      </details>
     </div>
   );
 }

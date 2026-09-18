@@ -1,18 +1,21 @@
 /**
  * Prediction Ledger — Predictions table (grouped by video) + detail panel (2.1 redesign: filled result chip and
- * outlined time-status chip on every row, "?" help beside the two-field verdict, card list below 880 px, detail as
- * a full-screen overlay on narrow screens).
+ * outlined time-status chip on every row, "?" help beside the two-field verdict, card list below 880 px; 2.1.1 round 2:
+ * rows are focusable — ↑/↓ move the selection, Enter opens, Esc closes — the explanation is clamped to two lines, the
+ * Sources count opens the detail on Evidence, and the detail is a column ≥ 1200 px, a right overlay 880–1199 px and
+ * full-screen below 880 px; deep link #/predictions?pred=<id>&tab=evidence).
  *
  * Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
  * Licensed under the Apache License 2.0 — see LICENSE and NOTICE in the repository root.
  *
  * Columns: Prediction | Deadline | Result | Time status | Brief explanation | Sources | Last checked.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EVIDENCE_ASSESSMENT_LABEL, type JobSummary, type VideoSummary } from "@prediction-ledger/shared";
 import { api, content, fmtClock, pollJob, type PredictionFull, type PredictionRow } from "../api";
-import { PredictionDetail } from "../components/PredictionDetail";
+import { PredictionDetail, type DetailTab } from "../components/PredictionDetail";
 import { HelpButton } from "../components/HelpButton";
+import { ESC_PRIORITY, useEscape, useMediaQuery } from "../components/escape";
 import { AssessmentChip, EmptyState, ErrorState, Skeleton, TimeChip } from "../components/ui";
 
 function pickLabel(sp: NonNullable<import("@prediction-ledger/shared").Prediction["sportsPick"]>): string {
@@ -22,7 +25,7 @@ function pickLabel(sp: NonNullable<import("@prediction-ledger/shared").Predictio
   return `${sp.sport} · ${sp.pick.side === "over" ? "O" : "U"} ${sp.pick.line ?? "?"}`;
 }
 
-export function PredictionsPage({ initialVideoId, initialPredictionId }: { initialVideoId?: string; initialPredictionId?: string }) {
+export function PredictionsPage({ initialVideoId, initialPredictionId, initialTab }: { initialVideoId?: string; initialPredictionId?: string; initialTab?: string }) {
   const [rows, setRows] = useState<PredictionRow[] | null>(null);
   const [videos, setVideos] = useState<VideoSummary[]>([]);
   const [topics, setTopics] = useState<string[]>([]);
@@ -39,6 +42,9 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [planJobs, setPlanJobs] = useState<Record<string, JobSummary>>({});
+  const [detailTab, setDetailTab] = useState<DetailTab | undefined>(initialTab === "evidence" || initialTab === "plan" || initialTab === "dossier" || initialTab === "history" || initialTab === "markets" ? initialTab : undefined);
+  const overlay = useMediaQuery("(max-width: 1199px)");
+  const tableRef = useRef<HTMLTableElement>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -54,6 +60,8 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
   }, [videoId, kind, topic, status, result]);
   useEffect(() => void reload(), [reload]);
   useEffect(() => { setSelectedId(initialPredictionId); }, [initialPredictionId]);
+  const closeDetail = useCallback(() => setSelectedId(undefined), []);
+  useEscape(ESC_PRIORITY.detail, !!selected, closeDetail);
 
   const loadSelected = useCallback(async (id: string | undefined) => {
     if (!id) return setSelected(null);
@@ -140,6 +148,17 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
   };
 
   const toggle = (id: string, on: boolean) => setChecked((s) => { const n = new Set(s); if (on) n.add(id); else n.delete(id); return n; });
+  const open = (id: string, tab?: DetailTab) => { setDetailTab(tab); setSelectedId(id); };
+  const focusRow = (id: string) => { (tableRef.current?.querySelector(`tr[data-id="${id}"]`) as HTMLElement | null)?.focus(); };
+  /** ↑/↓ move the selection (and focus), Enter opens the row, Esc is handled by the shared escape order. */
+  const onRowKey = (e: React.KeyboardEvent<HTMLTableRowElement>, id: string) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const i = visible.findIndex((r) => r.id === id);
+      const nxt = visible[Math.min(visible.length - 1, Math.max(0, i + (e.key === "ArrowDown" ? 1 : -1)))];
+      if (nxt) { focusRow(nxt.id); if (selected) open(nxt.id); }
+    } else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(id); }
+  };
 
   return (
     <section className="page wide">
@@ -165,6 +184,7 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
           {visible.length} prediction{visible.length === 1 ? "" : "s"} · {assessed} assessed · {visible.length - assessed} not researched
           {" · "}<span className="status filled tone-neutral" style={{ padding: "0 6px" }}>■</span> Evidence assessment = what the record shows{" "}
           <span className="status outlined" style={{ padding: "0 6px" }}>□</span> Time status = where the clock is <HelpButton topic="concept.evidence-assessment">Why two fields</HelpButton>
+          <span className="meta" style={{ marginLeft: 10, whiteSpace: "nowrap" }}><span className="kbd">↑</span> <span className="kbd">↓</span> move · <span className="kbd">Enter</span> open · <span className="kbd">Esc</span> close</span>
         </p>
       )}
 
@@ -173,7 +193,7 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
       ) : (
         <div className={`split${selected ? " detail-open" : ""}`}>
           <div className="table-wrap">
-            <table className="table predictions">
+            <table className="table predictions" ref={tableRef}>
               <thead>
                 <tr><th></th><th>Prediction</th><th>Deadline</th><th>Result</th><th>Time status</th><th>Brief explanation</th><th className="num">Sources</th><th>Last checked</th></tr>
               </thead>
@@ -184,7 +204,7 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
                     const pj = planJobs[p.id] ?? researchJobs[p.id];
                     const r = p.result;
                     return (
-                      <tr key={p.id} className={selectedId === p.id ? "selected" : ""} onClick={() => setSelectedId(p.id)}>
+                      <tr key={p.id} data-id={p.id} tabIndex={0} aria-selected={selectedId === p.id} className={selectedId === p.id ? "selected" : ""} onClick={() => open(p.id)} onKeyDown={(e) => onRowKey(e, p.id)}>
                         <td onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label="select" checked={checked.has(p.id)} onChange={(e) => toggle(p.id, e.target.checked)} /></td>
                         <td>
                           <div>{p.kind === "sports_pick" && p.sportsPick && <span className="chip sports" title="Sports pick — settled from the final score, no deep research">{pickLabel(p.sportsPick)}</span>}{p.normalizedStatement}</div>
@@ -193,11 +213,10 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
                         <td className="num" data-label="Deadline">{p.deadlineDate ?? <span className="muted">unknown</span>}</td>
                         <td data-label="Result">
                           {r ? <AssessmentChip value={r.evidenceAssessment} sports={p.kind === "sports_pick"} /> : p.processingStatus === "running" ? <span className="muted">{p.kind === "sports_pick" ? "validating…" : "researching…"}</span> : p.processingStatus === "failed" ? <span className="result error">{p.kind === "sports_pick" ? "validation failed" : "research failed"}</span> : <span className="muted">— {p.kind === "sports_pick" ? "not validated" : "not researched"}</span>}
-                          {r && <div className="meta">confidence {r.confidence} · v{r.version}</div>}
                         </td>
                         <td data-label="Time status"><TimeChip value={p.timeStatus} /></td>
                         <td className="explain" data-label="Brief explanation">{r ? r.explanation : <span className="muted">—</span>}</td>
-                        <td className="num" data-label="Sources">{r ? r.sourceCount : <span className="muted">—</span>}</td>
+                        <td className="num" data-label="Sources">{r ? <button type="button" className="link num" title="Open the evidence" onClick={(e) => { e.stopPropagation(); open(p.id, "evidence"); }}>{r.sourceCount}</button> : <span className="muted">—</span>}</td>
                         <td className="num small" data-label="Last checked">{r ? <>{r.researchedAt}{r.recheckAfter ? <div className="meta">recheck {r.recheckAfter}</div> : null}</> : <span className="muted">—</span>}</td>
                       </tr>
                     );
@@ -206,10 +225,12 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
               ))}
             </table>
           </div>
+          {selected && overlay && <div className="detail-backdrop open" onClick={closeDetail} aria-hidden="true" />}
           {selected && (
-            <aside className="detail">
+            <aside className="detail" role={overlay ? "dialog" : undefined} aria-label={overlay ? "Prediction detail" : undefined}>
               <PredictionDetail
                 prediction={selected}
+                initialTab={detailTab}
                 planJob={planJobs[selected.id]}
                 onGeneratePlan={() => generatePlan(selected.id)}
                 onResearch={() => research(selected.id)}
@@ -217,7 +238,7 @@ export function PredictionsPage({ initialVideoId, initialPredictionId }: { initi
                 onValidateScore={() => research(selected.id, "validate")}
                 researchJob={researchJobs[selected.id]}
                 onChanged={async () => { await reload(); await loadSelected(selected.id); }}
-                onClose={() => setSelectedId(undefined)}
+                onClose={() => { closeDetail(); focusRow(selected.id); }}
               />
             </aside>
           )}

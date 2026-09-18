@@ -6,10 +6,11 @@
  * Original concept: Michael D. Carter (BitsBeTrippin). Built with Claude AI assistance.
  * Licensed under the Apache License 2.0 — see LICENSE and NOTICE in the repository root.
  */
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { findTopic, type HelpTopic } from "../help/topics";
 import { Icon } from "./Icons";
 import { useLearn } from "./LearnPanel";
+import { ESC_PRIORITY, useEscape } from "./escape";
 
 export function HelpButton({ topic, label, children, className }: { topic: string; label?: string; children?: ReactNode; className?: string }) {
   const t = findTopic(topic);
@@ -59,12 +60,9 @@ export function HelpPopover({ id, topic, anchor, onClose }: { id: string; topic:
     return () => window.removeEventListener("resize", place);
   }, [anchor]);
 
-  useEffect(() => {
-    ref.current?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEffect(() => { ref.current?.focus(); }, []);
+  const closeWithFocus = useCallback(() => onClose(), [onClose]);
+  useEscape(ESC_PRIORITY.popover, true, closeWithFocus);
 
   return (
     <>

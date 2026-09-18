@@ -740,6 +740,8 @@ export class ExecutionService {
       if (hold) this.ctx.db.run("UPDATE reconciliation_holds SET resolved_at = ?, resolution = ? WHERE id = ?", at, `${"venueOrderId" in resolution ? `linked to ${resolution.venueOrderId}` : "not submitted"}: ${note}`, hold.id);
     });
     this.ctx.trading.audit("hold.resolved", intent.bindingId, { intentId, resolution, note });
+    // 2.1.1: the alert this hold raised closes with the hold (as the recovery and reclassification paths already did).
+    this.ctx.tradingAlerts.resolve(`unknown_submission:${intentId}`);
     this.refreshPause(intent.bindingId!);
     return this.intent(intentId)!;
   }
@@ -751,6 +753,8 @@ export class ExecutionService {
     const at = this.now().toISOString();
     this.ctx.db.run("UPDATE reconciliation_holds SET resolved_at = ?, resolution = ? WHERE id = ?", at, resolution, holdId);
     this.ctx.trading.audit("hold.resolved", h.bindingId, { holdId, kind: h.kind, resolution });
+    // 2.1.1: the alert this hold raised closes with the hold — resolving is the fix; Acknowledge only hides the row.
+    for (const key of alertKeysForHold(h)) this.ctx.tradingAlerts.resolve(key);
     this.refreshPause(h.bindingId);
     return this.hold(holdId)!;
   }
@@ -1004,4 +1008,17 @@ function hydratePreview(r: PreviewRow): OrderPreviewRecord {
 }
 function hydrateHold(r: HoldRow): ReconciliationHold {
   return { id: r.id, bindingId: r.binding_id, kind: r.kind, subject: r.subject ?? undefined, detail: JSON.parse(r.detail_json) as Record<string, unknown>, openedAt: r.opened_at, resolvedAt: r.resolved_at ?? undefined, resolution: r.resolution ?? undefined };
+}
+
+
+/** Incident keys of the alerts a hold raised (see raise() calls above): discrepancy by market, contested settlement by activity, failed cancel by venue order, stale sync / stream gap by binding. */
+export function alertKeysForHold(h: { bindingId: string; kind: ReconciliationHold["kind"]; subject?: string; detail: Record<string, unknown> }): string[] {
+  switch (h.kind) {
+    case "discrepancy": return h.subject?.startsWith("settlement:") ? [h.subject] : h.subject ? [`discrepancy:${h.bindingId}:${h.subject}`] : [];
+    case "failed_cancel": return typeof h.detail.venueOrderId === "string" ? [`failed_cancel:${h.detail.venueOrderId}`] : [];
+    case "stale_sync": return [`stale_sync:${h.bindingId}`];
+    case "stream_gap": return [`disconnection:${h.bindingId}`];
+    case "submission_unknown": return h.subject ? [`unknown_submission:${h.subject}`] : [];
+    default: return [];
+  }
 }

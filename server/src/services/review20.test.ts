@@ -395,6 +395,8 @@ test("RV-04 — a settlement whose venue-reported realized amount contradicts th
   assert.ok(ctx.trading.dispatchBlockers().length > 0, "paused until the owner checks the venue's statement");
   assert.ok(ctx.tradingAlerts.list({ openOnly: true }).some((x) => x.kind === "discrepancy" && x.incidentKey.startsWith("settlement:")));
   ctx.execution.resolveHold(contested!.id, "checked on the venue: test cleanup");
+  // 2.1.1: resolving the hold closes the alert it raised.
+  assert.ok(!ctx.tradingAlerts.list({ openOnly: true }).some((x) => x.incidentKey === contested!.subject), "contested-settlement alert closed with its hold");
 });
 
 test("RV-08 — an order placed on the website that SELLS reduces the position: the app's expected net follows action × side, so no false discrepancy is raised", () => {

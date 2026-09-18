@@ -5,8 +5,8 @@
  * Licensed under the Apache License 2.0 — see LICENSE and NOTICE in the repository root.
  *
  * Routes (hash-based so the static build needs no server rewrites):
- *   #/library · #/videos/:id · #/predictions[?videoId=…&id=…] · #/markets · #/signals[?view=sides|consensus|alerts|creators]
- *   #/paper · #/trades · #/jobs · #/setup[?section=…] · #/learn[?topic=<id>]
+ *   #/library[?import=youtube|list|file|transcript|follow] · #/videos/:id · #/predictions[?videoId=…&id=…|pred=…&tab=evidence]
+ *   #/markets · #/signals[?view=sides|consensus|alerts|creators] · #/paper · #/trades · #/jobs · #/setup[?section=…] · #/learn[?topic=<id>]
  */
 import { useEffect, useState } from "react";
 import type { HealthResponse } from "@prediction-ledger/shared";
@@ -47,23 +47,27 @@ export function navigate(to: string): void {
 }
 
 const EMPTY_BADGES: NavBadges = { transcribing: 0, predictions: 0, tradingAlerts: 0, watchAlerts: 0, runningJobs: 0 };
+const BACK_LABEL: Record<ScreenName, string> = { library: "Video Library", video: "the video", predictions: "Predictions", markets: "Markets", signals: "Signals", paper: "Paper", trades: "Trades", jobs: "Jobs", setup: "Setup", learn: "Learn & Reference" };
 
 export function App() {
   const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash));
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [badges, setBadges] = useState<NavBadges>(EMPTY_BADGES);
+  // The page the user came from (for "Back to <page>" on Learn & Reference); the Learn page itself never counts.
+  const [prev, setPrev] = useState<{ name: ScreenName; hash: string } | null>(null);
 
   useEffect(() => {
     let alive = true;
     // Navigation badges: watch alerts (Signals), trading alerts (Trades), transcribing videos (Library), predictions, running jobs.
     const refreshBadges = async () => {
-      const [watch, trading, videos, preds, jobs] = await Promise.all([
+      const [watch, trading, videos, preds, jobs, summary] = await Promise.all([
         alertsApi.list().catch(() => null),
         automationApi.alerts(true).catch(() => null),
         content.listVideos().catch(() => null),
         content.listPredictions({}).catch(() => null),
         api.listJobs().catch(() => null),
+        automationApi.summary().catch(() => null),
       ]);
       if (!alive) return;
       setBadges({
@@ -72,9 +76,18 @@ export function App() {
         transcribing: videos?.filter((v) => v.status === "importing" || v.status === "transcribing").length ?? 0,
         predictions: preds?.length ?? 0,
         runningJobs: jobs?.filter((j) => j.status === "running" || j.status === "queued").length ?? 0,
+        trading: summary ? { mode: summary.mode, armed: summary.armed, armedKind: summary.armedKind, paused: !!summary.paused, holdsOpen: summary.holdsOpen } : undefined,
       });
     };
-    const onHash = () => { setRoute(parseHash(window.location.hash)); void refreshBadges(); };
+    let currentHash = window.location.hash;
+    const onHash = () => {
+      const from = parseHash(currentHash);
+      const nextRoute = parseHash(window.location.hash);
+      if (from.name !== "learn" && nextRoute.name === "learn") setPrev({ name: from.name, hash: currentHash || "#/library" });
+      currentHash = window.location.hash;
+      setRoute(nextRoute);
+      void refreshBadges();
+    };
     void refreshBadges();
     const timer = setInterval(() => void refreshBadges(), 60_000);
     window.addEventListener("hashchange", onHash);
@@ -94,16 +107,16 @@ export function App() {
   return (
     <LearnProvider screen={screen}>
       <Shell screen={screen} health={health} healthError={healthError} badges={badges}>
-        {route.name === "library" && <LibraryPage />}
+        {route.name === "library" && <LibraryPage openImport={route.query.get("import") ?? undefined} />}
         {route.name === "video" && route.id && <VideoPage id={route.id} />}
-        {route.name === "predictions" && <PredictionsPage initialVideoId={route.query.get("videoId") ?? undefined} initialPredictionId={route.query.get("id") ?? undefined} />}
+        {route.name === "predictions" && <PredictionsPage initialVideoId={route.query.get("videoId") ?? undefined} initialPredictionId={route.query.get("pred") ?? route.query.get("id") ?? undefined} initialTab={route.query.get("tab") ?? undefined} />}
         {route.name === "markets" && <MarketsPage />}
         {route.name === "signals" && <SignalsPage view={route.query.get("view") ?? undefined} />}
         {route.name === "paper" && <PaperPage />}
         {route.name === "trades" && <TradesPage />}
         {route.name === "jobs" && <JobsPage />}
         {route.name === "setup" && <SetupPage section={route.query.get("section") ?? undefined} />}
-        {route.name === "learn" && <LearnPage topicId={route.query.get("topic") ?? undefined} />}
+        {route.name === "learn" && <LearnPage topicId={route.query.get("topic") ?? undefined} back={prev ? { label: BACK_LABEL[prev.name], href: `#${prev.hash.replace(/^#/, "")}` } : undefined} />}
       </Shell>
     </LearnProvider>
   );

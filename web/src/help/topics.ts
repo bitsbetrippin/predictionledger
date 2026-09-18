@@ -196,7 +196,7 @@ export const TOPICS: HelpTopic[] = [
     id: "trades.holds-alerts-breaker", group: "trades", title: "Holds / alerts / breaker",
     what: "Open holds, open alerts and the circuit-breaker state. closed is healthy; open means repeated venue errors disarmed automation until the cooldown passes.",
     doing: "A hold pauses new app orders on the account until you resolve it; it never cancels, resends or settles anything on its own. Alerts are deduplicated per incident — ×2 means the same thing was seen twice.",
-    next: "Resolve each hold with a one-sentence note of what you checked on the venue. Acknowledging an alert hides it; it does not resolve the hold.",
+    next: "Resolve each hold with a one-sentence note of what you checked on the venue. Resolving a hold closes the alert it raised; acknowledging an alert only hides it and never resolves the hold.",
     body: [],
     source: "docs/OPERATIONS_REFERENCE.md#holds", related: ["trades.hold.discrepancy","trades.hold.submission_unknown","trades.alerts"],
   },
@@ -271,7 +271,7 @@ export const TOPICS: HelpTopic[] = [
   {
     id: "trades.alerts", group: "trades", title: "Alerts: which need action",
     what: "Action required: discrepancy, unknown_submission, failed_cancel, stale_sync (resolve the matching hold). Informational: disconnection, risk_limit, resolution, circuit_breaker, disarmed, emergency_stop.",
-    doing: "One alert per incident; a repeat increments ×n instead of opening a new alert. The banner hides acknowledged alerts; the hold, if any, stays open.",
+    doing: "One alert per incident; a repeat increments ×n instead of opening a new alert. An alert raised by a hold closes when that hold is resolved (2.1.1); acknowledging only hides the row, and the hold, if any, stays open.",
     next: "Resolve holds first; acknowledge informational alerts when read. Re-arm only after reviewing the current policy hash in Setup.",
     body: [],
     source: "docs/OPERATIONS_REFERENCE.md#alerts", related: ["trades.holds-alerts-breaker","trades.pause-disarm"],

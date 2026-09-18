@@ -10,6 +10,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { GROUPS, findTopic, searchTopics, sourceUrl, type HelpGroup, type HelpTopic } from "../help/topics";
 import { screenTopics, type ScreenName } from "../help/context";
 import { Icon } from "./Icons";
+import { ESC_PRIORITY, useEscape } from "./escape";
 
 export interface LearnApi {
   /** Open the panel, optionally on a topic. */
@@ -49,11 +50,10 @@ export function LearnPanel({ screen, topicId, onSelect, onClose }: { screen: Scr
   useEffect(() => {
     restoreFocus.current = document.activeElement as HTMLElement | null;
     if (!topicId) searchRef.current?.focus(); else panelRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("keydown", onKey); restoreFocus.current?.focus?.(); };
+    return () => { restoreFocus.current?.focus?.(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  useEscape(ESC_PRIORITY.learn, true, onClose);
 
   const topic = topicId ? findTopic(topicId) : undefined;
   const onScreen = screenTopics(screen);

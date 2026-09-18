@@ -498,6 +498,7 @@ The 1.0 backlog split in two: 0.6 is everything that could be built and verified
 | Six documented discrepancies fixed (README claims, local reference, route comment, badge, version display, Signals routes) | §7 | AG-16 | ✓ |
 | Tests: 10 dashboard (help integrity, guided derivation), 1 route; server suite 195/195; typechecks (real React types) | 03 | AG-14 | ✓ (sandbox) |
 | Visual verification: compiled TSX + mock API + Playwright, 1440 / 390 px, 39 interaction checks, populated / empty / error / loading / paper / live-holds | 03 | AG-14 | ✓ (sandbox harness; screenshots attached to the release) |
+| Round 2 (2.1.1): verdict-first detail + Read-together, keyboard rows, holds-before-tiles with numbered steps, hold-linked alerts, Resume gating, STALE chips, header/sidebar tag, collapsible import panel + deep links, Guided-start strip, Escape order, reduced motion, #7E8A97, viewport breakpoints; alerts close with their holds (server, 2 regressions) | handoff §9 | AG-10, AG-05, AG-14 | ✓ (sandbox: 45 round-2 + 39 round-1 checks) |
 | `npm run build` (Vite) and the run on real content, Windows | O01 | owner | **pending** |
 
 ## 11. Working agreements

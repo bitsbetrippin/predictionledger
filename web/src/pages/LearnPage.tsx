@@ -15,7 +15,7 @@ import { navigate } from "../App";
 
 const EXAMPLE = "example.worked";
 
-export function LearnPage({ topicId }: { topicId?: string }) {
+export function LearnPage({ topicId, back }: { topicId?: string; back?: { label: string; href: string } }) {
   const [q, setQ] = useState("");
   const selected = topicId ? findTopic(topicId) : undefined;
   const showExample = topicId === EXAMPLE;
@@ -24,6 +24,7 @@ export function LearnPage({ topicId }: { topicId?: string }) {
 
   return (
     <section className="page wide">
+      {back && <p className="small" style={{ margin: "0 0 10px" }}><a href={back.href}><Icon name="caretLeft" size={11} /> Back to {back.label}</a></p>}
       <div className={`learn-layout${topicId ? " article-open" : ""}`}>
         <div className="side">
           <div className="row" style={{ marginBottom: 8 }}>
@@ -97,7 +98,7 @@ function WorkedExample() {
       </div>
       <h4 style={{ marginTop: 0 }}>Worked example</h4>
       <h2 style={{ margin: "0 0 4px", fontSize: 18 }}>{WORKED_EXAMPLE.title}</h2>
-      <p className="meta">{WORKED_EXAMPLE.fixture} · <code>{WORKED_EXAMPLE.source}</code></p>
+      <p className="meta">{WORKED_EXAMPLE.fixture} · <code>{WORKED_EXAMPLE.source}</code> · <a href="#/library?import=transcript">Try it with the fixture transcript</a></p>
       <div className="stepper" role="tablist" aria-label="Worked example steps">
         {steps.map((s, n) => <button key={s.id} type="button" role="tab" aria-selected={n === i} className={n === i ? "active" : undefined} onClick={() => setI(n)}><span className="n">{n + 1}</span>{s.label}</button>)}
       </div>
